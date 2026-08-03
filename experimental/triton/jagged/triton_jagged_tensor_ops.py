@@ -93,7 +93,6 @@ def tensor_elementwise_mul(x, y):
 
 
 def triton_jagged_add_jagged(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-
     # x and y need to have same shape to do addition
     assert x.shape == y.shape
 
@@ -112,10 +111,7 @@ def triton_jagged_add_jagged(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     # pyre-fixme[3]: Return type must be annotated.
     # pyre-fixme[2]: Parameter must be annotated.
     def grid(META):
-        return (
-            triton.cdiv(M, thread_block_row_size)
-            * triton.cdiv(N, thread_block_col_size),
-        )
+        return (triton.cdiv(M, thread_block_row_size) * triton.cdiv(N, thread_block_col_size),)
 
     jagged_jagged_elementwise_arithmetic_ops[grid](
         x,
@@ -134,7 +130,6 @@ def triton_jagged_add_jagged(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
 
 
 def triton_jagged_mul_jagged(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-
     # x and y need to have same shape to do addition
     assert x.shape == y.shape
 
@@ -152,10 +147,7 @@ def triton_jagged_mul_jagged(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     # pyre-fixme[3]: Return type must be annotated.
     # pyre-fixme[2]: Parameter must be annotated.
     def grid(META):
-        return (
-            triton.cdiv(M, thread_block_row_size)
-            * triton.cdiv(N, thread_block_col_size),
-        )
+        return (triton.cdiv(M, thread_block_row_size) * triton.cdiv(N, thread_block_col_size),)
 
     jagged_jagged_elementwise_arithmetic_ops[grid](
         x,
@@ -194,7 +186,6 @@ def triton_batched_dense_vec_jagged_2d_matmul(
     # pyre-fixme[2]: Parameter must be annotated.
     output_ptr,
 ) -> None:
-
     pid = tl.program_id(0)
 
     # number of kernel need for with matrix (N,D) calculated by D // thread_block_col_size
@@ -353,10 +344,7 @@ def triton_jagged_to_dense(
 
     for _i in range(begin, end, thread_block_row_size):
         offset_col = tl.arange(0, thread_block_col_size)
-        block_offset = (
-            offset_row[:, None] * dense_row_stride
-            + offset_col[None, :] * dense_col_stride
-        )
+        block_offset = offset_row[:, None] * dense_row_stride + offset_col[None, :] * dense_col_stride
         for _j in range(0, N, thread_block_col_size):
             mask = (offset_row[:, None] < M) & (offset_col[None, :] < N)
             jagged_val = tl.load(jagged_value_ptr + block_offset, mask=mask, other=0)
@@ -446,16 +434,11 @@ def triton_jagged_to_dense_optimization_2d(
 
     for _i in range(0, dense_row_size, thread_block_row_size):
         offset_col = tl.arange(0, thread_block_col_size)
-        block_offset = (
-            offset_row[:, None] * output_dense_row_stride + offset_col[None, :]
-        )
+        block_offset = offset_row[:, None] * output_dense_row_stride + offset_col[None, :]
 
         for _j in range(0, dense_col_size, thread_block_col_size):
-
             # create mask for dense and jagged tensor for boundary check
-            dense_mask = (offset_row[:, None] < dense_row_size) & (
-                offset_col[None, :] < dense_col_size
-            )
+            dense_mask = (offset_row[:, None] < dense_row_size) & (offset_col[None, :] < dense_col_size)
             jagged_mask = (offset_row[:, None] < cur_jagged_tensor_row_size) & (
                 offset_col[None, :] < input_jagged_row_stride
             )
@@ -469,9 +452,7 @@ def triton_jagged_to_dense_optimization_2d(
 
             # do fusion operation if need
             if operation_function is not None:
-                operation_dense_val = tl.load(
-                    operation_dense + block_offset, mask=dense_mask, other=0.0
-                )
+                operation_dense_val = tl.load(operation_dense + block_offset, mask=dense_mask, other=0.0)
                 jagged_val = operation_function(operation_dense_val, jagged_val)
 
             # load value into empty dense
@@ -491,7 +472,6 @@ def triton_jagged_to_dense_optimization_2d(
 def _jagged_offsets_to_dense_indice(
     offsets: list[torch.Tensor], dense_strides: list[int], dense_sizes: list[int]
 ) -> torch.Tensor:
-
     output_offset = torch.zeros(len(offsets[-1]) - 1, device="cpu", dtype=torch.int32)
 
     offsets_cpu = []
@@ -552,12 +532,8 @@ def jagged_to_dense(
     jagged_offsets: list[torch.Tensor],
     jagged_max_lengths: list[int],
     padding_value: float = 0.0,  # padding value currently use 0.0 as default value
-    operation_function: Union[
-        str, None
-    ] = None,  # fusioned operation currently could be add or multiplication
-    operation_dense: Union[
-        torch.Tensor, None
-    ] = None,  # dense to make the add/mul with the output dense
+    operation_function: Union[str, None] = None,  # fusioned operation currently could be add or multiplication
+    operation_dense: Union[torch.Tensor, None] = None,  # dense to make the add/mul with the output dense
 ) -> torch.Tensor:
     outer_dense_size = len(jagged_offsets[0]) - 1
     inner_dense_size = jagged_values.size(-1)
@@ -704,31 +680,18 @@ def triton_dense_to_jagged(
 
     for _i in range(begin, end, thread_block_row_size):
         offset_col = tl.arange(0, thread_block_col_size)
-        block_offset = (
-            offset_row[:, None] * dense_row_stride
-            + offset_col[None, :] * dense_col_stride
-        )
+        block_offset = offset_row[:, None] * dense_row_stride + offset_col[None, :] * dense_col_stride
 
         for _j in range(0, N, thread_block_col_size):
-            dense_mask = (offset_row[:, None] < dense_boundary_row) & (
-                offset_col[None, :] < dense_boundary_col
-            )
+            dense_mask = (offset_row[:, None] < dense_boundary_row) & (offset_col[None, :] < dense_boundary_col)
             jagged_mask = (offset_row[:, None] < M) & (offset_col[None, :] < N)
-            dense_values = tl.load(
-                output_dense_ptr + block_offset, mask=dense_mask, other=0
-            )
+            dense_values = tl.load(output_dense_ptr + block_offset, mask=dense_mask, other=0)
             if operation_function is not None:
-                operation_jagged_value = tl.load(
-                    operation_jagged_value_ptr + block_offset, mask=jagged_mask, other=0
-                )
+                operation_jagged_value = tl.load(operation_jagged_value_ptr + block_offset, mask=jagged_mask, other=0)
                 if operation_function == "add":
-                    dense_values = tensor_elementwise_add(
-                        dense_values, operation_jagged_value
-                    )
+                    dense_values = tensor_elementwise_add(dense_values, operation_jagged_value)
                 else:
-                    dense_values = tensor_elementwise_mul(
-                        dense_values, operation_jagged_value
-                    )
+                    dense_values = tensor_elementwise_mul(dense_values, operation_jagged_value)
             tl.store(jagged_value_ptr + block_offset, dense_values, mask=jagged_mask)
             offset_col += thread_block_col_size
             block_offset += thread_block_col_size
@@ -741,7 +704,6 @@ def dense_to_jagged(
     operation_function: Union[str, None] = None,
     operation_jagged_values: Union[torch.Tensor, None] = None,
 ) -> tuple[torch.Tensor, list[torch.Tensor]]:
-
     thread_block_row_size = 32
     thread_block_col_size = 32
 
@@ -801,7 +763,6 @@ def jagged_dense_elementwise_add_dense_output(
     # pyre-fixme[2]: Parameter must be annotated.
     dense,
 ) -> Tensor:
-
     # max_length use to build output dense
     # that has same size as input dense
     max_length = dense.size()[1:-1]
@@ -819,7 +780,6 @@ def jagged_dense_elementwise_add_dense_output(
 def jagged_dense_elementwise_add_jagged_output(
     jagged_values: Optional[Tensor], jagged_offsets: list[Tensor], dense: Tensor
 ) -> tuple[Tensor, list[Tensor]]:
-
     return dense_to_jagged(
         dense,
         jagged_offsets,
@@ -832,7 +792,6 @@ def jagged_dense_elementwise_add_jagged_output(
 def jagged_dense_elementwise_mul_jagged_output(
     jagged_values: Optional[Tensor], jagged_offsets: list[Tensor], dense: Tensor
 ) -> tuple[Tensor, list[Tensor]]:
-
     return dense_to_jagged(
         dense,
         jagged_offsets,

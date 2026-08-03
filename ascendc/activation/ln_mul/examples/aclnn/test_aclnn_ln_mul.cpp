@@ -35,7 +35,8 @@ See the License for the specific language governing permissions and
         printf(message, ##__VA_ARGS__); \
     } while (0)
 
-int64_t GetShapeSize(const std::vector<int64_t>& shape) {
+int64_t GetShapeSize(const std::vector<int64_t>& shape)
+{
     int64_t shape_size = 1;
     for (auto i : shape) {
         shape_size *= i;
@@ -43,7 +44,8 @@ int64_t GetShapeSize(const std::vector<int64_t>& shape) {
     return shape_size;
 }
 
-int Init(int32_t deviceId, aclrtStream* stream) {
+int Init(int32_t deviceId, aclrtStream* stream)
+{
     auto ret = aclInit(nullptr);
     CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("aclInit failed. ERROR: %d\n", ret); return ret);
     ret = aclrtSetDevice(deviceId);
@@ -55,7 +57,8 @@ int Init(int32_t deviceId, aclrtStream* stream) {
 
 template <typename T>
 int CreateAclTensor(const std::vector<T>& hostData, const std::vector<int64_t>& shape, void** deviceAddr,
-                    aclDataType dataType, aclTensor** tensor) {
+                    aclDataType dataType, aclTensor** tensor)
+{
     auto size = GetShapeSize(shape) * sizeof(T);
     auto ret = aclrtMalloc(deviceAddr, size, ACL_MEM_MALLOC_HUGE_FIRST);
     CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("aclrtMalloc failed. ERROR: %d\n", ret); return ret);
@@ -67,12 +70,13 @@ int CreateAclTensor(const std::vector<T>& hostData, const std::vector<int64_t>& 
         strides[i] = shape[i + 1] * strides[i + 1];
     }
 
-    *tensor = aclCreateTensor(shape.data(), shape.size(), dataType, strides.data(), 0,
-                              aclFormat::ACL_FORMAT_ND, shape.data(), shape.size(), *deviceAddr);
+    *tensor = aclCreateTensor(shape.data(), shape.size(), dataType, strides.data(), 0, aclFormat::ACL_FORMAT_ND,
+                              shape.data(), shape.size(), *deviceAddr);
     return 0;
 }
 
-int main() {
+int main()
+{
     int32_t deviceId = 0;
     aclrtStream stream;
     auto ret = Init(deviceId, &stream);
@@ -98,7 +102,7 @@ int main() {
     std::vector<int64_t> vecShape = {R};
     void *xDeviceAddr = nullptr, *uDeviceAddr = nullptr;
     void *gammaDeviceAddr = nullptr, *betaDeviceAddr = nullptr;
-    void *outDeviceAddr = nullptr;
+    void* outDeviceAddr = nullptr;
     aclTensor *x = nullptr, *u = nullptr, *gamma = nullptr, *beta = nullptr, *out = nullptr;
     ret = CreateAclTensor(xHostData, xShape, &xDeviceAddr, aclDataType::ACL_FLOAT, &x);
     CHECK_RET(ret == ACL_SUCCESS, return ret);
@@ -131,8 +135,8 @@ int main() {
     ret = aclrtMemcpy(outHostData.data(), outSize, outDeviceAddr, outSize, ACL_MEMCPY_DEVICE_TO_HOST);
     CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("aclrtMemcpy output failed. ERROR: %d\n", ret); return ret);
 
-    LOG_PRINT("ln_mul output sample [0,0..3]: %.4f %.4f %.4f %.4f\n",
-              outHostData[0], outHostData[1], outHostData[2], outHostData[3]);
+    LOG_PRINT("ln_mul output sample [0,0..3]: %.4f %.4f %.4f %.4f\n", outHostData[0], outHostData[1], outHostData[2],
+              outHostData[3]);
 
     aclDestroyTensor(x);
     aclDestroyTensor(u);
@@ -144,7 +148,8 @@ int main() {
     aclrtFree(gammaDeviceAddr);
     aclrtFree(betaDeviceAddr);
     aclrtFree(outDeviceAddr);
-    if (workspaceAddr != nullptr) aclrtFree(workspaceAddr);
+    if (workspaceAddr != nullptr)
+        aclrtFree(workspaceAddr);
     aclrtDestroyStream(stream);
     aclrtResetDevice(deviceId);
     aclFinalize();

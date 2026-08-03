@@ -51,7 +51,7 @@ except ImportError:
     NamedSpecType = Dict[str, SpecType]
 
     @dataclass
-    class VersionedSpec: # type: ignore[no-redef]
+    class VersionedSpec:  # type: ignore[no-redef]
         """
         spec: a dict that maps each argument name to a spec
         version: the version of the spec
@@ -116,12 +116,11 @@ except ImportError:
         return VERBOSE_LEVEL
 
     @unique
-    class HammerKernel(Enum): # type: ignore[no-redef]
+    class HammerKernel(Enum):  # type: ignore[no-redef]
         TRITON = "TRITON"
         PYTORCH = "PYTORCH"
         CUDA = "CUDA"
         TRITON_CC = "TRITON_CC"
-
 
 
 def generate_sparse_seq_len(
@@ -130,7 +129,7 @@ def generate_sparse_seq_len(
     sparsity: float,
     device: torch.device,
 ) -> torch.Tensor:
-    min_seq_len : int
+    min_seq_len: int
     if sparsity == 0.0:
         return torch.zeros(size=(size,), device=device, dtype=torch.int)
     elif sparsity == 1.0:

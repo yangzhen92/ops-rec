@@ -101,9 +101,7 @@ def _add_position_embeddings_kernel(
         clamped_offs_n = tl.where(offs_n >= max_ind, max_ind, offs_n)
     else:
         ind_offset = tl.load(ind_offsets + off_b)
-        clamped_offs_n = tl.where(
-            offs_n + ind_offset >= max_ind, max_ind, offs_n + ind_offset
-        )
+        clamped_offs_n = tl.where(offs_n + ind_offset >= max_ind, max_ind, offs_n + ind_offset)
     offs_d = tl.arange(0, BLOCK_D)
     Jagged += seq_start.to(tl.int64) * stride_jn
     jagged_ptr_offsets = offs_n[:, None] * stride_jn + offs_d[None, :]
@@ -147,11 +145,7 @@ def _add_position_embeddings_bwd_kernel(
         max_ind = tl.load(high_inds + off_b)
         if off_k < max_ind:
             seq_start = tl.load(seq_offsets + off_b)
-            jagged_ptr = (
-                Jagged
-                + seq_start.to(tl.int64) * stride_jn
-                + off_k.to(tl.int64) * stride_jn
-            )
+            jagged_ptr = Jagged + seq_start.to(tl.int64) * stride_jn + off_k.to(tl.int64) * stride_jn
             jagged_ptrs = jagged_ptr + offs_d
             jg = tl.load(
                 jagged_ptrs,
@@ -159,11 +153,7 @@ def _add_position_embeddings_bwd_kernel(
             )
             accumulator += jg
             if SCALE_JAGGED:
-                out_jagged_ptr = (
-                    JaggedOut
-                    + seq_start.to(tl.int64) * stride_jon
-                    + off_k.to(tl.int64) * stride_jon
-                )
+                out_jagged_ptr = JaggedOut + seq_start.to(tl.int64) * stride_jon + off_k.to(tl.int64) * stride_jon
                 out_jagged_ptrs = out_jagged_ptr + offs_d
                 tl.store(
                     out_jagged_ptrs,
@@ -249,12 +239,8 @@ class _AddPositionEmbeddingsFunction(torch.autograd.Function):
 
     @staticmethod
     # pyre-ignore[14]
-    def backward(
-        ctx, d_out: torch.Tensor
-    ) -> Tuple[torch.Tensor, None, None, None, torch.Tensor, None, None]:
-        assert (
-            ctx.no_ind_offsets
-        ), "No backward support for position encoder with incremental input"
+    def backward(ctx, d_out: torch.Tensor) -> Tuple[torch.Tensor, None, None, None, torch.Tensor, None, None]:
+        assert ctx.no_ind_offsets, "No backward support for position encoder with incremental input"
         jagged_offsets, high_inds = ctx.saved_tensors
         d_dense = torch.empty((ctx.K, ctx.D), device=d_out.device, dtype=d_out.dtype)
         scale_jagged = ctx.scale != 1.0
@@ -495,12 +481,8 @@ class _AddTimestampPositionEmbeddingsFunction(torch.autograd.Function):
         N, D = seq_embeddings.shape
         assert len(pos_embeddings.shape) == 2
         assert len(ts_embeddings.shape) == 2
-        assert (
-            pos_embeddings.shape[1] == D
-        ), "shape[1] of pos_embeddings much match seq_embeddings"
-        assert (
-            ts_embeddings.shape[1] == D
-        ), "shape[1] of ts_embeddings much match seq_embeddings"
+        assert pos_embeddings.shape[1] == D, "shape[1] of pos_embeddings much match seq_embeddings"
+        assert ts_embeddings.shape[1] == D, "shape[1] of ts_embeddings much match seq_embeddings"
         out = torch.empty_like(seq_embeddings)
 
         timestamps = switch_to_contiguous_if_needed(timestamps)
@@ -543,12 +525,8 @@ class _AddTimestampPositionEmbeddingsFunction(torch.autograd.Function):
         )
         try:
             values = torch.arange(0, N, dtype=torch.int32, device=timestamps.device)
-            sorted_ts_key_inds, sorted_ts_value_inds = torch.ops.hammer.sort_kv_pairs(
-                ts_inds, values
-            )
-            sorted_pos_key_inds, sorted_pos_value_inds = torch.ops.hammer.sort_kv_pairs(
-                pos_inds, values
-            )
+            sorted_ts_key_inds, sorted_ts_value_inds = torch.ops.hammer.sort_kv_pairs(ts_inds, values)
+            sorted_pos_key_inds, sorted_pos_value_inds = torch.ops.hammer.sort_kv_pairs(pos_inds, values)
         except Exception:
             sorted_ts_key_inds, sorted_ts_value_inds = torch.sort(ts_inds)
             sorted_pos_key_inds, sorted_pos_value_inds = torch.sort(pos_inds)
@@ -590,12 +568,8 @@ class _AddTimestampPositionEmbeddingsFunction(torch.autograd.Function):
             sorted_ts_key_inds,
             sorted_ts_value_inds,
         ) = ctx.saved_tensors
-        d_pos_embeddings = torch.empty(
-            (ctx.pos_emb_size, ctx.D), device=d_out.device, dtype=torch.float32
-        )
-        d_ts_embeddings = torch.empty(
-            (ctx.ts_emb_size, ctx.D), device=d_out.device, dtype=torch.float32
-        )
+        d_pos_embeddings = torch.empty((ctx.pos_emb_size, ctx.D), device=d_out.device, dtype=torch.float32)
+        d_ts_embeddings = torch.empty((ctx.ts_emb_size, ctx.D), device=d_out.device, dtype=torch.float32)
         grid = lambda meta: (triton.cdiv(d_out.shape[0], meta["BLOCK"]),)  # noqa E731
         B = ctx.B
         AUTOTUNE_B = prev_power_of_2(B)

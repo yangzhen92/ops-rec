@@ -34,6 +34,7 @@ import zipfile
 # 1. 顶层入口与核心业务编排
 # ==========================================
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Merge single-SOC wheel into multi-SOC wheel")
     parser.add_argument("--src", default=None, help="Path to single-SOC .whl file")
@@ -149,6 +150,7 @@ def merge_single(src: str, soc: str, merge_dir: str) -> None:
 # 2. 核心支撑函数（Wheel解包、版本解析、清单生成）
 # ==========================================
 
+
 def _extract_and_align_data(tmp_path: Path) -> None:
     """解析单 SOC 包中的 data 目录，并将算子产物对齐到标准包路径下"""
     data_dir_candidates = list(tmp_path.glob("ops_rec-*.data/data/ops_rec"))
@@ -184,7 +186,7 @@ def _detect_version(merge_dir: Path) -> str | None:
 
     for entry in merge_dir.iterdir():
         if entry.name.startswith("ops_rec-") and entry.name.endswith(".dist-info"):
-            ver = entry.name[len("ops_rec-"):-len(".dist-info")]
+            ver = entry.name[len("ops_rec-") : -len(".dist-info")]
             try:
                 Version(ver)
                 return ver
@@ -208,6 +210,7 @@ def _write_record(tmp_path: Path, dist_info_dir: Path, version: str) -> None:
 # ==========================================
 # 3. 底层配置与元数据生成工具
 # ==========================================
+
 
 def _skip_item(name: str) -> bool:
     """过滤在多 SOC 合并时需要跳过的特定文件或目录"""
@@ -242,12 +245,7 @@ def _generate_metadata(version: str) -> str:
 
 def _generate_wheel_meta(py_tag: str, abi_tag: str, plat_tag: str) -> str:
     """生成 Wheel 配置文件内容模板"""
-    return (
-        f"Wheel-Version: 1.0\n"
-        f"Generator: ops-rec build.sh\n"
-        f"Root-Is-Purelib: false\n"
-        f"Tag: {py_tag}-{abi_tag}-{plat_tag}\n"
-    )
+    return f"Wheel-Version: 1.0\nGenerator: ops-rec build.sh\nRoot-Is-Purelib: false\nTag: {py_tag}-{abi_tag}-{plat_tag}\n"
 
 
 if __name__ == "__main__":

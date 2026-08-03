@@ -15,7 +15,6 @@
 # ==============================================================================
 
 import os
-import sys
 import logging
 import warnings
 
@@ -49,6 +48,7 @@ def _detect_soc_version() -> str | None:
     """
     try:
         import acl
+
         soc = acl.get_soc_name()
     except Exception:
         logging.warning("ops_rec: acl.get_soc_name() SOC detection failed.")
@@ -130,7 +130,7 @@ def _so_name(variant: str) -> str:
     """variant 名 → .so 文件名，例如 atlas_950 → ops_rec_atlas_950.so"""
     suffix = variant.lower()
     if suffix.startswith("atlas_"):
-        suffix = suffix[len("atlas_"):]
+        suffix = suffix[len("atlas_") :]
     return f"ops_rec_atlas_{suffix}.so"
 
 
@@ -145,6 +145,7 @@ def _load_custom_so(variant: str):
 
     try:
         import torch
+
         torch.ops.load_library(so_path)
     except Exception as exc:
         warnings.warn(f"ops_rec: Failed to load {so_path}: {exc}")
@@ -155,6 +156,6 @@ _variant = _select_variant()
 _setup_custom_opp_path(_variant)
 _load_custom_so(_variant)
 
-from . import ascendc
-from . import triton
-from . import experimental
+from . import ascendc  # noqa: F401, E402
+from . import triton  # noqa: F401, E402
+from . import experimental  # noqa: F401, E402

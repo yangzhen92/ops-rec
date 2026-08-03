@@ -30,6 +30,7 @@ def _detect_soc_version() -> str | None:
     """通过 acl.get_soc_name() 检测当前机器 SOC 版本。"""
     try:
         import acl
+
         soc = acl.get_soc_name()
     except Exception:
         return None
@@ -76,13 +77,9 @@ def extract_op_api(pkg_dir: str, run_tmp_dir: str) -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Extract op_api from installed ops_rec package."
-    )
-    parser.add_argument("--pkg-dir", required=True,
-                        help="Path to ops_rec package directory in site-packages.")
-    parser.add_argument("--run-tmp", required=True,
-                        help="Path to run_tmp output directory.")
+    parser = argparse.ArgumentParser(description="Extract op_api from installed ops_rec package.")
+    parser.add_argument("--pkg-dir", required=True, help="Path to ops_rec package directory in site-packages.")
+    parser.add_argument("--run-tmp", required=True, help="Path to run_tmp output directory.")
     args = parser.parse_args()
 
     os.makedirs(args.run_tmp, exist_ok=True)

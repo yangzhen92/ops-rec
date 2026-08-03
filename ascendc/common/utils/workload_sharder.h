@@ -21,9 +21,9 @@ using namespace AscendC;
 
 // 为当前 AI Core Block 分配数据分片范围（偏移 + 长度）
 struct WorkloadSharder {
-    int64_t length; // 当前 Block 处理的数据长度
-    int64_t start;  // 当前 Block 数据起始偏移
-    int64_t end;    // 当前 Block 数据结束偏移
+    int64_t length;  // 当前 Block 处理的数据长度
+    int64_t start;   // 当前 Block 数据起始偏移
+    int64_t end;     // 当前 Block 数据结束偏移
 
     __aicore__ inline void Compute(int64_t totalLen)
     {
@@ -40,4 +40,4 @@ struct WorkloadSharder {
     }
 };
 
-#endif // TILING_PARAMS_H
+#endif  // TILING_PARAMS_H

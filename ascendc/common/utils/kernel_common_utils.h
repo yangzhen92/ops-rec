@@ -20,7 +20,8 @@ using namespace AscendC;
 
 // 内存拷贝工具
 template <typename T>
-__aicore__ inline void CpGm2Local(const LocalTensor<T>& lt, const GlobalTensor<T>& gt, int64_t len) {
+__aicore__ inline void CpGm2Local(const LocalTensor<T>& lt, const GlobalTensor<T>& gt, int64_t len)
+{
     constexpr int DATA_ALIGN_BYTES = 32;
     uint32_t alignLen = len * sizeof(T) / DATA_ALIGN_BYTES * DATA_ALIGN_BYTES;
     uint32_t unAlignLen = len * sizeof(T) - alignLen;
@@ -34,7 +35,8 @@ __aicore__ inline void CpGm2Local(const LocalTensor<T>& lt, const GlobalTensor<T
 }
 
 template <typename T>
-__aicore__ inline void CpLocal2Gm(const GlobalTensor<T>& gt, const LocalTensor<T>& lt, int64_t len) {
+__aicore__ inline void CpLocal2Gm(const GlobalTensor<T>& gt, const LocalTensor<T>& lt, int64_t len)
+{
     constexpr int DATA_ALIGN_BYTES = 32;
     uint32_t alignLen = len * sizeof(T) / DATA_ALIGN_BYTES * DATA_ALIGN_BYTES;
     uint32_t unAlignLen = len * sizeof(T) - alignLen;
@@ -45,4 +47,4 @@ __aicore__ inline void CpLocal2Gm(const GlobalTensor<T>& gt, const LocalTensor<T
     }
 }
 
-#endif // KERNEL_COMMON_UTILS_H
+#endif  // KERNEL_COMMON_UTILS_H

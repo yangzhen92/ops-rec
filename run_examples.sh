@@ -98,7 +98,7 @@ run_aclnn_examples() {
     echo "==========================================================="
 
     local run_tmp="${SCRIPT_DIR}/build/run_tmp"
-    
+
     # 仅在开始时清理并准备目录
     rm -rf "${run_tmp}"
     mkdir -p "${run_tmp}"
@@ -177,7 +177,7 @@ run_aclnn_examples() {
             local example_name
             example_name=$(basename "${example_file}" .cpp)
             local example_bin="${run_tmp}/${example_name}"
-            
+
             echo "[INFO] Building aclnn example: ${example_name} (${op})..."
             local gcc_lib_dirs="${all_lib_dirs} -L${ascend_lib}"
             local run_lib_path="${lib_dir}:${ascend_lib}"
@@ -225,7 +225,7 @@ run_torch_examples() {
         for example_file in "${example_files[@]}"; do
             local example_name
             example_name=$(basename "${example_file}" .py)
-            
+
             echo "[INFO] Running torch example: ${example_name} (${op})..."
             mkdir -p "${SCRIPT_DIR}/build" && cd "${SCRIPT_DIR}/build" && python3 "${example_file}"
 
@@ -242,7 +242,7 @@ main() {
     if [ "${EXAMPLE_TYPE}" = "all" ] || [ "${EXAMPLE_TYPE}" = "aclnn" ]; then
         run_aclnn_examples
     fi
-    
+
     if [ "${EXAMPLE_TYPE}" = "all" ] || [ "${EXAMPLE_TYPE}" = "torch" ]; then
         run_torch_examples
     fi

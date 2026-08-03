@@ -34,18 +34,18 @@ See the License for the specific language governing permissions and
 #define OPS_LOG_E_IF(COND, OP_DESC, EXPR, ...) OPS_LOG_STUB_IF(COND, OPS_LOG_E(OP_DESC, __VA_ARGS__), EXPR)
 #define OPS_LOG_EVENT_IF(COND, OP_DESC, EXPR, ...) OPS_LOG_STUB_IF(COND, OPS_LOG_EVENT(OP_DESC, __VA_ARGS__), EXPR)
 
-#define OPS_LOG_E_IF_NULL(OPS_DESC, PTR, EXPR)                                                                       \
-    if (__builtin_expect((PTR) == nullptr, 0)) {                                                                      \
-        OPS_LOG_STUB_E(OPS_DESC, "%s is nullptr!", #PTR);                                                             \
-        OPS_CALL_ERR_STUB("EZ9999", OPS_DESC, "%s is nullptr!", #PTR);                                                \
-        EXPR;                                                                                                         \
+#define OPS_LOG_E_IF_NULL(OPS_DESC, PTR, EXPR)                         \
+    if (__builtin_expect((PTR) == nullptr, 0)) {                       \
+        OPS_LOG_STUB_E(OPS_DESC, "%s is nullptr!", #PTR);              \
+        OPS_CALL_ERR_STUB("EZ9999", OPS_DESC, "%s is nullptr!", #PTR); \
+        EXPR;                                                          \
     }
 
-#define OPS_CHECK_PTR_NULL(PTR, EXPR)  OPS_LOG_E_IF_NULL(#PTR, PTR, EXPR)
+#define OPS_CHECK_PTR_NULL(PTR, EXPR) OPS_LOG_E_IF_NULL(#PTR, PTR, EXPR)
 
-#define OPS_CHECK(COND, LOG_FUNC, EXPR)                                                                               \
-    if (COND) {                                                                                                       \
-        LOG_FUNC;                                                                                                     \
-        EXPR;                                                                                                         \
+#define OPS_CHECK(COND, LOG_FUNC, EXPR) \
+    if (COND) {                         \
+        LOG_FUNC;                       \
+        EXPR;                           \
     }
 #endif

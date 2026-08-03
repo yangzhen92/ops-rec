@@ -131,7 +131,8 @@ skbuild_setup(
     version=_get_torch_version(),
     description="Ascend NPU Custom Operations for Recommendation Systems",
     packages=setuptools.find_namespace_packages(
-        where=".", include=["ops_rec*"],
+        where=".",
+        include=["ops_rec*"],
         exclude=[],
     ),
     package_dir={"ops_rec": "ops_rec"},

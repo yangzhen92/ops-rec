@@ -19,12 +19,12 @@ See the License for the specific language governing permissions and
 #include <cstddef>
 #include <limits>
 
-int64_t GetBatchSizeFromJaggedOffset(const int64_t *seqOffsetData, size_t seqOffsetLens)
+int64_t GetBatchSizeFromJaggedOffset(const int64_t* seqOffsetData, size_t seqOffsetLens)
 {
     if (seqOffsetData == nullptr || seqOffsetLens <= 0) {
         return 0;
     }
-    
+
     // 二分法找出有效batch
     int64_t maxValue = seqOffsetData[seqOffsetLens - 1];
     size_t left = 0;
@@ -48,4 +48,4 @@ int64_t GetBatchSizeFromJaggedOffset(const int64_t *seqOffsetData, size_t seqOff
     return batchSize;
 }
 
-#endif // COMMON_HOST_H
+#endif  // COMMON_HOST_H

@@ -24,11 +24,11 @@ See the License for the specific language governing permissions and
 #include "securec.h"
 #include "base/err_msg.h"
 #if __has_include("toolchain/slog.h")
-    #include "toolchain/slog.h"
+#include "toolchain/slog.h"
 #elif __has_include("base/dlog_pub.h")
-    #include "base/dlog_pub.h"
+#include "base/dlog_pub.h"
 #else
-    #error "Neither slog.h nor dlog_pub.h found!"
+#error "Neither slog.h nor dlog_pub.h found!"
 #endif
 
 namespace ops {
@@ -44,48 +44,49 @@ public:
         return static_cast<uint64_t>(syscall(__NR_gettid));
     }
 
-    static inline const char *GetStr(const std::string &str)
+    static inline const char* GetStr(const std::string& str)
     {
         return str.c_str();
     }
 
-    static inline const char *GetStr(const char *str)
+    static inline const char* GetStr(const char* str)
     {
         return str;
     }
 
-    static inline const std::string &GetOpInfo(const std::string &str)
+    static inline const std::string& GetOpInfo(const std::string& str)
     {
         return str;
     }
 
-    static inline const char *GetOpInfo(const char *str)
+    static inline const char* GetOpInfo(const char* str)
     {
         return str;
     }
 
-    static inline std::string GetOpInfo(const gert::TilingContext *context)
+    static inline std::string GetOpInfo(const gert::TilingContext* context)
     {
         return GetOpInfoFromContext(context);
     }
 
-    static inline std::string GetOpInfo(const gert::TilingParseContext *context)
+    static inline std::string GetOpInfo(const gert::TilingParseContext* context)
     {
         return GetOpInfoFromContext(context);
     }
 
-    static inline std::string GetOpInfo(const gert::InferShapeContext *context)
+    static inline std::string GetOpInfo(const gert::InferShapeContext* context)
     {
         return GetOpInfoFromContext(context);
     }
 
-    static inline std::string GetOpInfo(const gert::InferDataTypeContext *context)
+    static inline std::string GetOpInfo(const gert::InferDataTypeContext* context)
     {
         return GetOpInfoFromContext(context);
     }
 
 private:
-    template <class T> static inline std::string GetOpInfoFromContext(T context)
+    template <class T>
+    static inline std::string GetOpInfoFromContext(T context)
     {
         if (context == nullptr) {
             return "nil:nil";
@@ -97,7 +98,7 @@ private:
     }
 };
 
-} // namespace utils
+}  // namespace utils
 
 template <typename T>
 std::string Shape2String(const T& shape)
@@ -106,14 +107,14 @@ std::string Shape2String(const T& shape)
     oss << "[";
     if (shape.GetDimNum() > 0) {
         for (size_t i = 0; i < shape.GetDimNum() - 1; ++i) {
-        oss << shape.GetDim(i) << ", ";
+            oss << shape.GetDim(i) << ", ";
         }
         oss << shape.GetDim(shape.GetDimNum() - 1);
+    }
+    oss << "]";
+    return oss.str();
 }
-oss << "]";
-return oss.str();
-}
-} // namespace ops
+}  // namespace ops
 
 // 使用本宏前需预定义标识子模块名称的 OPS_UTILS_LOG_SUB_MOD_NAME
 // 如: #define OPS_UTILS_LOG_SUB_MOD_NAME "OP_TILING" 或通过 CMake 传递预定义宏

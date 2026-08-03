@@ -120,9 +120,7 @@ def jagged_dense_flash_attention_fwd_kernel(
         qk = tl.dot(qj, ki, allow_tf32=allow_tf32)
 
         # Load a block of attn bias into [BLOCK_L, BLOCK_T]
-        ab_ptrs = (
-            ab_start_ptr + offs_l[:, None] * stride_ab_n + offs_t[None, :] * stride_ab_t
-        )
+        ab_ptrs = ab_start_ptr + offs_l[:, None] * stride_ab_n + offs_t[None, :] * stride_ab_t
 
         abij = tl.load(
             ab_ptrs,
@@ -137,18 +135,14 @@ def jagged_dense_flash_attention_fwd_kernel(
         mij_hat = tl.max(qk, axis=0)
         mi_new = tl.maximum(mi, mij_hat)
         pij_hat = tl.exp(qk - mi_new[None, :])
-        pij_hat = tl.where(
-            (offs_l[:, None] < length) & (offs_t[None, :] < T), pij_hat, 0.0
-        )
+        pij_hat = tl.where((offs_l[:, None] < length) & (offs_t[None, :] < T), pij_hat, 0.0)
         lij_hat = tl.sum(pij_hat, axis=0)
         alpha = tl.exp(mi - mi_new)
         li_new = alpha * li + lij_hat
         oi = alpha[:, None] * oi
 
         # Load a block of V into [BLOCK_L, BLOCK_D]
-        vj_ptrs = (
-            v_start_ptr + offs_l[:, None] * stride_vn + offs_d[None, :] * stride_vd
-        )
+        vj_ptrs = v_start_ptr + offs_l[:, None] * stride_vn + offs_d[None, :] * stride_vd
 
         vj = tl.load(
             vj_ptrs,
@@ -171,12 +165,7 @@ def jagged_dense_flash_attention_fwd_kernel(
     tl.store(lse_ptrs, lse_i, mask=(offs_t < T))
 
     # Write the output [BLOCK_T, BLOCK_D]
-    attn_out_ptrs = (
-        o_ptr
-        + pid_batch * stride_ob
-        + offs_t[:, None] * stride_ot
-        + offs_d[None, :] * stride_od
-    )
+    attn_out_ptrs = o_ptr + pid_batch * stride_ob + offs_t[:, None] * stride_ot + offs_d[None, :] * stride_od
     tl.store(attn_out_ptrs, oi, mask=((offs_t[:, None] < T) & (offs_d[None, :] < D)))
 
 
@@ -275,18 +264,8 @@ def _bwd_preprocess_do_o_dot(
     pid_b = tl.program_id(1)
     offs_d = tl.arange(0, BLOCK_D)
 
-    o_ptrs = (
-        o_ptr
-        + pid_b * stride_ob
-        + offs_t[:, None] * stride_ot
-        + offs_d[None, :] * stride_od
-    )
-    do_ptrs = (
-        do_ptr
-        + pid_b * stride_do_b
-        + offs_t[:, None] * stride_do_t
-        + offs_d[None, :] * stride_do_d
-    )
+    o_ptrs = o_ptr + pid_b * stride_ob + offs_t[:, None] * stride_ot + offs_d[None, :] * stride_od
+    do_ptrs = do_ptr + pid_b * stride_do_b + offs_t[:, None] * stride_do_t + offs_d[None, :] * stride_do_d
     o = tl.load(o_ptrs, mask=(offs_t[:, None] < T), other=0.0)
     do = tl.load(do_ptrs, mask=(offs_t[:, None] < T), other=0.0)
     delta = tl.sum(o * do, axis=1)
@@ -370,17 +349,11 @@ def _jagged_dense_flash_attention_bwd_dv_db_dq_kernel(
     offs_d = tl.arange(0, BLOCK_D)
     offs_t = tl.arange(0, BLOCK_T)
 
-    q_ptrs = (
-        q_start_ptr + offs_l_curr[:, None] * stride_ql + offs_d[None, :] * stride_qd
-    )
+    q_ptrs = q_start_ptr + offs_l_curr[:, None] * stride_ql + offs_d[None, :] * stride_qd
     k_ptrs = k_start_ptr + offs_d[:, None] * stride_kd + offs_t[None, :] * stride_kt
-    v_ptrs = (
-        v_start_ptr + offs_l_curr[:, None] * stride_vl + offs_d[None, :] * stride_vd
-    )
+    v_ptrs = v_start_ptr + offs_l_curr[:, None] * stride_vl + offs_d[None, :] * stride_vd
 
-    do_ptrs = (
-        do_start_ptr + offs_t[:, None] * stride_do_t + offs_d[None, :] * stride_do_d
-    )
+    do_ptrs = do_start_ptr + offs_t[:, None] * stride_do_t + offs_d[None, :] * stride_do_d
 
     dq = tl.zeros([BLOCK_L, BLOCK_D], dtype=tl.float32)
     dv = tl.zeros([BLOCK_L, BLOCK_D], dtype=tl.float32)
@@ -409,11 +382,7 @@ def _jagged_dense_flash_attention_bwd_dv_db_dq_kernel(
         # gemm [BLOCK_L, BLOCK_D] x [BLOCK_D, BLOCK_T] -> [BLOCK_L, BLOCK_T]
         qk += tl.dot(q, k, allow_tf32=allow_tf32)
 
-        ab_ptrs = (
-            ab_start_ptr
-            + offs_l_curr[:, None] * stride_ab_l
-            + offs_t_curr[None, :] * stride_ab_t
-        )
+        ab_ptrs = ab_start_ptr + offs_l_curr[:, None] * stride_ab_l + offs_t_curr[None, :] * stride_ab_t
 
         ab = tl.load(
             ab_ptrs,
@@ -428,9 +397,7 @@ def _jagged_dense_flash_attention_bwd_dv_db_dq_kernel(
         qk_mask = (offs_l_curr[:, None] < seqlen) & (offs_t_curr[None, :] < T)
         qk = tl.where(qk_mask, qk, float("-inf"))
 
-        lse_t = tl.load(
-            lse_ptrs + offs_t_curr, mask=(offs_t_curr < T), other=float("inf")
-        )
+        lse_t = tl.load(lse_ptrs + offs_t_curr, mask=(offs_t_curr < T), other=float("inf"))
         # Perform softmax
         p = tl.exp(qk - lse_t[None, :])
         p = tl.where(qk_mask, p, 0.0)
@@ -454,11 +421,7 @@ def _jagged_dense_flash_attention_bwd_dv_db_dq_kernel(
         ds = p * (dp - delta[None, :])
 
         # Save dbias = ds
-        dbias_ptrs = (
-            dbias_start_ptr
-            + offs_l_curr[:, None] * stride_db_l
-            + offs_t_curr[None, :] * stride_db_t
-        )
+        dbias_ptrs = dbias_start_ptr + offs_l_curr[:, None] * stride_db_l + offs_t_curr[None, :] * stride_db_t
         tl.store(
             dbias_ptrs,
             ds,
@@ -473,16 +436,8 @@ def _jagged_dense_flash_attention_bwd_dv_db_dq_kernel(
         do_ptrs += BLOCK_T * stride_do_t
         start_t += BLOCK_T
 
-    dq_ptrs = (
-        dq_start_ptr
-        + offs_l_curr[:, None] * stride_dq_l
-        + offs_d[None, :] * stride_dq_d
-    )
-    dv_ptrs = (
-        dv_start_ptr
-        + offs_l_curr[:, None] * stride_dv_l
-        + offs_d[None, :] * stride_dv_d
-    )
+    dq_ptrs = dq_start_ptr + offs_l_curr[:, None] * stride_dq_l + offs_d[None, :] * stride_dq_d
+    dv_ptrs = dv_start_ptr + offs_l_curr[:, None] * stride_dv_l + offs_d[None, :] * stride_dv_d
     tl.store(dq_ptrs, dq, mask=(offs_l_curr[:, None] < seqlen))
     tl.store(dv_ptrs, dv, mask=(offs_l_curr[:, None] < seqlen))
 
@@ -555,21 +510,11 @@ def _jagged_dense_flash_attention_bwd_dk_kernel(
     offs_t_curr = pid_t * BLOCK_T + tl.arange(0, BLOCK_T)
     offs_d = tl.arange(0, BLOCK_D)
 
-    k_ptrs = (
-        k_start_ptr + offs_d[:, None] * stride_kd + offs_t_curr[None, :] * stride_kt
-    )
+    k_ptrs = k_start_ptr + offs_d[:, None] * stride_kd + offs_t_curr[None, :] * stride_kt
 
-    do_ptrs = (
-        do_start_ptr
-        + offs_t_curr[:, None] * stride_do_t
-        + offs_d[None, :] * stride_do_d
-    )
+    do_ptrs = do_start_ptr + offs_t_curr[:, None] * stride_do_t + offs_d[None, :] * stride_do_d
 
-    dk_ptrs = (
-        dk_start_ptr
-        + offs_d[:, None] * stride_dk_d
-        + offs_t_curr[None, :] * stride_dk_t
-    )
+    dk_ptrs = dk_start_ptr + offs_d[:, None] * stride_dk_d + offs_t_curr[None, :] * stride_dk_t
 
     dk = tl.zeros([BLOCK_D, BLOCK_T], dtype=tl.float32)
 
@@ -585,9 +530,7 @@ def _jagged_dense_flash_attention_bwd_dk_kernel(
         offs_l_curr = start_l + tl.arange(0, BLOCK_L)
 
         # Load a block of q into [BLOCK_L, BLOCK_D]
-        q_ptrs = (
-            q_start_ptr + offs_l_curr[:, None] * stride_ql + offs_d[None, :] * stride_qd
-        )
+        q_ptrs = q_start_ptr + offs_l_curr[:, None] * stride_ql + offs_d[None, :] * stride_qd
 
         q = tl.load(
             q_ptrs,
@@ -595,9 +538,7 @@ def _jagged_dense_flash_attention_bwd_dk_kernel(
             other=0.0,
         )
 
-        v_ptrs = (
-            v_start_ptr + offs_l_curr[:, None] * stride_vl + offs_d[None, :] * stride_vd
-        )
+        v_ptrs = v_start_ptr + offs_l_curr[:, None] * stride_vl + offs_d[None, :] * stride_vd
 
         v = tl.load(v_ptrs, mask=(offs_l_curr[:, None] < seqlen), other=0.0)
 
@@ -605,15 +546,9 @@ def _jagged_dense_flash_attention_bwd_dk_kernel(
         # gemm [BLOCK_L, BLOCK_D] x [BLOCK_D, BLOCK_T] -> [BLOCK_L, BLOCK_T]
 
         qk = tl.dot(q, k, allow_tf32=allow_tf32)
-        qk = tl.where(
-            (offs_l_curr[:, None] < seqlen) & (offs_t_curr[None, :] < T), qk, 0.0
-        )
+        qk = tl.where((offs_l_curr[:, None] < seqlen) & (offs_t_curr[None, :] < T), qk, 0.0)
 
-        ab_ptrs = (
-            ab_start_ptr
-            + offs_l_curr[:, None] * stride_ab_l
-            + offs_t_curr[None, :] * stride_ab_t
-        )
+        ab_ptrs = ab_start_ptr + offs_l_curr[:, None] * stride_ab_l + offs_t_curr[None, :] * stride_ab_t
 
         ab = tl.load(
             ab_ptrs,
@@ -817,9 +752,7 @@ class JaggedDenseFlashAttention(torch.autograd.Function):
         max_seq_len: int,
         allow_tf32: bool = False,
     ) -> torch.Tensor:
-        attn_out, lse = jagged_dense_flash_attention_fwd(
-            Q, K, V, attn_bias, jagged_offsets, max_seq_len, allow_tf32
-        )
+        attn_out, lse = jagged_dense_flash_attention_fwd(Q, K, V, attn_bias, jagged_offsets, max_seq_len, allow_tf32)
         ctx.save_for_backward(Q, K, V, attn_bias, jagged_offsets, lse, attn_out)
         ctx.max_seq_len = max_seq_len
         ctx.allow_tf32 = allow_tf32
@@ -829,9 +762,7 @@ class JaggedDenseFlashAttention(torch.autograd.Function):
     # pyre-fixme
     def backward(
         ctx, do: torch.Tensor
-    ) -> tuple[
-        torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, None, None, None
-    ]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, None, None, None]:
         Q, K, V, attn_bias, jagged_offsets, lse, attn_out = ctx.saved_tensors
         max_seq_len = ctx.max_seq_len
         allow_tf32 = ctx.allow_tf32
@@ -874,6 +805,4 @@ def jagged_dense_flash_attention(
     attn_bias = expect_contiguous(attn_bias)
     offsets = expect_contiguous(offsets)
 
-    return JaggedDenseFlashAttention.apply(
-        q, k, v, attn_bias, offsets, max_seq_len, allow_tf32
-    )
+    return JaggedDenseFlashAttention.apply(q, k, v, attn_bias, offsets, max_seq_len, allow_tf32)

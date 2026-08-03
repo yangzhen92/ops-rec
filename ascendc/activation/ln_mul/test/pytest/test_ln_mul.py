@@ -17,7 +17,6 @@
 import sys
 import pytest
 import torch
-import torch_npu
 import numpy as np
 
 import ops_rec

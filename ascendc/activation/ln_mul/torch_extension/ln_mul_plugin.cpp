@@ -16,11 +16,9 @@ See the License for the specific language governing permissions and
 #include <torch/library.h>
 #include "aclnn_common.h"
 
-
 namespace {
 
-at::Tensor ln_mul_impl_npu(const at::Tensor &x, const at::Tensor &u,
-                           const at::Tensor &gamma, const at::Tensor &beta)
+at::Tensor ln_mul_impl_npu(const at::Tensor& x, const at::Tensor& u, const at::Tensor& gamma, const at::Tensor& beta)
 {
     TORCH_CHECK(x.scalar_type() == at::kFloat, "x must be float32");
     TORCH_CHECK(u.scalar_type() == at::kFloat, "u must be float32");
@@ -43,7 +41,7 @@ at::Tensor ln_mul_impl_npu(const at::Tensor &x, const at::Tensor &u,
     return y;
 }
 
-} // anonymous namespace
+}  // anonymous namespace
 
 TORCH_LIBRARY_FRAGMENT(ops_rec, m)
 {
@@ -57,8 +55,7 @@ TORCH_LIBRARY_IMPL(ops_rec, PrivateUse1, m)
 
 namespace {
 
-at::Tensor ln_mul_meta(const at::Tensor &x, const at::Tensor &u,
-                       const at::Tensor &gamma, const at::Tensor &beta)
+at::Tensor ln_mul_meta(const at::Tensor& x, const at::Tensor& u, const at::Tensor& gamma, const at::Tensor& beta)
 {
     TORCH_CHECK(x.dim() == 2, "x must be 2D");
     TORCH_CHECK(u.dim() == 2, "u must be 2D");
@@ -68,7 +65,7 @@ at::Tensor ln_mul_meta(const at::Tensor &x, const at::Tensor &u,
     return at::empty_like(x, x.options());
 }
 
-} // anonymous namespace
+}  // anonymous namespace
 
 TORCH_LIBRARY_IMPL(ops_rec, Meta, m)
 {

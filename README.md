@@ -18,26 +18,28 @@ ops_rec.ascendc.activation.ln_mul(x, u, gamma, beta)
 ```
 
 ## 目录结构
-
-```
-ascendc/                          # AscendC 算子源码 (CMake 编译单元)
-  <group>/                        # 算子分组，如 activation、attention
-    <vendor>/                     # 算子 vendor（单算子或多算子集合）
-      op_host/                    # OpDef 注册 + Tiling + InferShape
-      op_kernel/                  # AscendC kernel 实现
-      torch_extension/            # TORCH_LIBRARY 注册（可选）
-      examples/                   # aclnn C++ / torch Python 调用示例
-
-ops_rec/                          # Python 包
-  __init__.py                     # 入口：SOC 检测 + ASCEND_CUSTOM_OPP_PATH + .so 加载
-  ascendc/                        # AscendC 算子 Python 封装（代理到 torch.ops.ops_rec）
-  triton/                         # Triton 算子（纯 Python）
-  experimental/                   # 实验性算子
-  opp/                            # 编译产物（按 SOC 分目录）
-
-cmake/                            # CMake 模块与编译配置
-scripts/                          # 构建辅助脚本
-docs/                             # 设计文档和指南
+```text
+ops-rec
+├── ascendc/                        ← AscendC 算子源码（CMake 编译单元）
+│   ├── activation/                 activation类算子
+│   │   └── ln_mul/                 单算子 vendor
+│   ├── sequence/                   sequence 类算子(预留，revers_sequence)
+│   ├── attention/                  attention 类算子（预留，hstu，fa）
+│   └── common/                     共享头文件（log, utils）
+├── triton/                         ← Triton算子源码（预留、无需编译）
+├── experimental/                   ← 实验性算子源码（内按后端分组）
+│   ├── ascendc/                    实验性 AscendC 算子（预留）
+│   └── triton/                     实验性 Triton 算子
+│
+├── cmake/                           ← CMake 编译配置
+├── scripts/                         ← 构建辅助脚本
+├── docs/                            ← 设计文档和指南
+├── tests/                           ← Python 集成测试
+├── ops_rec/                         ← Python 包（whl 发布产物）
+│
+├── build.sh                         ← 统一构建入口脚本
+├── setup.py                         ← scikit-build 打包配置
+└── CMakeLists.txt                   ← 根 CMake 构建文件
 ```
 
 ## 环境部署

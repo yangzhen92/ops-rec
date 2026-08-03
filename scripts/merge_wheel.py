@@ -245,7 +245,9 @@ def _generate_metadata(version: str) -> str:
 
 def _generate_wheel_meta(py_tag: str, abi_tag: str, plat_tag: str) -> str:
     """生成 Wheel 配置文件内容模板"""
-    return f"Wheel-Version: 1.0\nGenerator: ops-rec build.sh\nRoot-Is-Purelib: false\nTag: {py_tag}-{abi_tag}-{plat_tag}\n"
+    return (
+        f"Wheel-Version: 1.0\nGenerator: ops-rec build.sh\nRoot-Is-Purelib: false\nTag: {py_tag}-{abi_tag}-{plat_tag}\n"
+    )
 
 
 if __name__ == "__main__":

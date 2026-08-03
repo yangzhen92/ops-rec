@@ -244,7 +244,5 @@ def autotune_max_seq_len(runtime_max_seq_len: int) -> int:
         return prev_power_of_2(runtime_max_seq_len)
     else:
         max_seq_len, l2_max_seq_len = get_static_max_seq_lens()
-        assert (
-            max_seq_len > 0 and l2_max_seq_len > 0
-        ), "max_seq_len and l2_max_seq_len must be greater than 0"
+        assert max_seq_len > 0 and l2_max_seq_len > 0, "max_seq_len and l2_max_seq_len must be greater than 0"
         return l2_max_seq_len if runtime_max_seq_len <= l2_max_seq_len else max_seq_len

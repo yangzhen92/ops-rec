@@ -360,7 +360,7 @@ typedef int (*InitHugeMemThreadLocal)(void*, bool);
 typedef void (*UnInitHugeMemThreadLocal)(void*, bool);
 typedef void (*ReleaseHugeMem)(void*, bool);
 
-#define ACLNN_CMD(aclnn_api, ...)                                                                                \
+#define ACLNN_CMD(aclnn_api, ...)                                                                                    \
     do {                                                                                                            \
         static const auto getWorkspaceSizeFuncAddr = GetOpApiFuncAddr(#aclnn_api "GetWorkspaceSize");               \
         static const auto opApiFuncAddr = GetOpApiFuncAddr(#aclnn_api);                                             \

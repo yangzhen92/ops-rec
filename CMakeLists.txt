@@ -16,7 +16,6 @@
 #         ...
 cmake_minimum_required(VERSION 3.18)
 project(ops_rec LANGUAGES CXX)
-project(ops_rec LANGUAGES CXX)
 
 # ---------------------------------------------------------------------------
 # SOC 配置 — 从 OPS_REC_SOC_VARIANT 推导芯片宏

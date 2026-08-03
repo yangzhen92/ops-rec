@@ -6,7 +6,7 @@
 
 构建流程核心链路：
 
-```
+```text
 build_single_soc()  ← 对每个 SOC 变体依次执行
   └─ pip wheel . --no-build-isolation
        └─ skbuild

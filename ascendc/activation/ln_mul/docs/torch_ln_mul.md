@@ -14,7 +14,7 @@
 
 计算公式：
 
-```
+```text
 output = LayerNorm(X) * U
 LayerNorm(X) = rstd * (x - mean) * gamma + beta
 ```

@@ -14,7 +14,7 @@
 
 计算公式：
 
-```
+```text
 output = LayerNorm(X) * U
 LayerNorm(X) = rstd * (x - mean) * gamma + beta
 ```
@@ -43,7 +43,7 @@ LayerNorm(X) = rstd * (x - mean) * gamma + beta
 
 ## 调用示例
 
-- [aclnn 调用示例](./examples/test_aclnn_ln_mul.cpp)
-- [torch 调用示例](./examples/test_torch_ln_mul.py)
+- [aclnn 调用示例](./examples/aclnn/test_aclnn_ln_mul.cpp)
+- [torch 调用示例](./examples/torch/test_torch_ln_mul.py)
 - [aclnn 接口文档](./docs/aclnn_ln_mul.md)
 - [torch 接口文档](./docs/torch_ln_mul.md)

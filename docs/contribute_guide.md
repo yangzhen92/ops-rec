@@ -12,7 +12,7 @@
 
 ### 目录结构约定
 
-```
+```text
 ascendc/                         ← C++ 算子源码（CMake 编译单元）
   <group>/                           ← 功能分组（activation / attention / embedding ...）
     <vendor>/                        ← vendor 名，也是 CANN package 名
@@ -35,7 +35,7 @@ ascendc/                         ← C++ 算子源码（CMake 编译单元）
 
 目录结构：
 
-```
+```text
 ascendc/activation/ln_mul/
   op_host/ln_mul.cpp               → OP_ADD(LnMul);
   op_host/ln_mul_tiling.h
@@ -63,7 +63,7 @@ ops_rec.ascendc.activation.ln_mul(x, u, gamma, beta)
 
 目录结构：
 
-```
+```text
 ascendc/attention/hstu_v1/
   op_host/
     hstu_dense_forward.cpp          → OP_ADD(HstuDenseForward);
@@ -179,7 +179,7 @@ bash run_examples.sh --type all --ops <vendor>   # aclnn + torch
 
 每个算子应包含：
 
-```
+```text
 ascendc/<group>/<vendor>/
   README.md                     ← 算子使用入口（产品支持、功能、参数、约束）
   docs/
@@ -193,7 +193,7 @@ ascendc/<group>/<vendor>/
 
 在 `test/pytest/` 下编写 pytest 用例：
 
-```
+```text
 ascendc/<group>/<vendor>/test/pytest/
   pytest.ini                    ← 测试标记配置
   test_<vendor>.py              ← 测试用例
@@ -224,7 +224,7 @@ cd ascendc/<group>/<vendor>/test/pytest && pytest test_*.py -x -v
 
 ### 目录结构
 
-```
+```text
 experimental/triton/              ← 实验性 Triton 算子
   <group>/                            ← 功能分组
     __init__.py
@@ -248,7 +248,7 @@ mkdir -p experimental/triton/<group>
 
 在 `experimental/triton/<group>/` 下创建算子实现文件：
 
-```
+```text
 experimental/triton/<group>/
   __init__.py                     ← 自动发现子模块（pkgutil.iter_modules）
   triton_<feature>.py             ← Triton kernel 实现

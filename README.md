@@ -19,7 +19,7 @@ ops_rec.ascendc.activation.ln_mul(x, u, gamma, beta)
 
 ## 目录结构
 
-```
+```text
 ascendc/                          # AscendC 算子源码 (CMake 编译单元)
   <group>/                        # 算子分组，如 activation、attention
     <vendor>/                     # 算子 vendor（单算子或多算子集合）

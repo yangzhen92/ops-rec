@@ -19,7 +19,7 @@ See the License for the specific language governing permissions and
 #include <cstddef>
 #include <limits>
 
-int64_t GetBatchSizeFromJaggedOffset(const int64_t* seqOffsetData, size_t seqOffsetLens)
+inline int64_t GetBatchSizeFromJaggedOffset(const int64_t* seqOffsetData, size_t seqOffsetLens)
 {
     if (seqOffsetData == nullptr || seqOffsetLens <= 0) {
         return 0;

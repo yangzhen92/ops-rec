@@ -16,6 +16,7 @@ See the License for the specific language governing permissions and
 #define MATMUL_CHECK_H
 
 #include <cstdint>
+#include <limits>
 #include "register/tilingdata_base.h"
 #include "tiling/tiling_api.h"
 #include "ops_log.h"

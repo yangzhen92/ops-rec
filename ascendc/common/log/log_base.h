@@ -20,9 +20,14 @@ See the License for the specific language governing permissions and
 #include <cstdint>
 #include <sstream>
 #include <unistd.h>
+#include <type_traits>
 #include <sys/syscall.h>
 #include "securec.h"
 #include "base/err_msg.h"
+#include "exe_graph/runtime/infer_datatype_context.h"
+#include "exe_graph/runtime/tiling_context.h"
+#include "exe_graph/runtime/tiling_parse_context.h"
+#include "exe_graph/runtime/infer_shape_context.h"
 #if __has_include("toolchain/slog.h")
 #include "toolchain/slog.h"
 #elif __has_include("base/dlog_pub.h")
@@ -118,8 +123,9 @@ std::string Shape2String(const T& shape)
 
 // 使用本宏前需预定义标识子模块名称的 OPS_UTILS_LOG_SUB_MOD_NAME
 // 如: #define OPS_UTILS_LOG_SUB_MOD_NAME "OP_TILING" 或通过 CMake 传递预定义宏
-
+#ifndef OPS_UTILS_LOG_SUB_MOD_NAME
 #define OPS_UTILS_LOG_SUB_MOD_NAME "OP_TILING"
+#endif
 #define OPS_UTILS_LOG_PACKAGE_TYPE "MXREC"
 
 #define OPS_LOG_STUB(MOD_ID, LOG_LEVEL, OPS_DESC, FMT, ...)                                                       \

@@ -17,6 +17,8 @@
 #define CANN_OPS_REC_ACLNN_COMMON_H
 
 #include <torch_npu/csrc/framework/utils/OpAdapter.h>
+#include <tuple>
+#include <initializer_list>
 #include <dlfcn.h>
 #include <vector>
 #include <string>
@@ -166,10 +168,17 @@ inline std::vector<std::string> GetCustLibPath()
 
     std::ifstream ifs(vendorConfigFile);
     std::string line;
+    bool found = false;
     while (std::getline(ifs, line)) {
-        if (line.find("load_priority") == 0) {
+        if (line.find("load_priority=") == 0) {
+            found = true;
             break;
         }
+    }
+
+    if (!found) {
+        ASCEND_LOGW("config.ini %s missing 'load_priority=' entry.", vendorConfigFile.c_str());
+        return std::vector<std::string>();
     }
 
     std::string head = "load_priority=";
@@ -360,7 +369,7 @@ typedef int (*InitHugeMemThreadLocal)(void*, bool);
 typedef void (*UnInitHugeMemThreadLocal)(void*, bool);
 typedef void (*ReleaseHugeMem)(void*, bool);
 
-#define ACLNN_CMD(aclnn_api, ...)                                                                                    \
+#define ACLNN_CMD(aclnn_api, ...)                                                                                   \
     do {                                                                                                            \
         static const auto getWorkspaceSizeFuncAddr = GetOpApiFuncAddr(#aclnn_api "GetWorkspaceSize");               \
         static const auto opApiFuncAddr = GetOpApiFuncAddr(#aclnn_api);                                             \
@@ -396,9 +405,9 @@ typedef void (*ReleaseHugeMem)(void*, bool);
             typedef int (*OpApiFunc)(void*, uint64_t, aclOpExecutor*, const aclrtStream);                           \
             OpApiFunc opApiFunc = reinterpret_cast<OpApiFunc>(opApiFuncAddr);                                       \
             auto api_ret = opApiFunc(workspace_addr, workspace_size, executor, acl_stream);                         \
-            TORCH_CHECK(api_ret == 0, "call " #aclnn_api " failed, detail:", aclGetRecentErrMsg());                 \
             ReleaseConvertTypes(converted_params);                                                                  \
             ReleaseHugeMem releaseMemFunc = reinterpret_cast<ReleaseHugeMem>(releaseMemAddr);                       \
+            TORCH_CHECK(api_ret == 0, "call " #aclnn_api " failed, detail:", aclGetRecentErrMsg());                 \
             if (releaseMemFunc) {                                                                                   \
                 releaseMemFunc(nullptr, false);                                                                     \
             }                                                                                                       \

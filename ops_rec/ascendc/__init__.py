@@ -19,13 +19,20 @@
 #   from ops_rec.ascendc.activation import ln_mul
 #   ops_rec.ascendc.activation.ln_mul(x, u, gamma, beta)
 
+# pylint: disable=duplicate-code
 import importlib
+import logging
 import pkgutil
 
 __all__ = []
 
 for _, name, is_pkg in pkgutil.iter_modules(__path__):
-    if is_pkg:
+    if not is_pkg:
+        continue
+    try:
         mod = importlib.import_module('.' + name, __package__)
-        globals()[name] = mod
-        __all__.append(name)
+    except Exception:
+        logging.warning("ops_rec.ascendc: failed to import subpackage '%s', skipping", name)
+        continue
+    globals()[name] = mod
+    __all__.append(name)

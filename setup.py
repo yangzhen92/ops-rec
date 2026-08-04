@@ -98,13 +98,21 @@ def cmake_args():
 
     # 从环境变量传递 OPS_REC_SOC_VARIANT 到 cmake（多 SOC 构建支持）
     soc_variant = os.environ.get("OPS_REC_SOC_VARIANT", "")
-    if soc_variant:
-        args.append(f"-DOPS_REC_SOC_VARIANT={soc_variant}")
-    else:
-        # 兼容旧式 ASCEND_COMPUTE_UNIT 环境变量
+    if not soc_variant:
+        _compute_unit_map = {
+            "ascend950": "atlas_950",
+            "ascend910b": "atlas_a2",
+            "ascend910_93": "atlas_a3",
+        }
         ascend_compute_unit = os.environ.get("ASCEND_COMPUTE_UNIT", "")
         if ascend_compute_unit:
-            args.append(f"-DASCEND_COMPUTE_UNIT={ascend_compute_unit}")
+            mapped = _compute_unit_map.get(ascend_compute_unit)
+            if mapped:
+                soc_variant = mapped
+            else:
+                print(f"[WARN] Unknown ASCEND_COMPUTE_UNIT={ascend_compute_unit}, falling back to default SOC variant")
+    if soc_variant:
+        args.append(f"-DOPS_REC_SOC_VARIANT={soc_variant}")
 
     return args
 

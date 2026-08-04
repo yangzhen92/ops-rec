@@ -103,6 +103,18 @@ unset _ops_rec_opp_path
 # ---------------------------------------------------------------------------
 # 工具函数：动态收集需要测试的算子列表
 # ---------------------------------------------------------------------------
+
+# example 文件路径查找：命名约定 test_<kind>_<op>.<ext> under examples/<kind>/<op>/
+_example_paths() {
+    find "${SCRIPT_DIR}/ascendc" \
+        -path "*/${2}/examples/${1}/test_${1}_*${3}" 2>/dev/null | sort
+}
+
+# 从 example 路径里提取 op 名（取路径里 <op>/examples/<kind>/test_<kind>_<op>.<ext> 的 op 段）
+_op_from_example_path() {
+    sed -E 's|.*/test_(aclnn|torch)_([^/]+)\.[^.]+$|\2|'
+}
+
 collect_ops() {
     if [ -n "${EXAMPLE_OPS}" ]; then
         IFS=',' read -ra parts <<< "${EXAMPLE_OPS}"
@@ -110,16 +122,14 @@ collect_ops() {
             echo "$(echo "${op}" | xargs)"
         done
     else
-        # 根据 --type 从 ascendc/examples 目录发现算子
-        (
+        {
             if [ "${EXAMPLE_TYPE}" = "aclnn" ] || [ "${EXAMPLE_TYPE}" = "all" ]; then
-                find "${SCRIPT_DIR}/ascendc" -type f -name "test_aclnn_*.cpp" 2>/dev/null
+                _example_paths aclnn '*' .cpp
             fi
             if [ "${EXAMPLE_TYPE}" = "torch" ] || [ "${EXAMPLE_TYPE}" = "all" ]; then
-                find "${SCRIPT_DIR}/ascendc" -type f -name "test_torch_*.py" 2>/dev/null
+                _example_paths torch '*' .py
             fi
-        ) | sed 's/.*[/]test_[^_]*_//; s/[.].*//' \
-          | sort -u
+        } | _op_from_example_path | sort -u
     fi
 }
 
@@ -134,19 +144,14 @@ run_aclnn_examples() {
 
     local run_tmp="${SCRIPT_DIR}/build/run_tmp"
 
-    # 仅在开始时清理并准备目录
-    rm -rf "${run_tmp}"
-    mkdir -p "${run_tmp}"
+    rm -rf "${run_tmp}" && mkdir -p "${run_tmp}"
 
-    local ops_rec_pkg
-    ops_rec_pkg=$(python3 -c "import ops_rec; import os; print(os.path.dirname(ops_rec.__file__))")
+    local ops_rec_pkg=$(python3 -c "import ops_rec; import os; print(os.path.dirname(ops_rec.__file__))")
 
     # 提取算子 API 产物
     python3 "${SCRIPT_DIR}/scripts/extract_op_api.py" \
         --pkg-dir "${ops_rec_pkg}" \
         --run-tmp "${run_tmp}"
-
-    echo ""
 
     # 自动搜寻系统中的 CANN 头文件与动态库路径
     local arch_suffix
@@ -157,9 +162,8 @@ run_aclnn_examples() {
 
     local ascend_home="${ASCEND_HOME_PATH:-/usr/local/Ascend/latest}"
 
-    local acl_include
-    acl_include=$(find "${ascend_home}" -name "acl.h" -path "*/include/acl/*.h" \
-        -not -path "*/tools/*" 2>/dev/null | head -1)
+    local acl_include=$(find "${ascend_home}" -name "acl.h" -path "*/include/acl/*.h" \
+                        -not -path "*/tools/*" 2>/dev/null | head -1)
     if [ -z "${acl_include}" ]; then
         acl_include="${ascend_home}/${arch_suffix}/include"
     else
@@ -194,7 +198,7 @@ run_aclnn_examples() {
         local example_files=()
         while IFS= read -r f; do
             [ -n "$f" ] && example_files+=("$f")
-        done < <(find "${SCRIPT_DIR}/ascendc" -path "*/${op}/examples/aclnn/test_aclnn_${op}*.cpp" 2>/dev/null | sort)
+        done < <(_example_paths aclnn "${op}" .cpp)
 
         if [ ${#example_files[@]} -eq 0 ]; then
             echo "[WARN] No aclnn example found for operator: ${op}, skipping."
@@ -244,7 +248,7 @@ run_torch_examples() {
         local example_files=()
         while IFS= read -r f; do
             [ -n "$f" ] && example_files+=("$f")
-        done < <(find "${SCRIPT_DIR}/ascendc" -path "*/${op}/examples/torch/test_torch_${op}*.py" 2>/dev/null | sort)
+        done < <(_example_paths torch "${op}" .py)
 
         if [ ${#example_files[@]} -eq 0 ]; then
             echo "[WARN] No torch example found for operator: ${op}, skipping."

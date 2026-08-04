@@ -47,14 +47,14 @@ endif()
 # ---------------------------------------------------------------------------
 # CANN include/lib 路径
 # ---------------------------------------------------------------------------
-set(CANN_INCLUDE_DIR "${ASCEND_HOME_PATH}/include" CACHE PATH "CANN include path")
-set(CANN_INCLUDE_EXTERNAL_DIR "${ASCEND_HOME_PATH}/include/external" CACHE PATH "CANN external include path")
-set(CANN_LIB_DIR "${ASCEND_HOME_PATH}/lib64" CACHE PATH "CANN lib path")
-
 set(CANN_ARCH_INCLUDE_DIR "${ASCEND_HOME_PATH}/${CMAKE_SYSTEM_PROCESSOR}-linux/include")
 if(IS_DIRECTORY "${CANN_ARCH_INCLUDE_DIR}")
-    set(CANN_INCLUDE_DIR "${CANN_ARCH_INCLUDE_DIR}" CACHE PATH "CANN arch-specific include path")
+    set(CANN_INCLUDE_DIR "${CANN_ARCH_INCLUDE_DIR}" CACHE PATH "CANN include path")
+else()
+    set(CANN_INCLUDE_DIR "${ASCEND_HOME_PATH}/include" CACHE PATH "CANN include path")
 endif()
+set(CANN_INCLUDE_EXTERNAL_DIR "${ASCEND_HOME_PATH}/include/external" CACHE PATH "CANN external include path")
+set(CANN_LIB_DIR "${ASCEND_HOME_PATH}/lib64" CACHE PATH "CANN lib path")
 
 message(STATUS "CANN_INCLUDE_DIR=${CANN_INCLUDE_DIR}")
 message(STATUS "CANN_LIB_DIR=${CANN_LIB_DIR}")

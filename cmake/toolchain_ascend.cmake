@@ -8,7 +8,7 @@
 # ---------------------------------------------------------------------------
 # ASCEND_HOME_PATH
 # ---------------------------------------------------------------------------
-if(NOT DEFINED ENV{ASCEND_HOME_PATH})
+if(NOT DEFINED ENV{ASCEND_HOME_PATH} OR "$ENV{ASCEND_HOME_PATH}" STREQUAL "")
     message(FATAL_ERROR "ASCEND_HOME_PATH not set. Please set it to CANN install path (e.g. /usr/local/Ascend/latest)")
 endif()
 

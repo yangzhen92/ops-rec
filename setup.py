@@ -24,6 +24,7 @@ import setuptools
 from setuptools.command.build_py import build_py as _build_py
 from skbuild import setup as skbuild_setup
 
+
 class _silent_build_py(_build_py):
     def analyze_manifest(self):
         import setuptools.command.build_py as bpm
@@ -36,20 +37,24 @@ class _silent_build_py(_build_py):
             if old is not None:
                 bpm._IncludePackageDataAbuse.warn = old
 
+
 def _get_torch_version():
     import torch
 
     return torch.__version__.split("+")[0]
+
 
 def _get_torch_prefix():
     import torch
 
     return os.path.dirname(torch.__file__)
 
+
 def _get_cxx11_abi():
     import torch
 
     return int(torch._C._GLIBCXX_USE_CXX11_ABI)
+
 
 def cmake_args():
     torch_root = _get_torch_prefix()
@@ -102,6 +107,7 @@ def cmake_args():
             args.append(f"-DASCEND_COMPUTE_UNIT={ascend_compute_unit}")
 
     return args
+
 
 skbuild_setup(
     cmdclass={"build_py": _silent_build_py},

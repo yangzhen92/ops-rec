@@ -24,6 +24,10 @@ while [ $# -gt 0 ]; do
             shift
             ;;
         -j)
+            if [ -z "${2:-}" ]; then
+                echo "[ERROR] -j requires a thread number (e.g. -j16)" >&2
+                exit 2
+            fi
             JOBS="$2"
             shift 2
             ;;
@@ -32,6 +36,10 @@ while [ $# -gt 0 ]; do
             shift
             ;;
         --socs)
+            if [ -z "${2:-}" ]; then
+                echo "[ERROR] --socs requires a value (e.g. --socs atlas_950)" >&2
+                exit 2
+            fi
             SOCS="$2"
             shift 2
             ;;

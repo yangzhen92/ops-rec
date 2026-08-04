@@ -21,18 +21,34 @@ EXAMPLE_OPS=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --type)
+            if [ -z "${2:-}" ]; then
+                echo "[ERROR] --type requires a value (aclnn | torch | all)" >&2
+                exit 2
+            fi
             EXAMPLE_TYPE="$2"
             shift 2
             ;;
         --type=*)
+            if [ "${1}" = "--type=" ]; then
+                echo "[ERROR] --type= requires a value (aclnn | torch | all)" >&2
+                exit 2
+            fi
             EXAMPLE_TYPE="${1#*=}"
             shift
             ;;
         --ops)
+            if [ -z "${2:-}" ]; then
+                echo "[ERROR] --ops requires a value (comma-separated operator names)" >&2
+                exit 2
+            fi
             EXAMPLE_OPS="$2"
             shift 2
             ;;
         --ops=*)
+            if [ "${1}" = "--ops=" ]; then
+                echo "[ERROR] --ops= requires a value (comma-separated operator names)" >&2
+                exit 2
+            fi
             EXAMPLE_OPS="${1#*=}"
             shift
             ;;
@@ -58,12 +74,32 @@ done
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" || exit 1
 
 # ---------------------------------------------------------------------------
-# 依赖检查：验证 ops_rec 是否已正确安装
+# 依赖检查：先确认 ops_rec 已安装，再把它的 ASCEND_CUSTOM_OPP_PATH
+# export 出来（后面所有用到它的地方直接读 $ASCEND_CUSTOM_OPP_PATH 即可）
 # ---------------------------------------------------------------------------
+if [ ! -d "${SCRIPT_DIR}/build" ]; then
+    mkdir -p "${SCRIPT_DIR}/build"
+fi
+
+cd "${SCRIPT_DIR}/build" || exit 1
+
 if ! python3 -c "import ops_rec" 2>/dev/null; then
-    echo "[ERROR] ops_rec is not installed. Run 'bash build.sh --install' first."
+    echo "[ERROR] ops_rec is not installed. Run 'bash build.sh --install' first." >&2
     exit 1
 fi
+
+_ops_rec_opp_path=$(python3 -c '
+    import sys, os, ops_rec
+    v = os.environ.get("ASCEND_CUSTOM_OPP_PATH", "")
+    sys.exit("[ERROR] ASCEND_CUSTOM_OPP_PATH not set by ops_rec; check ops_rec.__init__ SOC detection.") if not v else print(v)
+')
+if [ -z "${_ops_rec_opp_path}" ]; then
+    # Step 1 已通过 import 检查，所以这里空说明 SOC 检测没设上变量
+    echo "[ERROR] ASCEND_CUSTOM_OPP_PATH not set by ops_rec; check ops_rec.__init__ SOC detection." >&2
+    exit 1
+fi
+export ASCEND_CUSTOM_OPP_PATH="${_ops_rec_opp_path}"
+unset _ops_rec_opp_path
 
 # ---------------------------------------------------------------------------
 # 工具函数：动态收集需要测试的算子列表
@@ -104,16 +140,12 @@ run_aclnn_examples() {
     mkdir -p "${run_tmp}"
 
     local ops_rec_pkg
-    ops_rec_pkg=$(mkdir -p "${SCRIPT_DIR}/build" && cd "${SCRIPT_DIR}/build" && python3 -c "import ops_rec; import os; print(os.path.dirname(ops_rec.__file__))")
+    ops_rec_pkg=$(python3 -c "import ops_rec; import os; print(os.path.dirname(ops_rec.__file__))")
 
     # 提取算子 API 产物
     python3 "${SCRIPT_DIR}/scripts/extract_op_api.py" \
         --pkg-dir "${ops_rec_pkg}" \
         --run-tmp "${run_tmp}"
-
-    # 获取 ops_rec 设置的 ASCEND_CUSTOM_OPP_PATH（cd build/ 避免源码目录遮蔽 whl）
-    local ascend_opp_path
-    ascend_opp_path=$(cd "${SCRIPT_DIR}/build" && python3 -c "import ops_rec; import os; print(os.environ['ASCEND_CUSTOM_OPP_PATH'])")
 
     echo ""
 
@@ -145,13 +177,12 @@ run_aclnn_examples() {
         ascend_lib=$(dirname "${ascend_lib}")
     fi
 
-    # aarch64 平台可能有额外的 ${arch_suffix}/lib64 依赖（如 libascend_hal.so）
     local ascend_arch_lib="${ascend_home}/${arch_suffix}/lib64"
     if [ -d "${ascend_arch_lib}" ] && [ "${ascend_lib}" != "${ascend_arch_lib}" ]; then
         ascend_lib_extra="${ascend_arch_lib}"
     fi
 
-    # 聚合所有厂商目录的 include 与 lib 路径
+    # 聚合所有vendor目录的 include 与 lib 路径
     local all_include_dirs=""
     local all_lib_dirs=""
     for vd in "${run_tmp}"/*/; do
@@ -192,7 +223,6 @@ run_aclnn_examples() {
                 -o "${example_bin}"
 
             echo "[INFO] Running aclnn example: ${example_name}..."
-            ASCEND_CUSTOM_OPP_PATH="${ascend_opp_path}" \
             LD_LIBRARY_PATH="${run_lib_path}:${LD_LIBRARY_PATH:-}" \
             "${example_bin}"
 
@@ -227,7 +257,7 @@ run_torch_examples() {
             example_name=$(basename "${example_file}" .py)
 
             echo "[INFO] Running torch example: ${example_name} (${op})..."
-            mkdir -p "${SCRIPT_DIR}/build" && cd "${SCRIPT_DIR}/build" && python3 "${example_file}"
+            python3 "${example_file}"
 
             echo "[INFO] [PASSED] ${example_name}"
             echo ""

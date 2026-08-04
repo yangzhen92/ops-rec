@@ -18,12 +18,35 @@
 
 Usage:
     python3 scripts/extract_op_api.py --pkg-dir <site-packages/ops_rec> --run-tmp <dir>
+
+Call hierarchy (top to bottom):
+    main                ← argparse + 分派给 extract_op_api
+        extract_op_api   ← 业务：扫描 ops_rec 包、复制 op_api 产物
+            _detect_soc_version, _exit_error   ← 业务依赖
 """
 
 import argparse
+import logging
 import os
 import shutil
 import sys
+import traceback
+
+
+def _exit_error(msg: str, code: int = 1) -> None:
+    """统一错误出口：前缀 [ERROR]，写 stderr，干净退出。"""
+    print(f"[ERROR] {msg}", file=sys.stderr)
+    sys.exit(code)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Extract op_api from installed ops_rec package.")
+    parser.add_argument("--pkg-dir", required=True, help="Path to ops_rec package directory in site-packages.")
+    parser.add_argument("--run-tmp", required=True, help="Path to run_tmp output directory.")
+    args = parser.parse_args()
+
+    os.makedirs(args.run_tmp, exist_ok=True)
+    extract_op_api(args.pkg_dir, args.run_tmp)
 
 
 def _detect_soc_version() -> str | None:
@@ -33,6 +56,7 @@ def _detect_soc_version() -> str | None:
 
         soc = acl.get_soc_name()
     except Exception:
+        logging.debug("acl.get_soc_name() unavailable, trying no path")
         return None
 
     if soc.startswith("Ascend950"):
@@ -41,24 +65,40 @@ def _detect_soc_version() -> str | None:
         return "atlas_a2"
     if soc.startswith("Ascend910_93"):
         return "atlas_a3"
+    logging.debug("acl.get_soc_name returned unrecognized SoC: %s", soc)
     return None
 
 
 def extract_op_api(pkg_dir: str, run_tmp_dir: str) -> None:
     print(f"[INFO] Using ops_rec from {pkg_dir}")
 
+    if not os.path.isdir(pkg_dir):
+        _exit_error(f"--pkg-dir not found or not a directory: {pkg_dir}")
+
     # Determine SOC variant via torch_npu SOC detection
     opp_root = os.path.join(pkg_dir, "opp")
+    if not os.path.isdir(opp_root):
+        _exit_error(
+            f"ops_rec package has no opp/ subdir: {pkg_dir} "
+            "(is the package properly installed with --install?)"
+        )
+
     soc = _detect_soc_version()
-    if not soc or not os.path.isdir(os.path.join(opp_root, soc)):
-        print(f"[ERROR] Failed to detect SOC variant or variant dir not found under {opp_root}", file=sys.stderr)
-        sys.exit(1)
+    if not soc:
+        _exit_error(f"failed to detect SOC variant (acl.get_soc_name returned unrecognized SoC)")
+
+    variant_dir = os.path.join(opp_root, soc)
+    if not os.path.isdir(variant_dir):
+        _exit_error(
+            f"variant dir not found under {opp_root}: expected {variant_dir} "
+            f"(detected soc={soc!r})"
+        )
 
     print(f"[INFO] Detected SOC variant: {soc}")
 
-    vendors_dir = os.path.join(opp_root, soc, "vendors")
+    vendors_dir = os.path.join(variant_dir, "vendors")
     if not os.path.isdir(vendors_dir):
-        print(f"[WARN] vendors dir not found: {vendors_dir}")
+        print(f"[WARN] vendors dir not found: {vendors_dir}; nothing to extract")
         return
 
     for vname in os.listdir(vendors_dir):
@@ -77,10 +117,13 @@ def extract_op_api(pkg_dir: str, run_tmp_dir: str) -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Extract op_api from installed ops_rec package.")
-    parser.add_argument("--pkg-dir", required=True, help="Path to ops_rec package directory in site-packages.")
-    parser.add_argument("--run-tmp", required=True, help="Path to run_tmp output directory.")
-    args = parser.parse_args()
-
-    os.makedirs(args.run_tmp, exist_ok=True)
-    extract_op_api(args.pkg_dir, args.run_tmp)
+    try:
+        main()
+    except SystemExit:
+        # argparse / 主动 _exit_error() 的，正常退出
+        raise
+    except FileNotFoundError as exc:
+        _exit_error(f"file not found: {exc.filename} ({exc})")
+    except Exception:
+        traceback.print_exc()
+        _exit_error("extract_op_api failed; see traceback above")

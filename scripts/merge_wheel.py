@@ -19,6 +19,15 @@
 Usage:
     python3 scripts/merge_wheel.py --src <whl_path> --soc <variant> --merge-dir <dir>
     python3 scripts/merge_wheel.py --merge-dir <dir> --build-final --out-dir <out_dir>
+
+Call hierarchy (top to bottom):
+    main / _main           ← argparse + 分派到业务方法
+        build_final_wheel  ← --build-final 分支
+        merge_single       ← 默认分支
+
+    _extract_and_align_data, _detect_version, _write_record  ← 业务方法依赖
+    _skip_item, _generate_metadata, _generate_wheel_meta, _python_tag,
+    _abi_tag, _platform_tag                                  ← 业务方法的辅助
 """
 
 import argparse
@@ -26,14 +35,16 @@ import logging
 import shutil
 import sys
 import sysconfig
+import traceback
 from pathlib import Path
 import tempfile
 import zipfile
 
 
-# ==========================================
-# 1. 顶层入口与核心业务编排
-# ==========================================
+def _exit_error(msg: str, code: int = 1) -> None:
+    """统一错误出口：前缀 [ERROR]，写 stderr，干净退出。"""
+    print(f"[ERROR] {msg}", file=sys.stderr)
+    sys.exit(code)
 
 
 def main() -> None:
@@ -62,11 +73,21 @@ def build_final_wheel(merge_dir: str, out_dir: str, version: str | None = None) 
     merge_path = Path(merge_dir).resolve()
     out_path_dir = Path(out_dir).resolve()
 
+    if not merge_path.is_dir() or not (merge_path / "ops_rec").is_dir():
+        _exit_error(f"merge_dir invalid (need dir with ops_rec/ subdir): {merge_path}")
+
     if not version:
         version = _detect_version(merge_path)
     if not version:
-        raise SystemExit("ERROR: --version required and no .dist-info found in merge_dir")
-    Version(version)  # 验证版本号格式合法性
+        _exit_error(
+            "cannot determine package version: pass --version explicitly "
+            f"or ensure {merge_path} contains an ops_rec-<ver>.dist-info/ directory"
+        )
+
+    try:
+        Version(version)  # 验证版本号格式合法性
+    except Exception as exc:
+        _exit_error(f"invalid version '{version}': {exc}")
 
     py_tag = _python_tag()
     abi_tag = _abi_tag()
@@ -111,6 +132,9 @@ def merge_single(src: str, soc: str, merge_dir: str) -> None:
     src_path = Path(src).resolve()
     merge_path = Path(merge_dir).resolve()
 
+    if not src_path.is_file():
+        _exit_error(f"--src not found or not a file: {src_path}")
+
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
 
@@ -122,8 +146,7 @@ def merge_single(src: str, soc: str, merge_dir: str) -> None:
 
         pkg_dir = tmp_path / "ops_rec"
         if not pkg_dir.is_dir():
-            print(f"[ERROR] ops_rec package dir not found in {src_path}", file=sys.stderr)
-            sys.exit(1)
+            _exit_error(f"ops_rec package dir not found in wheel: {src_path} (top-level dirs: {sorted(p.name for p in tmp_path.iterdir())})")
 
         merge_path.mkdir(parents=True, exist_ok=True)
 
@@ -145,11 +168,6 @@ def merge_single(src: str, soc: str, merge_dir: str) -> None:
                 shutil.copy2(item, dst_item)
 
     print(f"[INFO] Extracted {soc} artifacts to merge dir")
-
-
-# ==========================================
-# 2. 核心支撑函数（Wheel解包、版本解析、清单生成）
-# ==========================================
 
 
 def _extract_and_align_data(tmp_path: Path) -> None:
@@ -208,11 +226,6 @@ def _write_record(tmp_path: Path, dist_info_dir: Path, version: str) -> None:
     (dist_info_dir / "RECORD").write_text("\n".join(record_lines), encoding="utf-8")
 
 
-# ==========================================
-# 3. 底层配置与元数据生成工具
-# ==========================================
-
-
 def _skip_item(name: str) -> bool:
     """过滤在多 SOC 合并时需要跳过的特定文件或目录"""
     return name in frozenset({"lib", "include", ".dist-info", "_available_ops.py"})
@@ -252,4 +265,15 @@ def _generate_wheel_meta(py_tag: str, abi_tag: str, plat_tag: str) -> str:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        # argparse / 主动 _exit_error() 的，正常退出
+        raise
+    except FileNotFoundError as exc:
+        _exit_error(f"file not found: {exc.filename} ({exc})")
+    except zipfile.BadZipFile as exc:
+        _exit_error(f"corrupted .whl file: {exc}")
+    except Exception:
+        traceback.print_exc()
+        _exit_error("merge_wheel failed; see traceback above")

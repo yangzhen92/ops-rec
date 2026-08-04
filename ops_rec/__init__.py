@@ -1,0 +1,161 @@
+#!/usr/bin/env python3
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
+import os
+import logging
+import warnings
+
+
+def env_setup_path() -> str:
+    """返回 env_setup.sh 的路径，供 shell 级配置使用。
+
+    默认情况下，import ops_rec 时会在当前进程内自动刷新
+    ASCEND_CUSTOM_OPP_PATH，日常使用通常无需再 source 该脚本。
+
+    如需在 shell 级别预先配置环境（例如给其他进程复用），可执行：
+        source $(python3 -c "import ops_rec; print(ops_rec.env_setup_path())")
+    """
+    pkg_dir = os.path.realpath(os.path.dirname(__file__))
+    path = os.path.join(pkg_dir, "env_setup.sh")
+    if os.path.isfile(path):
+        return path
+    raise FileNotFoundError(f"env_setup.sh not found at {path}")
+
+
+def _opp_dir() -> str:
+    """返回 opp/ 目录的绝对路径（包含 vendors/ 的上级目录）。"""
+    pkg_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(pkg_dir, "opp")
+
+
+def _detect_soc_version() -> str | None:
+    """通过 acl.get_soc_name() 检测当前机器 SOC 版本。
+
+    返回值示例: "atlas_950", "atlas_a2", "atlas_a3"
+    """
+    try:
+        import acl
+
+        soc = acl.get_soc_name()
+    except Exception:
+        logging.warning("ops_rec: acl.get_soc_name() SOC detection failed.")
+        return None
+
+    if soc.startswith("Ascend950"):
+        return "atlas_950"
+    if soc.startswith("Ascend910B"):
+        return "atlas_a2"
+    if soc.startswith("Ascend910_93"):
+        return "atlas_a3"
+    logging.warning("ops_rec: unknown SOC '%s', defaulting to atlas_950", soc)
+    return "atlas_950"
+
+
+def _select_variant() -> str:
+    """选择当前环境使用的 variant。
+
+    优先级：
+    1. OPS_REC_FORCE_VARIANT 环境变量（用于测试/强制指定）
+    2. torch_npu._C._npu_get_soc_version() 检测
+    """
+    override = os.environ.get("OPS_REC_FORCE_VARIANT", "")
+    if override:
+        return override
+    variant = _detect_soc_version()
+    if variant:
+        return variant
+    logging.warning("ops_rec: SOC not detected, defaulting to atlas_950")
+    return "atlas_950"
+
+
+def _setup_custom_opp_path(variant: str):
+    # 设置 ASCEND_CUSTOM_OPP_PATH 指向 whl 内对应 variant 的 opp/<variant>/vendors 目录。
+    opp_dir = _opp_dir()
+    variant_root = os.path.join(opp_dir, variant)
+    vendors_dir = os.path.join(variant_root, "vendors")
+    if not os.path.isdir(vendors_dir):
+        logging.warning(
+            "ops_rec: variant '%s' not packaged (expected %s)",
+            variant,
+            vendors_dir,
+        )
+        return
+
+    new_paths = []
+    try:
+        for name in os.listdir(vendors_dir):
+            if name == "config.ini":
+                continue
+            vendor_path = os.path.join(vendors_dir, name)
+            if os.path.isdir(vendor_path):
+                new_paths.append(vendor_path)
+    except Exception as e:
+        logging.error("ops_rec: failed to scan vendors dir '%s': %s", vendors_dir, e)
+        return
+
+    new_paths.append(variant_root)
+
+    existing = os.environ.get("ASCEND_CUSTOM_OPP_PATH", "")
+    old_parts = [p for p in existing.split(os.pathsep) if p and not p.startswith(opp_dir)]
+    merged = new_paths + old_parts
+    seen = set()
+    deduped: list[str] = []
+    for p in merged:
+        if p not in seen:
+            seen.add(p)
+            deduped.append(p)
+
+    os.environ["ASCEND_CUSTOM_OPP_PATH"] = os.pathsep.join(deduped)
+    logging.info(
+        "ops_rec: ASCEND_CUSTOM_OPP_PATH=%s (variant=%s)",
+        os.environ["ASCEND_CUSTOM_OPP_PATH"],
+        variant,
+    )
+
+
+def _so_name(variant: str) -> str:
+    """variant 名 → .so 文件名，例如 atlas_950 → ops_rec_atlas_950.so"""
+    suffix = variant.lower()
+    if suffix.startswith("atlas_"):
+        suffix = suffix[len("atlas_") :]
+    return f"ops_rec_atlas_{suffix}.so"
+
+
+def _load_custom_so(variant: str):
+    # 加载对应 variant 的 ops_rec_atlas_<variant>.so (torch 适配层).
+    pkg_dir = os.path.dirname(os.path.abspath(__file__))
+    so_name = _so_name(variant)
+    so_path = os.path.join(pkg_dir, so_name)
+    if not os.path.isfile(so_path):
+        logging.warning("ops_rec: %s not found", so_name)
+        return
+
+    try:
+        import torch
+
+        torch.ops.load_library(so_path)
+    except Exception as exc:
+        warnings.warn(f"ops_rec: Failed to load {so_path}: {exc}")
+
+
+# 模块加载时自动检测 SOC 并加载对应变体
+_variant = _select_variant()
+_setup_custom_opp_path(_variant)
+_load_custom_so(_variant)
+
+from . import ascendc  # noqa: F401, E402
+from . import triton  # noqa: F401, E402
+from . import experimental  # noqa: F401, E402

@@ -18,11 +18,6 @@
 
 Usage:
     python3 scripts/extract_op_api.py --pkg-dir <site-packages/ops_rec> --run-tmp <dir>
-
-Call hierarchy (top to bottom):
-    main                ← argparse + 分派给 extract_op_api
-        extract_op_api   ← 业务：扫描 ops_rec 包、复制 op_api 产物
-            _detect_soc_version, _exit_error   ← 业务依赖
 """
 
 import argparse
@@ -34,7 +29,6 @@ import traceback
 
 
 def _exit_error(msg: str, code: int = 1) -> None:
-    """统一错误出口：前缀 [ERROR]，写 stderr，干净退出。"""
     print(f"[ERROR] {msg}", file=sys.stderr)
     sys.exit(code)
 
@@ -75,10 +69,11 @@ def extract_op_api(pkg_dir: str, run_tmp_dir: str) -> None:
     if not os.path.isdir(pkg_dir):
         _exit_error(f"--pkg-dir not found or not a directory: {pkg_dir}")
 
-    # Determine SOC variant via torch_npu SOC detection
     opp_root = os.path.join(pkg_dir, "opp")
     if not os.path.isdir(opp_root):
-        _exit_error(f"ops_rec package has no opp/ subdir: {pkg_dir} (is the package properly installed with --install?)")
+        _exit_error(
+            f"ops_rec package has no opp/ subdir: {pkg_dir} (is the package properly installed with --install?)"
+        )
 
     soc = _detect_soc_version()
     if not soc:
@@ -113,9 +108,6 @@ def extract_op_api(pkg_dir: str, run_tmp_dir: str) -> None:
 if __name__ == "__main__":
     try:
         main()
-    except SystemExit:  # pylint: disable=try-except-raise
-        # argparse / 主动 _exit_error() 的，正常退出
-        raise
     except FileNotFoundError as exc:
         _exit_error(f"file not found: {exc.filename} ({exc})")
     except Exception:

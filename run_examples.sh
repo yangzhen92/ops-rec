@@ -74,8 +74,7 @@ done
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" || exit 1
 
 # ---------------------------------------------------------------------------
-# 依赖检查：先确认 ops_rec 已安装，再把它的 ASCEND_CUSTOM_OPP_PATH
-# export 出来（后面所有用到它的地方直接读 $ASCEND_CUSTOM_OPP_PATH 即可）
+# 依赖检查：先确认 ops_rec 已安装，获取并 export ASCEND_CUSTOM_OPP_PATH
 # ---------------------------------------------------------------------------
 if [ ! -d "${SCRIPT_DIR}/build" ]; then
     mkdir -p "${SCRIPT_DIR}/build"

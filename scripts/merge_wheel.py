@@ -19,15 +19,6 @@
 Usage:
     python3 scripts/merge_wheel.py --src <whl_path> --soc <variant> --merge-dir <dir>
     python3 scripts/merge_wheel.py --merge-dir <dir> --build-final --out-dir <out_dir>
-
-Call hierarchy (top to bottom):
-    main / _main           ← argparse + 分派到业务方法
-        build_final_wheel  ← --build-final 分支
-        merge_single       ← 默认分支
-
-    _extract_and_align_data, _detect_version, _write_record  ← 业务方法依赖
-    _skip_item, _generate_metadata, _generate_wheel_meta, _python_tag,
-    _abi_tag, _platform_tag                                  ← 业务方法的辅助
 """
 
 import argparse
@@ -42,7 +33,6 @@ import zipfile
 
 
 def _exit_error(msg: str, code: int = 1) -> None:
-    """统一错误出口：前缀 [ERROR]，写 stderr，干净退出。"""
     print(f"[ERROR] {msg}", file=sys.stderr)
     sys.exit(code)
 
@@ -270,9 +260,6 @@ def _generate_wheel_meta(py_tag: str, abi_tag: str, plat_tag: str) -> str:
 if __name__ == "__main__":
     try:
         main()
-    except SystemExit:  # pylint: disable=try-except-raise
-        # argparse / 主动 _exit_error() 的，正常退出
-        raise
     except FileNotFoundError as exc:
         _exit_error(f"file not found: {exc.filename} ({exc})")
     except zipfile.BadZipFile as exc:

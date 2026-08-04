@@ -146,7 +146,10 @@ def merge_single(src: str, soc: str, merge_dir: str) -> None:
 
         pkg_dir = tmp_path / "ops_rec"
         if not pkg_dir.is_dir():
-            _exit_error(f"ops_rec package dir not found in wheel: {src_path} (top-level dirs: {sorted(p.name for p in tmp_path.iterdir())})")
+            _exit_error(
+                f"ops_rec package dir not found in wheel: {src_path} "
+                f"(top-level dirs: {sorted(p.name for p in tmp_path.iterdir())})"
+            )
 
         merge_path.mkdir(parents=True, exist_ok=True)
 
@@ -267,7 +270,7 @@ def _generate_wheel_meta(py_tag: str, abi_tag: str, plat_tag: str) -> str:
 if __name__ == "__main__":
     try:
         main()
-    except SystemExit:
+    except SystemExit:  # pylint: disable=try-except-raise
         # argparse / 主动 _exit_error() 的，正常退出
         raise
     except FileNotFoundError as exc:

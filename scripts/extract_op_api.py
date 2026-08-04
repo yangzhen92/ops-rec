@@ -78,21 +78,15 @@ def extract_op_api(pkg_dir: str, run_tmp_dir: str) -> None:
     # Determine SOC variant via torch_npu SOC detection
     opp_root = os.path.join(pkg_dir, "opp")
     if not os.path.isdir(opp_root):
-        _exit_error(
-            f"ops_rec package has no opp/ subdir: {pkg_dir} "
-            "(is the package properly installed with --install?)"
-        )
+        _exit_error(f"ops_rec package has no opp/ subdir: {pkg_dir} (is the package properly installed with --install?)")
 
     soc = _detect_soc_version()
     if not soc:
-        _exit_error(f"failed to detect SOC variant (acl.get_soc_name returned unrecognized SoC)")
+        _exit_error("failed to detect SOC variant (acl.get_soc_name returned unrecognized SoC)")
 
     variant_dir = os.path.join(opp_root, soc)
     if not os.path.isdir(variant_dir):
-        _exit_error(
-            f"variant dir not found under {opp_root}: expected {variant_dir} "
-            f"(detected soc={soc!r})"
-        )
+        _exit_error(f"variant dir not found under {opp_root}: expected {variant_dir} (detected soc={soc!r})")
 
     print(f"[INFO] Detected SOC variant: {soc}")
 
@@ -119,7 +113,7 @@ def extract_op_api(pkg_dir: str, run_tmp_dir: str) -> None:
 if __name__ == "__main__":
     try:
         main()
-    except SystemExit:
+    except SystemExit:  # pylint: disable=try-except-raise
         # argparse / 主动 _exit_error() 的，正常退出
         raise
     except FileNotFoundError as exc:

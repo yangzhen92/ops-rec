@@ -78,7 +78,7 @@ build.sh 共支持以下 4 个 CLI 选项，均为可选：
 
 ## 编译产物结构
 
-> 本节展示 whl 安装后 Python 包 `ops_rec/` 的内部布局，区别于源码仓库根目录（见 [README.md](../README.md#-目录结构)）。
+> 本节展示 whl 安装后 Python 包 `ops_rec/` 的内部布局，区别于源码仓库根目录（见 [README.md](../README.md#目录结构)）。
 
 whl 安装后 `ops_rec/` 目录布局：
 

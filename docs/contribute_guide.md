@@ -8,7 +8,7 @@
 
 新增算子时，按以下顺序推进：
 
-1. [环境部署](../README.md#-环境部署)：克隆仓库、安装构建依赖、验证 CANN / NPU 环境。
+1. [环境部署](../README.md#环境部署)：克隆仓库、安装构建依赖、验证 CANN / NPU 环境。
 2. [目录约定](#目录约定)：确定算子归属到哪个 `<group>/<vendor>` 下。
 3. [创建目录](#创建目录)：按约定创建算子目录骨架。
 4. [实现 OpDef + Tiling + InferShape](#实现-opdef--tiling--infershape)：编写 `op_host/` 下的 host 侧代码。
@@ -34,8 +34,6 @@
 ## 目录约定
 
 ops-rec 的算子按 `<group>/<vendor>` 组织：`group` 是功能分组（如 `activation` / `attention`），`vendor` 是算子注册单元，vendor 名即 CANN package 名。
-
-> 当前仓库仅含 `ln_mul` 一个 vendor 作为参考实现。
 
 ---
 

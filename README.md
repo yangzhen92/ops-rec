@@ -39,7 +39,7 @@ ops-rec/                                  # 项目根目录
 | Python | >= 3.10 |
 | CANN | >= 9.0.0，需执行 `set_env.sh` 配置环境变量 |
 | PyTorch + torch_npu | 2.7.1 / 2.10.0 |
-| triton-ascend | >= 3.2.2，使用 Triton 算子时必需 |
+| triton-ascend | >= 3.2.0，使用 Triton 算子时必需 |
 | 构建依赖 | scikit-build、gcc/g++（支持 C++17） |
 
 ## 🔨 编译安装

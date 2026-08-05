@@ -150,9 +150,8 @@ if(OPS_REC_TORCH_PLUGIN_SRCS)
     target_compile_features(${OPS_REC_TORCH_SO_NAME} PRIVATE cxx_std_17)
     target_compile_options(${OPS_REC_TORCH_SO_NAME} PRIVATE ${_OPS_REC_SOC_DEFS})
 
-    target_include_directories(${OPS_REC_TORCH_SO_NAME} PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/ascendc/common/utils
+    target_include_directories(${OPS_REC_TORCH_SO_NAME} PRIVATEssssss
+        ${CMAKE_CURRENT_SOURCE_DIR}/ascendc/common/torch_plugin
         ${TORCH_NPU_INSTALL_PATH}/include
         ${TORCH_NPU_INSTALL_PATH}/include/third_party/acl/inc
         ${PYTORCH_INSTALL_PATH}/include

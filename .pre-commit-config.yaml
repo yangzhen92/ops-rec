@@ -109,6 +109,7 @@ repos:
             ^.*/op_host/|
             ^.*/op_kernel/|
             .*/examples/|
+            .*/torch_plugin/|
             .*workload_sharder\.h$|
             .*kernel_common_utils\.h$|
             .*aclnn_common\.h$

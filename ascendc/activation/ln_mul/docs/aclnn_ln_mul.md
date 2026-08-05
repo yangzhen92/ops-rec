@@ -81,6 +81,7 @@ aclnnStatus：返回状态码，成功返回 `ACLNN_SUCCESS`。
 - 仅支持 FLOAT32 数据类型
 - X、U 必须为 2D 且 shape 相同
 - gamma、beta 必须为 1D
+- 该算子需要在 NPU 设备上运行
 
 ## 调用示例
 

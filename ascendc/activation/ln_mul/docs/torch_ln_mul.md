@@ -4,9 +4,9 @@
 
 | 产品 | 是否支持 |
 | :--- | :------: |
-| Atlas 950 训练系列产品/Atlas 950 推理系列产品 | √ |
-| Atlas A3 训练系列产品/Atlas A3 推理系列产品 | √ |
-| Atlas A2 训练系列产品/Atlas A2 推理系列产品 | √ |
+| Atlas 950 系列产品 | √ |
+| Atlas A3  训练/推理系列产品 | √ |
+| Atlas A2  训练/推理系列产品 | √ |
 
 ## 功能说明
 
@@ -27,20 +27,32 @@ ops_rec.ascendc.activation.ln_mul(x: Tensor, u: Tensor, gamma: Tensor, beta: Ten
 
 ## 参数说明
 
-| 参数名 | 输入/输出 | 参数类型 | 数据类型 | shape | 说明 |
-|--------|---------|---------|---------|-------|------|
-| x | 输入 | Tensor | FLOAT32 | [A, R] | 输入数据 |
-| u | 输入 | Tensor | FLOAT32 | [A, R] | 输入数据 |
-| gamma | 输入 | Tensor | FLOAT32 | [R] | LayerNorm 权重 |
-| beta | 输入 | Tensor | FLOAT32 | [R] | LayerNorm 偏置 |
-| output | 输出 | Tensor | FLOAT32 | [A, R] | 输出数据 |
+| 参数名 | 输入/输出 | 参数类型 | 数据类型 | 数据格式 | shape | 说明 |
+|--------|---------|---------|---------|---------|-------|------|
+| x | 输入 | Tensor | FLOAT32 | ND | [A, R] | 输入数据 |
+| u | 输入 | Tensor | FLOAT32 | ND | [A, R] | 输入数据 |
+| gamma | 输入 | Tensor | FLOAT32 | ND | [R] | LayerNorm 权重 |
+| beta | 输入 | Tensor | FLOAT32 | ND | [R] | LayerNorm 偏置 |
+| output | 输出 | Tensor | FLOAT32 | ND | [A, R] | 输出数据 |
 
 ## 约束说明
+
+约束分为两层：算子自身语义适用于 aclnn 与 torch 两条调用路径；torch 扩展层额外加的入参校验仅在调用 `ops_rec.ascendc.activation.ln_mul` 时生效。
+
+### 算子约束
 
 - 仅支持 FLOAT32 数据类型
 - X、U 必须为 2D 且 shape 相同
 - gamma、beta 必须为 1D
-- 该算子需要在 NPU 设备上运行，需要已安装 `torch_npu`
+- 该算子需要在 NPU 设备上运行
+
+### torch 扩展层额外校验
+
+由 [ln_mul_plugin.cpp](../torch_extension/ln_mul_plugin.cpp) 在调用算子前完成：
+
+- 输入 tensor 必须已定义且非空
+- 所有输入 tensor 必须位于同一 NPU 设备
+- 需要安装 `torch_npu`
 
 ## 安装方式
 

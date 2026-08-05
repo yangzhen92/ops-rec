@@ -16,6 +16,7 @@
 #ifndef CANN_OPS_REC_ACLNN_COMMON_H
 #define CANN_OPS_REC_ACLNN_COMMON_H
 
+
 #include <torch_npu/csrc/framework/utils/OpAdapter.h>
 #include <tuple>
 #include <initializer_list>

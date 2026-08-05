@@ -19,6 +19,7 @@ See the License for the specific language governing permissions and
 #include "register/tilingdata_base.h"
 #include "tiling/tiling_api.h"
 
+
 namespace optiling {
 BEGIN_TILING_DATA_DEF(LnMulTilingData)
 TILING_DATA_FIELD_DEF(uint32_t, aLength);

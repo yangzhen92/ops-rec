@@ -15,6 +15,7 @@ See the License for the specific language governing permissions and
 #ifndef KERNEL_COMMON_UTILS_H
 #define KERNEL_COMMON_UTILS_H
 
+
 #include "kernel_operator.h"
 using namespace AscendC;
 

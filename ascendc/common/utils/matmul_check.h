@@ -15,6 +15,7 @@ See the License for the specific language governing permissions and
 #ifndef MATMUL_CHECK_H
 #define MATMUL_CHECK_H
 
+
 #include <cstdint>
 #include <limits>
 #include "register/tilingdata_base.h"

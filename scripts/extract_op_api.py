@@ -28,6 +28,7 @@ import sys
 import traceback
 
 
+
 def _exit_error(msg: str, code: int = 1) -> None:
     print(f"[ERROR] {msg}", file=sys.stderr)
     sys.exit(code)

@@ -18,6 +18,7 @@ See the License for the specific language governing permissions and
 
 #include "kernel_operator.h"
 
+
 namespace LnMulKernel {
 constexpr uint32_t DATA_ALIGN_BYTES = 32;
 constexpr uint32_t DATA_COPY_ALIGN_BYTES = 16;

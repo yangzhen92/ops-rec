@@ -17,6 +17,7 @@ See the License for the specific language governing permissions and
 
 #include "kernel_operator.h"
 
+
 extern "C" __global__ __aicore__ void ln_mul(GM_ADDR inputXGm, GM_ADDR inputUGm, GM_ADDR gammaGm, GM_ADDR betaGm,
                                              GM_ADDR outputGm, GM_ADDR workspace, GM_ADDR tiling)
 {

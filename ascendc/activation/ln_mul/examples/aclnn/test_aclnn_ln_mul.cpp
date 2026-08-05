@@ -23,6 +23,7 @@ See the License for the specific language governing permissions and
 #include "acl/acl.h"
 #include "aclnn_ln_mul.h"
 
+
 #define CHECK_RET(cond, return_expr) \
     do {                             \
         if (!(cond)) {               \

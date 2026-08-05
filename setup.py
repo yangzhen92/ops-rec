@@ -25,6 +25,7 @@ from setuptools.command.build_py import build_py as _build_py
 from skbuild import setup as skbuild_setup
 
 
+
 class _silent_build_py(_build_py):
     def analyze_manifest(self):
         import setuptools.command.build_py as bpm

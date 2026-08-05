@@ -17,6 +17,7 @@ See the License for the specific language governing permissions and
 
 #pragma once
 
+
 #include "log_base.h"
 
 /* 基础日志 */

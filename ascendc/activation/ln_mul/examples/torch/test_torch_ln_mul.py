@@ -25,6 +25,7 @@ import torch
 import ops_rec
 
 
+
 def test_ln_mul():
     """验证 ln_mul 算子的前向推理结果。"""
     A, R = 4, 8

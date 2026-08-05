@@ -16,6 +16,7 @@ See the License for the specific language governing permissions and
 #include <torch/library.h>
 #include "aclnn_common.h"
 
+
 namespace {
 
 at::Tensor ln_mul_impl_npu(const at::Tensor& x, const at::Tensor& u, const at::Tensor& gamma, const at::Tensor& beta)

@@ -21,6 +21,7 @@ import numpy as np
 
 import ops_rec
 
+
 torch.npu.config.allow_internal_format = False
 
 # 测试有 144 种 shape 组合，增大 cache 避免 dynamic=True 时因重编译超限报错

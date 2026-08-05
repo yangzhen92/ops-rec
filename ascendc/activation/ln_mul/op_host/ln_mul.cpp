@@ -19,6 +19,7 @@ See the License for the specific language governing permissions and
 #include "tiling/platform/platform_ascendc.h"
 #include "ops_log.h"
 
+
 namespace optiling {
 constexpr int RESERVER_UB_SIZE = 40 * 1024;
 constexpr int BLOCK_SIZE = 32;

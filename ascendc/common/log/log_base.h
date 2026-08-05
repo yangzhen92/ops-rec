@@ -16,6 +16,7 @@ See the License for the specific language governing permissions and
 #define COMMON_LOG_BASE_H
 #pragma once
 
+
 #include <string>
 #include <cstdint>
 #include <sstream>

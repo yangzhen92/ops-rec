@@ -1,393 +1,409 @@
 # 贡献指南
 
-## 上库准备
-
-- 已了解目录结构和两种算子模式（见本文档后续章节）
-- 本地已通过 `bash build.sh --socs <variant> --install -j<N>` 完成编译验证
-- 算子示例已通过 `bash run_examples.sh --ops <vendor>` 验证正确性
-
----
-
 ## 概述
 
-### 目录结构约定
+本指南介绍如何向 ops-rec 仓库新增 AscendC 算子或 Triton 算子，包括目录创建、代码组织、SOC 注册、构建验证与 PR 提交流程。
 
-```
-ascendc/                         ← C++ 算子源码（CMake 编译单元）
-  <group>/                           ← 功能分组（activation / attention / embedding ...）
-    <vendor>/                        ← vendor 名，也是 CANN package 名
-      op_host/                        ← OpDef 注册 + Tiling + InferShape
-      op_kernel/                      ← AscendC kernel 实现
-      torch_extension/                ← TORCH_LIBRARY 注册（可选）
-      examples/
-        aclnn/                        ← aclnn C 接口调用示例
-        torch/                        ← torch 接口调用示例
-      docs/                           ← 算子 API 文档
-      test/                           ← 单元测试
-      CMakeLists.txt                  ← 聚合编译
-```
+### 开发流程
 
-### 两种算子模式
+新增算子时，按以下顺序推进：
 
-#### 模式一：单算子 vendor（如 ln_mul）
+1. [环境部署](../README.md#-环境部署)：克隆仓库、安装构建依赖、验证 CANN / NPU 环境。
+2. [目录约定](#目录约定)：确定算子归属到哪个 `<group>/<vendor>` 下。
+3. [创建目录](#创建目录)：按约定创建算子目录骨架。
+4. [实现 OpDef + Tiling + InferShape](#实现-opdef--tiling--infershape)：编写 `op_host/` 下的 host 侧代码。
+5. [实现 Kernel](#实现-kernel)：编写 `op_kernel/` 下的 AscendC kernel。
+6. [实现 torch_extension](#实现-torch_extension)：通过 `TORCH_LIBRARY_FRAGMENT` / `TORCH_LIBRARY_IMPL` 注册算子。
+7. [注册 SOC](#注册-soc)：将 vendor 名加入 `cmake/soc_ops_config.cmake`。
+8. [编写示例与文档](#编写示例与文档)：编写 aclnn / torch 示例、API 文档与 README。
+9. [编写测试](#编写测试)：编写 pytest 用例。
+10. [构建与验证](#构建与验证)：编译目标 SOC、安装 whl、跑示例与测试。
 
-一个 vendor 目录只包含一个算子，通过 `activation/__init__.py` 的 `__getattr__` 直接代理到 `torch.ops.ops_rec`，无需每个算子写 Python 封装文件。
+### 上库准备 Checklist
 
-目录结构：
+完成以上流程并提交 PR 前，请确认：
 
-```
-ascendc/activation/ln_mul/
-  op_host/ln_mul.cpp               → OP_ADD(LnMul);
-  op_host/ln_mul_tiling.h
-  op_host/CMakeLists.txt
-  op_kernel/ln_mul_kernel.h
-  op_kernel/CMakeLists.txt
-  torch_extension/ln_mul.cpp       → TORCH_LIBRARY(ops_rec, m) { m.def("ln_mul", ...); }
+- [ ] 本地编译通过：`bash build.sh --socs <variant> --install -j<N>`
+- [ ] 示例运行正确：`bash run_examples.sh --ops <vendor>`
+- [ ] pytest 用例通过：`cd ascendc/<group>/<vendor>/test/pytest && pytest test_*.py -x -v`
+- [ ] 文档齐全：`README.md` + `docs/aclnn_<op_name>.md` + `docs/torch_<op_name>.md`
+- [ ] 代码风格与仓库一致（参考 `.clang-format` / `.clang-tidy` / `.pre-commit-config.yaml`）
 
-ops_rec/ascendc/activation/
-  __init__.py                       ← __getattr__ 代理到 torch.ops.ops_rec
-```
+---
 
-调用方式：
+## 目录约定
 
-```python
-import ops_rec
-ops_rec.ascendc.activation.ln_mul(x, u, gamma, beta)
-```
+ops-rec 的算子按 `<group>/<vendor>` 组织：`group` 是功能分组（如 `activation` / `attention`），`vendor` 是算子注册单元，vendor 名即 CANN package 名。
 
-`activation/__init__.py` 的 `__getattr__` 会从 `torch.ops.ops_rec` 查找算子名。这是默认模式，适合大多数算子。
+> 当前仓库仅含 `ln_mul` 一个 vendor 作为参考实现。
 
-#### 模式二：多算子 vendor（如 hstu_v1）
+---
 
-一个 vendor 目录下有多个算子，共享 tiling/kernel 代码。每个算子在 C++ 侧各自 `OP_ADD`，Python 侧通过 `vendor/__init__.py` 手动封装或统一代理到 `torch.ops.ops_rec`。
+## 创建目录
 
-目录结构（以 hstu_v1 为例）：
+按上文目录约定创建算子骨架：
 
-```
-ascendc/
-  attention/
-    hstu_v1/                       ← 子组层级
-      CMakeLists.txt               ← 转发层，add_subdirectory 两个 vendor
-      hstu_v1_forward/       ← Multi-operator vendor（vendor 名含版本前缀，保证唯一性）
-        CMakeLists.txt
-        op_host/
-          hstu_dense_forward.cpp   (含 HstuDenseForward OpDef)
-          hstu_jagged_forward.cpp  (含 HstuJaggedForward OpDef)
-          hstu_paged_forward.cpp   (含 HstuPagedForward OpDef)
-          tiling_policy*.cpp/h
-          CMakeLists.txt
-          atlas950/                (c310 特化)
-          atlasA2/                 (v220 特化)
-        op_kernel/
-          hstu_dense_forward.cpp
-          hstu_jagged_forward.cpp
-          hstu_paged_forward.cpp
-          *.h (共享头文件)
-          CMakeLists.txt
-          atlas950/
-          atlasA2/
-        torch_extension/
-          hstu_dense_forward.cpp   (TORCH_LIBRARY_FRAGMENT 注册)
-      hstu_v1_backward/      ← Multi-operator vendor
-        CMakeLists.txt
-        op_host/ ...
-        op_kernel/ ...
-        torch_extension/ ...
+### Vendor 骨架
+
+```bash
+VENDOR=<vendor_name>           # 小写下划线，如 ln_mul
+GROUP=<group_name>             # 功能分组，如 activation
+
+mkdir -p ascendc/${GROUP}/${VENDOR}/op_host
+mkdir -p ascendc/${GROUP}/${VENDOR}/op_kernel
+mkdir -p ascendc/${GROUP}/${VENDOR}/torch_extension
+mkdir -p ascendc/${GROUP}/${VENDOR}/examples/aclnn
+mkdir -p ascendc/${GROUP}/${VENDOR}/examples/torch
+mkdir -p ascendc/${GROUP}/${VENDOR}/docs
+mkdir -p ascendc/${GROUP}/${VENDOR}/test/pytest
 ```
 
-调用方式：
+最终目录结构：
 
-```python
-import ops_rec
-ops_rec.ascendc.attention.hstu_v1.hstu_dense(x)
-ops_rec.ascendc.attention.hstu_v1.hstu_jagged(x)
+```text
+ascendc/<group>/<vendor>/
+├── CMakeLists.txt                  # 聚合编译 + vendor 名设置
+├── op_host/
+│   ├── CMakeLists.txt              # npu_op_code_gen + npu_op_library
+│   ├── <op_name>.cpp               # TilingFunc + InferShape + OpDef 注册
+│   └── <op_name>_tiling.h          # TilingData 定义
+├── op_kernel/
+│   ├── CMakeLists.txt              # npu_op_kernel_library
+│   ├── <op_name>.cpp               # __global__ __aicore__ kernel 入口
+│   └── <op_name>_kernel.h          # Kernel 类实现
+├── torch_extension/
+│   └── <op_name>_plugin.cpp        # TORCH_LIBRARY 注册 + NPU 实现
+├── examples/
+│   ├── aclnn/test_aclnn_<op_name>.cpp
+│   └── torch/test_torch_<op_name>.py
+├── docs/
+│   ├── aclnn_<op_name>.md
+│   └── torch_<op_name>.md
+├── test/pytest/
+│   ├── pytest.ini
+│   └── test_<op_name>.py
+└── README.md
 ```
 
-`hstu_v1/__init__.py` 模板：
+> 注册多个算子时，可在 `op_host/`、`op_kernel/`、`torch_extension/` 下任选一种组织方式：
+>
+> - **按算子名拆分**：每个算子独立文件（如 `op_a.cpp` / `op_b.cpp`），便于维护与代码评审，适合算子较多或彼此差异大的场景；
+> - **共用 vendor 名文件**：在 `<vendor>.cpp` 内定义多个 OpDef 类与 kernel 函数，适合算子少且关联紧密的场景。
+>
+> 编译系统会按目录自动收集 `.cpp`，并链接到同一个 `ops_rec_atlas_*.so`；同 vendor 下所有算子共用 tiling target，多算子时需用不同 `TilingKey` 区分。
 
-```python
-import torch
+---
 
-_OP_NAMESPACE = torch.ops.ops_rec
+## 实现 OpDef + Tiling + InferShape
 
-def __getattr__(name):
-    if hasattr(_OP_NAMESPACE, name):
-        return getattr(_OP_NAMESPACE, name)
-    raise AttributeError(
-        f"module '{__name__}' has no attribute '{name}'"
-    )
+在 `op_host/<op_name>.cpp` 中实现 `TilingFunc`、`InferShape` 与 `OpDef`：
 
-def __dir__():
-    own_attrs = set(globals().keys())
-    op_attrs = {k for k in dir(_OP_NAMESPACE) if not k.startswith("_")}
-    return sorted(own_attrs | op_attrs)
+```cpp
+namespace optiling {
+static ge::graphStatus TilingFunc(gert::TilingContext* context)
+{
+    auto ascendPlatform = platform_ascendc::PlatformAscendC(context->GetPlatformInfo());
+    // 计算核数、workspace、每核处理行数等
+    ...
+    context->SetBlockDim(coreNum);
+    context->SetTilingKey(1);
+    tiling.SaveToBuffer(context->GetRawTilingData()->GetData(),
+                        context->GetRawTilingData()->GetCapacity());
+    return ge::GRAPH_SUCCESS;
+}
+}  // namespace optiling
+
+namespace ge {
+static ge::graphStatus InferShape(gert::InferShapeContext* context)
+{
+    const gert::Shape* in_shape = context->GetInputShape(0);
+    *context->GetOutputShape(0) = *in_shape;
+    return GRAPH_SUCCESS;
+}
+}  // namespace ge
+
+namespace ops {
+class MyOp : public OpDef {
+public:
+    explicit MyOp(const char* name) : OpDef(name)
+    {
+        this->Input("x").ParamType(REQUIRED).DataType({ge::DT_FLOAT}).Format({ge::FORMAT_ND});
+        this->Output("y").ParamType(REQUIRED).DataType({ge::DT_FLOAT}).Format({ge::FORMAT_ND});
+        this->SetInferShape(ge::InferShape);
+
+        OpAICoreConfig aicore_config;
+        aicore_config.DynamicCompileStaticFlag(true)
+            .ExtendCfgInfo("jitCompile.flag", "static_false,dynamic_false")
+            .ExtendCfgInfo("coreType.value", "AiCore")
+            .ExtendCfgInfo("prebuildPattern.value", "Opaque");
+        this->AICore().SetTiling(optiling::TilingFunc);
+
+        // 按 SOC 添加配置：ascend910b (A2) / ascend910_93 (A3) / ascend950 / ascend310p
+        this->AICore().AddConfig("ascend910b", aicore_config);
+        this->AICore().AddConfig("ascend910_93", aicore_config);
+        this->AICore().AddConfig("ascend310p", aicore_config);
+#ifdef SUPPORT_950
+        this->AICore().AddConfig("ascend950", aicore_config);
+#endif
+    }
+};
+OP_ADD(MyOp);
+}  // namespace ops
+```
+
+`op_host/<op_name>_tiling.h` 定义 TilingData 结构体：
+
+```cpp
+namespace optiling {
+BEGIN_TILING_DATA_DEF(MyOpTilingData)
+TILING_DATA_FIELD_DEF(uint32_t, aLength);
+TILING_DATA_FIELD_DEF(uint32_t, rLength);
+...
+END_TILING_DATA_DEF;
+REGISTER_TILING_DATA_CLASS(MyOp, MyOpTilingData)
+}  // namespace optiling
 ```
 
 ---
 
-## AscendC 算子迁移
+## 实现 Kernel
 
-### 迁移步骤
+`op_kernel/<op_name>.cpp` 中定义 AICore 入口：
 
-#### 1. 创建目录
+```cpp
+#include "kernel_operator.h"
 
-```bash
-# 单算子
-mkdir -p ascendc/<group>/<vendor>/op_host
-mkdir -p ascendc/<group>/<vendor>/op_kernel
-mkdir -p ascendc/<group>/<vendor>/torch_extension
-mkdir -p ascendc/<group>/<vendor>/examples/aclnn
-mkdir -p ascendc/<group>/<vendor>/examples/torch
-mkdir -p ascendc/<group>/<vendor>/docs
-mkdir -p ascendc/<group>/<vendor>/test/pytest
+extern "C" __global__ __aicore__ void my_op(GM_ADDR xGm, GM_ADDR yGm,
+                                             GM_ADDR workspace, GM_ADDR tiling)
+{
+    MyOpKernel::Args args{xGm, yGm, workspace, tiling};
+    if (TILING_KEY_IS(1)) {
+        MyOpKernel::KernelImpl op;
+        op.Init(args);
+        op.Process();
+    }
+}
 ```
 
-#### 2. 复制 C++ 源码
+`op_kernel/<op_name>_kernel.h` 中实现 Kernel 类（`CopyIn` / `Compute` / `CopyOut` 三阶段），参考 `ln_mul_kernel.h`。
 
-将 `op_host/` 和 `op_kernel/` 下的源码放入对应目录。
+### SOC 架构特化代码
 
-#### 3. 编写 CMakeLists.txt（参考 ln_mul）
+如同一算子在 Atlas 950 与 Atlas A2/A3 上实现差异较大，可将特化代码放入子目录：
 
-- `ascendc/<group>/<vendor>/CMakeLists.txt`：聚合子目录，设置 vendor 名
-- `op_host/CMakeLists.txt`：`npu_op_code_gen` + `npu_op_library`
-- `op_kernel/CMakeLists.txt`：`npu_op_kernel_library`
+```text
+op_host/atlas950/<op_name>_tiling.cpp    # 仅 950 SOC 编译
+op_host/atlasA2/<op_name>_tiling.cpp     # 仅 A2/A3 SOC 编译
+op_kernel/atlas950/<op_name>.cpp
+op_kernel/atlasA2/<op_name>.cpp
+```
 
-#### 4. 注册到 SOC 列表
-
-`cmake/soc_ops_config.cmake` 中将 vendor 名加入对应 SOC 列表：
+根 `CMakeLists.txt` 已通过 `cmake/ops_rec_arch.cmake` 提供的 `ops_rec_collect_arch_sources(<var>)` 函数自动按 `OPS_REC_ARCH_DIR` 收集。算子级 CMakeLists 中调用：
 
 ```cmake
-set(OPS_REC_OPS_ATLAS_950 ln_mul hstu_v1 <new_vendor>)
+ops_rec_collect_arch_sources(ops_srcs)
 ```
 
-#### 5. 编写 torch_extension
+无需自行判断 SOC。
 
-在 `torch_extension/` 下使用 `TORCH_LIBRARY(ops_rec, ...)` 注册算子，编译时会自动收集所有 `torch_extension/*.cpp` 并链接到统一的 `.so`。
+---
 
-#### 6. 编写示例
+## 实现 torch_extension
 
-示例文件命名必须遵循 `test_aclnn_<vendor>*.cpp` 和 `test_torch_<vendor>*.py` 格式，`run_examples.sh` 通过 `find` 自动发现：
+所有算子统一通过 `TORCH_LIBRARY_FRAGMENT` + `TORCH_LIBRARY_IMPL` 注册到 `ops_rec` 命名空间，编译时由根 `CMakeLists.txt` 自动收集所有 `ascendc/*/*/torch_extension/*.cpp` 链接到统一的 `ops_rec_atlas_<variant>.so`。
 
-```bash
-examples/aclnn/test_aclnn_<vendor>.cpp           # aclnn C 接口示例
-examples/aclnn/test_aclnn_<vendor>_<case>.cpp    # 多个 aclnn 示例时加后缀
-examples/torch/test_torch_<vendor>.py             # torch 接口示例
-examples/torch/test_torch_<vendor>_<case>.py      # 多个 torch 示例时加后缀
+### 示例
+
+`torch_extension/<op_name>_plugin.cpp`：
+
+```cpp
+#include <torch/library.h>
+#include "common_utils.h"
+#include "pytorch_npu_helper.hpp"
+
+at::Tensor my_op_impl_npu(const at::Tensor& x)
+{
+    check_tensor_non_empty(x, "x");
+    std::vector<at::Tensor> tensors = {x};
+    std::vector<std::string> names = {"x"};
+    check_tensor_npu_device(tensors, names);
+
+    TORCH_CHECK(x.dim() == 2, "The x should be 2D");
+
+    auto x_conti = x.contiguous();
+    at::Tensor y = at::empty_like(x_conti);
+    // 调用 aclnn 接口（自动处理 workspaceSize / executor / stream）
+    EXEC_NPU_CMD(aclnnMyOp, x_conti, y);
+    return y;
+}
+
+// 注册 schema
+TORCH_LIBRARY_FRAGMENT(ops_rec, m)
+{
+    m.def("my_op(Tensor x) -> Tensor");
+}
+
+// 注册 NPU 实现（PrivateUse1 = Ascend NPU 后端标识）
+TORCH_LIBRARY_IMPL(ops_rec, PrivateUse1, m)
+{
+    m.impl("my_op", &my_op_impl_npu);
+}
+
+// 可选：注册 Meta 实现，用于 torch.compile 的 shape 推断
+TORCH_LIBRARY_IMPL(ops_rec, Meta, m)
+{
+    m.impl("my_op", &my_op_meta);
+}
 ```
 
-运行示例：
+关键点：
+
+- **`TORCH_LIBRARY_FRAGMENT`**：声明算子的 schema（入参类型 + 返回值）。
+- **`TORCH_LIBRARY_IMPL(..., PrivateUse1, ...)`**：注册 NPU 设备实现。
+- **`TORCH_LIBRARY_IMPL(..., Meta, ...)`**（可选）：注册 Meta 实现，支持 `torch.compile` shape 推断。
+- **`EXEC_NPU_CMD(aclnnXxx, ...)`**：定义在 `ascendc/common/torch_plugin/pytorch_npu_helper.hpp`，封装 workspace 申请、执行器管理、流绑定等。
+
+### Python 代理
+
+`<group>/__init__.py`（如 `ascendc/activation/__init__.py`）通过 `__getattr__` 代理到 `torch.ops.ops_rec`，无需为每个算子单独写 Python 文件。
+
+---
+
+## 注册 SOC
+
+编辑 `cmake/soc_ops_config.cmake`，将 vendor 名加入对应 SOC 的列表：
+
+```cmake
+set(OPS_REC_OPS_ATLAS_950  ln_mul <new_vendor>)
+set(OPS_REC_OPS_ATLAS_A3   ln_mul <new_vendor>)
+set(OPS_REC_OPS_ATLAS_A2   ln_mul <new_vendor>)
+```
+
+根 `CMakeLists.txt` 会自动按该列表筛选算子参与编译，并据此生成 `vendors/config.ini` 的 `load_priority`。
+
+---
+
+## 编写示例与文档
+
+### 示例命名规范
+
+示例文件必须遵循 `test_<kind>_<op_name>*.cpp` / `test_<kind>_<op_name>*.py` 格式，`run_examples.sh` 通过 `find` 自动发现：
 
 ```bash
+examples/aclnn/test_aclnn_<op_name>.cpp            # aclnn C 接口示例
+examples/aclnn/test_aclnn_<op_name>_<case>.cpp     # 多个 aclnn 示例时加后缀
+examples/torch/test_torch_<op_name>.py              # torch 接口示例
+examples/torch/test_torch_<op_name>_<case>.py       # 多个 torch 示例时加后缀
+```
+
+### 运行示例
+
+```bash
+bash build.sh --socs atlas_950 --install -j16    # 先安装
+
 bash run_examples.sh --type torch --ops <vendor>
 bash run_examples.sh --type aclnn --ops <vendor>
-bash run_examples.sh --type all --ops <vendor>   # aclnn + torch
+bash run_examples.sh --type all   --ops <vendor>
 ```
 
-#### 7. 编写文档
+### 文档规范
 
 每个算子应包含：
 
-```
-ascendc/<group>/<vendor>/
-  README.md                     ← 算子使用入口（产品支持、功能、参数、约束）
-  docs/
-    aclnn_<vendor>.md           ← aclnn C 接口 API 参考
-    torch_<vendor>.md           ← torch 接口 API 参考（ops_rec.ascendc.<group>.<vendor>）
-```
+| 文档 | 位置 | 内容 |
+|---|---|---|
+| 算子 README | `ascendc/<group>/<vendor>/README.md` | 产品支持、功能、参数、约束、调用示例入口 |
+| aclnn API 参考 | `ascendc/<group>/<vendor>/docs/aclnn_<op_name>.md` | `aclnnXxxGetWorkspaceSize` / `aclnnXxx` 签名、参数表、错误码 |
+| torch API 参考 | `ascendc/<group>/<vendor>/docs/torch_<op_name>.md` | `ops_rec.ascendc.<group>.<op_name>` 签名、参数表、torch 扩展层额外校验 |
 
 参考 `ascendc/activation/ln_mul/` 下的文档模板。
 
-#### 8. 编写测试
+---
+
+## 编写测试
 
 在 `test/pytest/` 下编写 pytest 用例：
 
-```
+```text
 ascendc/<group>/<vendor>/test/pytest/
-  pytest.ini                    ← 测试标记配置
-  test_<vendor>.py              ← 测试用例
+├── pytest.ini                    # 测试标记配置（ci / graph）
+└── test_<op_name>.py             # 用例主体
 ```
 
-#### 9. 调用验证
+用例示例参考 `ascendc/activation/ln_mul/test/pytest/test_ln_mul.py`，通常覆盖：
+
+- 多种 shape 组合的 eager 模式（`@pytest.mark.parametrize`）。
+- `@pytest.mark.graph` 修饰的 `torch.compile` 图模式用例。
+- `@pytest.mark.ci` 修饰的固定 shape 冒烟用例（CI 必跑）。
+
+运行：
 
 ```bash
-# 编译安装
-bash build.sh --socs atlas_950 --install -j16
-
-# 运行示例验证
-bash run_examples.sh --type torch --ops <vendor>
-
-# Python 直接调用
-python3 -c "
-import ops_rec
-ops_rec.ascendc.<group>.<vendor>(...)
-"
-
-# 运行测试
 cd ascendc/<group>/<vendor>/test/pytest && pytest test_*.py -x -v
 ```
 
 ---
 
-## Triton 算子迁移
+## 构建与验证
 
-### 目录结构
-
-```
-experimental/triton/                  ← 实验性 Triton 算子
-  <group>/                            ← 功能分组
-    __init__.py
-    triton_<feature>.py               ← Triton kernel 实现
-
-ops_rec/experimental/triton/          ← Python 包（构建时自动同步）
-  <group>/
-    __init__.py
-    triton_<feature>.py
-```
-
-### 迁移步骤
-
-#### 1. 创建源码目录
+完整流程：
 
 ```bash
-mkdir -p experimental/triton/<group>
-```
-
-#### 2. 编写 Triton kernel
-
-在 `experimental/triton/<group>/` 下创建算子实现文件：
-
-```
-experimental/triton/<group>/
-  __init__.py                     ← 自动发现子模块（pkgutil.iter_modules）
-  triton_<feature>.py             ← Triton kernel 实现
-```
-
-#### 3. 构建时自动同步
-
-`build.sh` 的 `build_single_soc()` 函数会自动将 `experimental/triton/` 下的 `.py` 文件同步到 `ops_rec/experimental/triton/`（排除 `test/` 目录），构建完成后自动删除临时文件，无需手动操作。
-
-#### 4. 调用验证
-
-```bash
-# 构建安装
+# 1. 编译安装（指定目标 SOC）
 bash build.sh --socs atlas_950 --install -j16
 
-# 导入验证
+# 2. 运行示例
+bash run_examples.sh --type torch --ops <vendor>
+bash run_examples.sh --type aclnn --ops <vendor>
+
+# 3. Python 直接调用
 python3 -c "
-from ops_rec.experimental.triton.<group> import <module>
-<trigger_kernel_function>(...)
+import ops_rec
+ops_rec.ascendc.<group>.<op_name>(...)
 "
+
+# 4. 跑测试
+cd ascendc/<group>/<vendor>/test/pytest && pytest test_*.py -x -v
 ```
-
-
-## torch_extension 写法
-
-所有算子统一通过 `TORCH_LIBRARY_FRAGMENT` + `TORCH_LIBRARY_IMPL` 注册到 `ops_rec` namespace，编译时自动收集所有 `torch_extension/*.cpp` 并链接到统一的 `.so`。
-
-### 单算子（如 ln_mul）
-
-```cpp
-// torch_extension/ln_mul_plugin.cpp
-
-#include <torch/library.h>
-#include "aclnn_common.h"
-
-namespace {
-
-at::Tensor ln_mul_impl_npu(const at::Tensor &x, const at::Tensor &u,
-                           const at::Tensor &gamma, const at::Tensor &beta)
-{
-    TORCH_CHECK(x.scalar_type() == at::kFloat, "x must be float32");
-    // ... 参数校验 ...
-    at::Tensor y = at::empty_like(x);
-    ACLNN_CMD(aclnnLnMul, x, u, gamma, beta, y);
-    return y;
-}
-
-} // anonymous namespace
-
-TORCH_LIBRARY_FRAGMENT(ops_rec, m)
-{
-    m.def("ln_mul(Tensor x, Tensor u, Tensor gamma, Tensor beta) -> Tensor");
-}
-
-TORCH_LIBRARY_IMPL(ops_rec, PrivateUse1, m)
-{
-    m.impl("ln_mul", &ln_mul_impl_npu);
-}
-```
-
-- `TORCH_LIBRARY_FRAGMENT`：声明算子的 schema（入参类型 + 返回值）
-- `TORCH_LIBRARY_IMPL(..., PrivateUse1, ...)`：注册 NPU 设备实现（`PrivateUse1` 为 Ascend NPU 的 PyTorch 后端标识）
-- `TORCH_LIBRARY_IMPL(..., Meta, ...)`（可选）：注册 Meta 实现，用于 `torch.compile` 的 shape 推断
-- kernel 实现中通过 `ACLNN_CMD` 宏调用 aclnn 接口完成 NPU 计算
-
-### 多算子 vendor（如 hstu_v1 多算子）
-
-多个算子的 `TORCH_LIBRARY_FRAGMENT(ops_rec, ...)` 会自动合并到同一个 `ops_rec` library，每个算子独立 `.cpp`：
-
-```cpp
-// hstu_v1_forward/torch_extension/hstu_dense_forward.cpp
-TORCH_LIBRARY_FRAGMENT(ops_rec, m)
-{
-    m.def("hstu_dense(Tensor x, ...) -> Tensor");
-}
-TORCH_LIBRARY_IMPL(ops_rec, PrivateUse1, m)
-{
-    m.impl("hstu_dense", &hstu_dense_impl_npu);
-}
-
-// hstu_v1_forward/torch_extension/hstu_jagged_forward.cpp
-TORCH_LIBRARY_FRAGMENT(ops_rec, m)
-{
-    m.def("hstu_jagged(Tensor x, ...) -> Tensor");
-}
-TORCH_LIBRARY_IMPL(ops_rec, PrivateUse1, m)
-{
-    m.impl("hstu_jagged", &hstu_jagged_impl_npu);
-}
-```
-
-编译系统会自动收集 `torch_extension/` 下所有 `.cpp` 并链接到最终的 `ops_rec_atlas_*.so`。
 
 ---
 
 ## 编码规范
 
-
 ### C++
 
-- 遵循 C++17 标准
-- 遵循已有文件的代码风格（缩进、命名、注释）
-- AscendC kernel 代码使用大写驼峰命名类名
-- OpDef 注册使用 `ge::graphStatus` 作为返回值类型
-- SOC 编译宏使用 `SUPPORT_950` / `SUPPORT_A2` / `SUPPORT_A3`（通过 CMake 变量 `OPS_REC_SOC_CXX_DEFS` 统一传递）
+- 遵循 C++17 标准。
+- 遵循已有文件的代码风格（缩进、命名、注释）。
+- AscendC kernel 代码使用大写驼峰命名类名。
+- OpDef 注册使用 `ge::graphStatus` 作为返回值类型。
+- SOC 编译宏使用 `SUPPORT_950` / `SUPPORT_A2` / `SUPPORT_A3`，由根 CMakeLists 的 `OPS_REC_SOC_CXX_DEFS` 统一传递。
 
 ### CMake
 
-- 每个算子包含根 CMakeLists.txt + `op_host/CMakeLists.txt` + `op_kernel/CMakeLists.txt`
-- 所有 SOC 编译宏由根 CMakeLists.txt 的 `OPS_REC_SOC_CXX_DEFS` 统一传递，算子 CMakeLists 不自行定义
+- 每个算子包含根 `CMakeLists.txt` + `op_host/CMakeLists.txt` + `op_kernel/CMakeLists.txt`。
+- 所有 SOC 编译宏由根 `CMakeLists.txt` 统一传递，算子级 CMakeLists 不自行定义。
 
 ### Python
 
-- 遵循 PEP 8
-- 单算子 vendor：`activation/__init__.py` 通过 `__getattr__` 直接代理到 `torch.ops.ops_rec`，无需 Python 封装文件
-- 多算子 vendor：在 `vendor/__init__.py` 中通过 `__getattr__` 代理到 `torch.ops.ops_rec`
+- 遵循 PEP 8。
+- `<group>/__init__.py` 通过 `__getattr__` 直接代理到 `torch.ops.ops_rec`。
 
 ---
 
-## 分支管理
+## 贡献流程
+
+### 分支约定
 
 | 分支 | 用途 |
 |---|---|
-| `main` | 稳定发布分支 |
+| `master` | 稳定发布分支 |
 | `dev` | 开发分支 |
-| `feature/<name>` | 功能分支，开发完成后合并到 `dev` |
+| `feature/<name>` | 功能分支，合并回 `dev` |
 | `fix/<name>` | 修复分支 |
 
-## PR 提交
+### 提交与 PR
 
-### 提交前检查
+每个 commit 专注于一个独立修改，message 简明扼要。提交 PR 前请确认：
 
 - [ ] 代码编译通过（目标 SOC）
 - [ ] 示例运行正确
@@ -395,24 +411,31 @@ TORCH_LIBRARY_IMPL(ops_rec, PrivateUse1, m)
 - [ ] 代码风格与仓库一致
 - [ ] 已同步上游分支
 
-### PR 模板
+PR 模板与 `.gitcode/PULL_REQUEST_TEMPLATE.md` 保持一致：
 
 ```markdown
-## 描述
+# 合入来源
 
-[简要说明变更内容]
+- [ ] 需求
+- [ ] 问题单
+- [ ] issue
 
-## 测试验证
+# 问题/功能描述
 
-- [ ] 本地编译通过（atlas_950 / atlas_a2 / atlas_a3）
-- [ ] 示例通过
-- [ ] 测试通过
+# 修改方案描述
 
-## 破坏性变更
+# 是否涉及UT/ST
 
-[如有，列出不兼容的变更]
+- [ ] 是
+- [ ] 否（说明理由）
+
+# 开发自检
+
+- [ ] 规范：未超过1k；超过1k已完成备案；反合入需要标题注明【反合】
+- [ ] 规范：已关联issue或里程碑
+- [ ] 规范：不需要UT/ST且已说明理由；需要且已包含UT/ST
+- [ ] 安全：涉及对外接口/参数/环境变量改动，并同步修改资料
+- [ ] 安全：未引入三方开源软件；引入三方开源软件并经过安全评审
+- [ ] 安全：未新增对外接口/参数；新增对外接口/参数有校验
+- [ ] 规范：未涉及资料改动；涉及资料改动并已完成修改
 ```
-
-## 许可证
-
-提交代码即表示您同意本仓库的 Apache License 2.0 许可条款。

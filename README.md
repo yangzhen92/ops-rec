@@ -1,108 +1,79 @@
 # ops-rec
 
-Ascend NPU Custom Operations for Recommendation Systems.
+## ℹ️ 简介
 
-## 简介
+ops-rec 是面向大规模推荐推理场景的高性能算子库，基于昇腾 CANN 平台深度定制构建，采用 AscendC 原生静态算子 + Triton JIT 动态可编程算子 双后端架构。聚焦推荐模型核心算力瓶颈，覆盖特征预处理、多特征融合、矩阵计算、高阶非线性计算等高频场景，为推荐推理提供全链路硬件级加速能力。
 
-ops-rec 是基于昇腾平台的推荐系统自定义算子仓库，算子实现包括 AscendC 和 Triton 两种后端，打包为 pip install 即可使用的 whl 包。
+- **双引擎异构算子架构**：统一上层调用接口，同时支持 AscendC 极致静态高性能算子与 Triton JIT 动态灵活算子开发部署，兼顾极致推理性能与业务快速迭代能力，适配不同开发与上线诉求。
+- **推荐专属深度算子优化**：针对推荐场景算子融合、HSTU 高阶复杂计算等核心性能瓶颈，完成昇腾硬件深度适配与定制重构。通过计算粒度拆解、访存合并、流水级并行优化，突破原生通用算子的性能上限，显著降低推荐模型推理延时、提升整机吞吐。
+- **极简轻量化接入体验**：屏蔽昇腾底层硬件差异、编译细节与平台适配成本，提供统一、清晰的 Python 调用接口，开箱即用，业务可低成本、零侵入完成算力升级与性能落地。
 
-- **AscendC 算子**：基于 CANN AscendC 框架实现，提供高性能自定义算子。
-- **Torch 无缝集成**：通过 `TORCH_LIBRARY` 注册，通过 `torch.ops.ops_rec` 直接调用。
-- **多芯片自适应**：自动探测 Atlas A2 / A3 / 950 芯片，加载对应的 OPP 产物。
-
-```python
-import ops_rec
-
-# AscendC 算子
-ops_rec.ascendc.activation.ln_mul(x, u, gamma, beta)
-```
-
-## 目录结构
+## 📂 目录结构
 
 ```text
-ops-rec/
-├── ascendc/                                      # AscendC 算子源码（CMake 编译单元）
-│   ├── activation/                               # <group>：算子功能分组，如 activation / attention
-│   │   └── ln_mul/                               # <vendor>：单个算子集合
-│   │       ├── op_host/                          # OpDef 注册 + Tiling + InferShape
-│   │       ├── op_kernel/                        # AscendC kernel 实现
-│   │       ├── torch_extension/                  # TORCH_LIBRARY 注册（可选）
-│   │       ├── examples/aclnn|torch/             # C++ / Python 调用示例
-│   │       ├── test/pytest/                      # pytest 用例
-│   │       └── docs/                             # aclnn 与 torch 接口的 API 参考
-│   └── common/                                   # 算子之间共享的头文件
-│       ├── log/                                  # OPS_LOG_* 宏
-│       └── utils/                                # aclnn 适配、Tiling 工具、workload 切分等
-│
-├── experimental/                                 # 实验性算子
-│   └── triton/                                   # Triton kernel 实现
-│
-├── ops_rec/                                      # pip 包主体
-│   ├── __init__.py                               # SOC 检测 + ASCEND_CUSTOM_OPP_PATH + .so 加载
-│   ├── env_setup.sh                              # 当前 shell 准备 OPP 路径（可 source）
-│   ├── ascendc/                                  # AscendC 算子的 Python 代理（动态 import 子包）
-│   ├── triton/                                   # Triton 算子的 Python 代理
-│   └── experimental/                             # 实验算子的 Python 代理
-│
-├── cmake/                                        # CMake 模块（soc_config、toolchain 等）
-├── scripts/                                      # 构建辅助脚本（merge_wheel.py 等）
-└── docs/                                         # 设计文档与开发指南（build / contribute）
+ops-rec/                                  # 项目根目录
+├── ascendc/                              # AscendC 算子源码
+├── triton/                               # Triton 算子源码（与 ascendc/ 平级，按后端组织）
+├── cmake/                                # CMake 模块（soc_config、toolchain 等）
+├── docs/                                 # 开发指南和参考文档
+├── examples/                             # 算子样例
+├── experimental/                         # 实验性非正式算子
+├── ops_rec/                              # pip 包主体
+├── pre-commit/                           # pre-commit 配置
+├── scripts/                              # 构建辅助脚本（merge_wheel.py 等）
+├── tests/                                # UT 测试架构文件
+├── third_party/                          # 三方软件
+├── build.sh                              # 统一构建入口
+├── run_examples.sh                       # 示例运行入口
+├── setup.py                              # scikit-build 配置
+└── CMakeLists.txt                        # 顶层 CMake 入口
 ```
 
-## 环境部署
+> 本节展示的是**源码仓库根目录**结构。whl 安装后 Python 包 `ops_rec/` 的内部布局见 [构建指南](docs/build_guide.md#编译产物结构)。
 
-推荐环境：
+## 📦 环境部署
 
-- 操作系统：Linux
-- Python >= 3.10
-- CANN >= 9.0.0
-- PyTorch 与 torch_npu 版本配套
-- 构建依赖：`scikit-build`、`cmake`、`gcc/g++`
+| 组件 | 要求 |
+|---|---|
+| 操作系统 | Linux |
+| Python | >= 3.10 |
+| CANN | >= 9.0.0，需执行 `set_env.sh` 配置环境变量 |
+| PyTorch + torch_npu | 2.7.1 / 2.10.0 |
+| triton-ascend | >= 3.2.2，使用 Triton 算子时必需 |
+| 构建依赖 | scikit-build、gcc/g++（支持 C++17） |
 
-```bash
-# CANN 环境变量
-source /usr/local/Ascend/cann/set_env.sh
-
-# 安装编译依赖
-pip install scikit-build
-
-# 验证 NPU 环境
-python3 -c "import torch; import torch_npu; print(torch.npu.is_available())"
-```
-
-## 编译安装
+## 🔨 编译安装
 
 ```bash
-# 编译所有 SOC 并安装
+# 默认编译三个 SOC 变体并安装（推荐）
 bash build.sh --install -j16
 
 # 仅编译指定 SOC
 bash build.sh --socs atlas_950 --install -j16
 ```
 
-生成的 whl 位于 `dist/`，可直接 `pip install dist/ops_rec-*.whl`。
+生成的 whl 位于 `dist/`，可直接 `pip install dist/ops_rec-*.whl`。多 SOC 产物合并打包说明见 [构建指南](docs/build_guide.md)。
 
-## 运行示例
+## ▶️ 运行示例
 
 ```bash
 # 运行所有 torch 示例
 bash run_examples.sh --type torch
 
-# 运行指定算子的 aclnn 示例
-bash run_examples.sh --type aclnn --ops ln_mul
+# 运行指定算子的 aclnn + torch 示例
+bash run_examples.sh --ops ln_mul
 ```
 
-## 算子开发
+> `run_examples.sh` 要求 ops_rec 已安装（`bash build.sh --install`）。
 
-两种开发模式：
+## 🛠️ 算子开发
 
-| 模式 | 说明 | 示例 |
-|---|---|---|
-| 单算子 vendor | 一个 vendor 一个算子 | `ln_mul` |
-| 多算子 vendor | 一个 vendor 多个算子，共享代码 | `hstu_v1` |
+新增算子时，按 `<group>/<vendor>` 目录约定放置代码即可。完整迁移流程、SOC 注册、`torch_extension` 写法、PR 模板等见 [算子迁移指南](docs/contribute_guide.md)。
 
-详见 [算子迁移指南](docs/contribute_guide.md)。
+## 🤝 建议与交流
 
-## License
+欢迎大家通过以下方式提出问题、交流讨论。
 
-Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+| 资源 | 说明 |
+| --- | --- |
+| [创建Issue](https://gitcode.com/Ascend/ops-rec/issues/new) | 提交 Bug、需求或建议 |

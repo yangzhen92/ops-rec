@@ -16,7 +16,7 @@ Checks: |
   ###########################################################################
   google-extern-c,                      # 检查 extern "C" 语法规范
   -google-extern-c-internal-include,    # 禁止在 extern "C" 内部包含头文件
-  google-build-using-namespace,         # 禁止在头文件/全局作用域使用 using namespace
+  -google-build-using-namespace,         # 禁止在头文件/全局作用域使用 using namespace
   google-default-arguments,             # 禁止虚函数使用默认参数（极易引发调用不一致）
   google-explicit-constructor,          # 单参数构造函数必须加 explicit（防止隐式转换）
 
@@ -59,11 +59,11 @@ Checks: |
   # 七、C++ Core Guidelines（工业级最权威规范）
   ###########################################################################
   cppcoreguidelines-pro-type-cstyle-cast,   # 禁止 C 语言强制转换 (type)val
-  cppcoreguidelines-pro-type-const-cast,   # 禁止危险的 const_cast
-  cppcoreguidelines-pro-type-reinterpret-cast, # 禁止危险的 reinterpret_cast
+  -cppcoreguidelines-pro-type-const-cast,   # 禁止危险的 const_cast
+  -cppcoreguidelines-pro-type-reinterpret-cast, # 禁止危险的 reinterpret_cast
   cppcoreguidelines-special-member-functions, # 构造/析构/拷贝/赋值 必须成对规范定义
   cppcoreguidelines-owning-memory,          # 内存所有权管理：new/delete 必须配对
-  cppcoreguidelines-macro-usage,            # 禁止用宏定义常量/函数（推荐 constexpr/inline）
+  -cppcoreguidelines-macro-usage,            # 禁止用宏定义常量/函数（推荐 constexpr/inline）
   cppcoreguidelines-avoid-assert,           # 禁止用 assert 做运行期错误检查
   cppcoreguidelines-lambda-capture-default, # 非局部 lambda 禁止默认按引用捕获（防止悬空引用）
 

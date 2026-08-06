@@ -56,24 +56,45 @@ inline void* GetOpApiLibHandler(const char* libName)
 
 inline std::vector<std::string> GetCustLibPath()
 {
+    // 1. 尝试从 ASCEND_OPP_PATH 找 vendors/config.ini
+    std::string vendorPath;
     char* ascendOppPath = std::getenv("ASCEND_OPP_PATH");
-    if (ascendOppPath == nullptr) {
-        ASCEND_LOGW("ASCEND_OPP_PATH is not set.");
-        return std::vector<std::string>();
+    if (ascendOppPath != nullptr) {
+        vendorPath = std::string(ascendOppPath) + "/vendors";
     }
-    std::string vendorPath = std::string(ascendOppPath) + "/vendors";
-    std::string vendorConfigFile = vendorPath + "/config.ini";
 
-    if (vendorConfigFile.empty()) {
-        ASCEND_LOGW("config.ini is not exists.");
-        return std::vector<std::string>();
+    std::string vendorConfigFile = vendorPath + "/config.ini";
+    if (!std::filesystem::exists(vendorConfigFile)) {                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       
+        // 2. 遍历 ASCEND_CUSTOM_OPP_PATH，找 config.ini
+        char* customOppPtr = std::getenv("ASCEND_CUSTOM_OPP_PATH");
+        if (customOppPtr != nullptr) {
+            std::string customOppPath(customOppPtr);
+            size_t start = 0;
+            while (start < customOppPath.size()) {
+                auto end = customOppPath.find(':', start);
+                std::string entry = (end != std::string::npos)
+                    ? customOppPath.substr(start, end - start)
+                    : customOppPath.substr(start);
+                if (!entry.empty()) {
+                    // entry 形如 .../vendors/ln_mul，父目录 .../vendors 下应有 config.ini
+                    std::string parent = std::filesystem::path(entry).parent_path().string();
+                    std::string candidate = parent + "/config.ini";
+                    if (std::filesystem::exists(candidate)) {
+                        vendorConfigFile = candidate;
+                        vendorPath = parent;
+                        break;
+                    }
+                }
+                if (end == std::string::npos) break;
+                start = end + 1;
+            }
+        }
     }
 
     if (!std::filesystem::exists(vendorConfigFile)) {
-        ASCEND_LOGW("config.ini is not exists.");
+        ASCEND_LOGW("config.ini not found under ASCEND_OPP_PATH or ASCEND_CUSTOM_OPP_PATH.");
         return std::vector<std::string>();
     }
-
     std::ifstream ifs(vendorConfigFile);
     std::string line;
     while (std::getline(ifs, line)) {
@@ -85,7 +106,6 @@ inline std::vector<std::string> GetCustLibPath()
     std::string head = "load_priority=";
     line.erase(0, head.length());
 
-    // split line by ','
     std::vector<std::string> paths;
     size_t pos = 0;
     while ((pos = line.find(',')) != std::string::npos) {

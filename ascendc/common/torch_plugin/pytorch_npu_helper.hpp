@@ -56,63 +56,84 @@ inline void* GetOpApiLibHandler(const char* libName)
 
 inline std::vector<std::string> GetCustLibPath()
 {
-    // 1. 尝试从 ASCEND_OPP_PATH 找 vendors/config.ini
-    std::string vendorPath;
-    char* ascendOppPath = std::getenv("ASCEND_OPP_PATH");
-    if (ascendOppPath != nullptr) {
-        vendorPath = std::string(ascendOppPath) + "/vendors";
+    const char* customOpp = std::getenv("ASCEND_CUSTOM_OPP_PATH");
+    const char* ascendOppPath = std::getenv("ASCEND_OPP_PATH");
+
+    std::string combined;
+    if (customOpp && *customOpp) {
+        combined = customOpp;
+        if (ascendOppPath && *ascendOppPath) {
+            combined += ":";
+            combined += ascendOppPath;
+        }
+    } else if (ascendOppPath && *ascendOppPath) {
+        combined = ascendOppPath;
+    } else {
+        ASCEND_LOGW("ASCEND_CUSTOM_OPP_PATH and ASCEND_OPP_PATH are not set.");
+        return std::vector<std::string>();
     }
 
-    std::string vendorConfigFile = vendorPath + "/config.ini";
-    if (!std::filesystem::exists(vendorConfigFile)) {
-        // 2. 遍历 ASCEND_CUSTOM_OPP_PATH，找 config.ini
-        char* customOppPtr = std::getenv("ASCEND_CUSTOM_OPP_PATH");
-        if (customOppPtr != nullptr) {
-            std::string customOppPath(customOppPtr);
-            size_t start = 0;
-            while (start < customOppPath.size()) {
-                auto end = customOppPath.find(':', start);
-                std::string entry =
-                    (end != std::string::npos) ? customOppPath.substr(start, end - start) : customOppPath.substr(start);
-                if (!entry.empty()) {
-                    // entry 形如 .../vendors/ln_mul，父目录 .../vendors 下应有 config.ini
-                    std::string parent = std::filesystem::path(entry).parent_path().string();
-                    std::string candidate = parent + "/config.ini";
-                    if (std::filesystem::exists(candidate)) {
-                        vendorConfigFile = candidate;
-                        vendorPath = parent;
-                        break;
-                    }
+    std::vector<std::string> opp_roots;
+    size_t start = 0;
+    while (start <= combined.size()) {
+        size_t pos = combined.find(':', start);
+        std::string token = combined.substr(start, pos - start);
+        if (!token.empty()) {
+            opp_roots.push_back(token);
+        }
+        if (pos == std::string::npos) {
+            break;
+        }
+        start = pos + 1;
+    }
+
+    if (opp_roots.empty()) {
+        ASCEND_LOGW("ASCEND custom/op path is empty.");
+        return std::vector<std::string>();
+    }
+
+    std::vector<std::string> paths;
+    for (const auto& root : opp_roots) {
+        std::string vendorPath = root + "/vendors";
+        std::string vendorConfigFile = vendorPath + "/config.ini";
+
+        if (vendorConfigFile.empty()) {
+            continue;
+        }
+
+        if (!std::filesystem::exists(vendorConfigFile)) {
+            continue;
+        }
+
+        std::ifstream ifs(vendorConfigFile);
+        std::string line;
+        while (std::getline(ifs, line)) {
+            if (line.find("load_priority") == 0) {
+                std::string head = "load_priority=";
+                if (line.size() >= head.size()) {
+                    line.erase(0, head.size());
+                } else {
+                    line.clear();
                 }
-                if (end == std::string::npos)
-                    break;
-                start = end + 1;
+
+                size_t pos = 0;
+                while ((pos = line.find(',')) != std::string::npos) {
+                    std::string vendor = line.substr(0, pos);
+                    paths.push_back(vendorPath + "/" + vendor + "/op_api/lib");
+                    line.erase(0, pos + 1);
+                }
+                if (!line.empty()) {
+                    paths.push_back(vendorPath + "/" + line + "/op_api/lib");
+                }
+                break;
             }
         }
     }
 
-    if (!std::filesystem::exists(vendorConfigFile)) {
-        ASCEND_LOGW("config.ini not found under ASCEND_OPP_PATH or ASCEND_CUSTOM_OPP_PATH.");
-        return std::vector<std::string>();
-    }
-    std::ifstream ifs(vendorConfigFile);
-    std::string line;
-    while (std::getline(ifs, line)) {
-        if (line.find("load_priority") == 0) {
-            break;
-        }
+    if (paths.empty()) {
+        ASCEND_LOGW("No valid vendor libraries found under ASCEND_OPP_PATH/ASCEND_CUSTOM_OPP_PATH.");
     }
 
-    std::string head = "load_priority=";
-    line.erase(0, head.length());
-
-    std::vector<std::string> paths;
-    size_t pos = 0;
-    while ((pos = line.find(',')) != std::string::npos) {
-        paths.push_back(vendorPath + "/" + line.substr(0, pos) + "/op_api/lib");
-        line.erase(0, pos + 1);
-    }
-    paths.push_back(vendorPath + "/" + line + "/op_api/lib");
     return paths;
 }
 

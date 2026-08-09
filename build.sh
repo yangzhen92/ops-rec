@@ -13,6 +13,7 @@ set -e
 INSTALL_MODE=false
 JOBS=""
 SOCS="atlas_950,atlas_a2,atlas_a3"  # 默认构建全部 SOC 变体
+OPS=""  # 可选：指定要构建的 vendor 名列表（逗号分隔）。为空 = 构建该 SOC 全部 vendor
 
 # ---------------------------------------------------------------------------
 # 解析命令行参数
@@ -47,6 +48,18 @@ while [ $# -gt 0 ]; do
             SOCS="${1#*=}"
             shift
             ;;
+        --ops)
+            if [ -z "${2:-}" ]; then
+                echo "[ERROR] --ops requires a value (e.g. --ops ln_mul,disentangle_attention)" >&2
+                exit 2
+            fi
+            OPS="$2"
+            shift 2
+            ;;
+        --ops=*)
+            OPS="${1#*=}"
+            shift
+            ;;
         -h|--help)
             cat <<EOF
 Usage: bash build.sh [flags]
@@ -57,6 +70,9 @@ Flags:
   --socs <list>             SOC variants to build, comma-separated
                             eg: --socs atlas_950
                                 --socs atlas_a2,atlas_a3,atlas_950 (default: all)
+  --ops <list>              Op vendors to build, comma-separated (default: all)
+                            Values are the CANN vendor package names
+                            eg: --ops ln_mul,disentangle_attention
 
 Environment variables:
   ASCEND_HOME_PATH          CANN install path (default: /usr/local/Ascend/latest)
@@ -95,22 +111,29 @@ echo "==========================================================="
 echo "[INFO] Build Configuration:"
 echo "  - Install Mode        : ${INSTALL_MODE}"
 echo "  - SOCs                : ${SOCS}"
+echo "  - Op Vendors          : ${OPS:-<all>}"
 echo "  - Ascend Home         : ${ASCEND_HOME_PATH}"
 echo "  - Parallel Jobs       : ${CMAKE_BUILD_PARALLEL_LEVEL:-<auto>}"
 echo "  - CMake Generator     : ${CMAKE_GENERATOR}"
 echo "==========================================================="
 
 # ---------------------------------------------------------------------------
-# 工具函数：构建单个 SOC variant
+# 工具函数：构建单个 (SOC, vendor) 组合。
+# vendor 为空时表示构建该 SOC 的全部 vendor（一个 configure）。
 # ---------------------------------------------------------------------------
-build_single_soc() {
+build_one() {
     local soc="$1"
+    local op="$2"
+    local label="${soc}"
+    if [ -n "${op}" ]; then
+        label="${soc}/${op}"
+    fi
     echo ""
     echo "-----------------------------------------------------------"
-    echo "[INFO] Building SOC variant: ${soc}"
+    echo "[INFO] Building ${label}"
     echo "-----------------------------------------------------------"
 
-    # 清理旧编译产物（每 SOC 必须重新编译）
+    # 清理旧编译产物（每 (soc, op) 必须重新编译，因 _skbuild 目录固定在项目根）
     rm -rf _skbuild/ build/ dist_tmp/
 
     # 同步 experimental/triton/ -> ops_rec/experimental/triton/
@@ -128,6 +151,13 @@ build_single_soc() {
 
     export OPS_REC_SOC_VARIANT="${soc}"
 
+    # 指定单算子时通过环境变量让根 CMakeLists 只编译该算子
+    if [ -n "${op}" ]; then
+        export OPS_REC_TARGET_OP="${op}"
+    else
+        unset OPS_REC_TARGET_OP
+    fi
+
     # 执行构建
     pip wheel . --no-build-isolation --no-deps -v -w dist_tmp/ 2>&1
 
@@ -135,7 +165,7 @@ build_single_soc() {
     local whl_file
     whl_file=$(ls dist_tmp/ops_rec-*.whl 2>/dev/null | head -1)
     if [ -z "${whl_file}" ]; then
-        echo "[ERROR] wheel not found in dist_tmp/ for variant ${soc}"
+        echo "[ERROR] wheel not found in dist_tmp/ for ${label}"
         exit 1
     fi
 
@@ -144,7 +174,7 @@ build_single_soc() {
         rm -rf "${triton_dst}"
     fi
 
-    # 提取此 variant 的产物到合并目录
+    # 提取此 (soc, op) 的产物到合并目录（不同 op 按 vendor 名在 merge_dir 内各自累积）
     local merge_dir="${SCRIPT_DIR}/dist_merge"
     mkdir -p "${merge_dir}"
 
@@ -161,12 +191,32 @@ main() {
     # 清理历史残余目录
     rm -rf dist_merge/ dist_tmp/ dist/
 
-    # 1. 循环编译各个 SOC 变体
+    # 解析 --ops 参数
+    local op_mode="all"
+    local -a OP_ARRAY=()
+    if [ -n "${OPS}" ]; then
+        op_mode="specified"
+        IFS=',' read -ra OP_ARRAY <<< "${OPS}"
+        for i in "${!OP_ARRAY[@]}"; do
+            OP_ARRAY[$i]="$(echo "${OP_ARRAY[$i]}" | xargs)"
+        done
+    fi
+
+    # 1. 循环编译各个 (SOC, OP) 组合
     IFS=',' read -ra SOC_ARRAY <<< "${SOCS}"
     for soc in "${SOC_ARRAY[@]}"; do
         soc="$(echo "${soc}" | xargs)"
         [ -z "${soc}" ] && continue
-        build_single_soc "${soc}"
+        if [ "${op_mode}" = "all" ]; then
+            # 编译该 SOC 全部算子（单个 configure，OPS_REC_TARGET_OP 不设置）
+            build_one "${soc}" ""
+        else
+            # 逐个算子独立 configure，规避 CANN 高层封装对多 vendor 单工程的全局耦合
+            for op in "${OP_ARRAY[@]}"; do
+                [ -z "${op}" ] && continue
+                build_one "${soc}" "${op}"
+            done
+        fi
     done
 
     echo ""

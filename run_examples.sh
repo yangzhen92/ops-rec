@@ -2,9 +2,9 @@
 # ============================================================================
 # 依赖：ops_rec 已安装（bash build.sh --install）
 # 用法：
-#   bash run_examples.sh                      # 跑所有算子所有类型
-#   bash run_examples.sh --type torch         # 只跑 torch 样例
-#   bash run_examples.sh --type aclnn --ops ln_mul   # 只跑 ln_mul 的 aclnn 样例
+#   bash run_examples.sh                            # 跑所有算子所有类型
+#   bash run_examples.sh --type torch               # 只跑 torch 样例
+#   bash run_examples.sh --type aclnn --ops ln_mul  # 只跑 ln_mul 的 aclnn 样例
 # ============================================================================
 
 set -e
@@ -38,7 +38,7 @@ while [ $# -gt 0 ]; do
             ;;
         --ops)
             if [ -z "${2:-}" ]; then
-                echo "[ERROR] --ops requires a value (comma-separated operator names)" >&2
+                echo "[ERROR] --ops requires a value (comma-separated op vendor names)" >&2
                 exit 2
             fi
             EXAMPLE_OPS="$2"
@@ -46,7 +46,7 @@ while [ $# -gt 0 ]; do
             ;;
         --ops=*)
             if [ "${1}" = "--ops=" ]; then
-                echo "[ERROR] --ops= requires a value (comma-separated operator names)" >&2
+                echo "[ERROR] --ops= requires a value (comma-separated op vendor names)" >&2
                 exit 2
             fi
             EXAMPLE_OPS="${1#*=}"
@@ -58,9 +58,10 @@ Usage: bash run_examples.sh [flags]
 
 Flags:
   --type <aclnn|torch|all>  Example type to run (default: all)
-  --ops <list>              Operator names, comma-separated (default: all)
+  --ops <list>              Op vendor names, comma-separated (default: all)
+                            Values are the CANN vendor package names
                             eg: --ops ln_mul
-                                --ops ln_mul,rmsnorm
+                                --ops ln_mul,disentangle_attention
 EOF
             exit 0
             ;;
@@ -222,7 +223,8 @@ run_aclnn_examples() {
                 -I"${acl_include}" \
                 ${gcc_lib_dirs} \
                 "${example_file}" \
-                -lcust_opapi -lascendcl -lnnopbase \
+                "${lib_dir}/libcust_opapi.so" \
+                -lascendcl -lnnopbase \
                 -o "${example_bin}"
 
             echo "[INFO] Running aclnn example: ${example_name}..."

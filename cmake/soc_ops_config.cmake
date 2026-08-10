@@ -5,14 +5,17 @@
 # ================================ A5 ops ================================
 set(OPS_REC_OPS_ATLAS_950
     ln_mul
+    disentangle_attention
 )
 
 # ================================ A3 ops ================================
 set(OPS_REC_OPS_ATLAS_A3
     ln_mul
+    disentangle_attention
 )
 
 # ================================ A2 ops ================================
 set(OPS_REC_OPS_ATLAS_A2
     ln_mul
+    disentangle_attention
 )

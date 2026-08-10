@@ -155,9 +155,16 @@ set(_OPS_REC_SOC_DEFS
 )
 
 # Torch 适配层源码 — 从每个算子的 torch_extension/ 目录收集
-file(GLOB_RECURSE OPS_REC_TORCH_PLUGIN_SRCS
-    ${CMAKE_CURRENT_SOURCE_DIR}/ascendc/*/torch_extension/*.cpp
+file(GLOB_RECURSE _ascendc_cpp_srcs
+    ${CMAKE_CURRENT_SOURCE_DIR}/ascendc/*.cpp
 )
+set(OPS_REC_TORCH_PLUGIN_SRCS "")
+foreach(_src ${_ascendc_cpp_srcs})
+    if(_src MATCHES "/torch_extension/[^/]+\\.cpp$")
+        list(APPEND OPS_REC_TORCH_PLUGIN_SRCS "${_src}")
+    endif()
+endforeach()
+unset(_ascendc_cpp_srcs)
 
 # 从文件路径提取 vendor 名 = torch_extension 的上一层目录名
 # 按文件注入 OPS_REC_CUST_VENDOR 编译宏，供 torch 适配层定位各 vendor 的 op_api 库。

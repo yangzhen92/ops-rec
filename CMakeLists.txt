@@ -57,6 +57,15 @@ string(REPLACE "." "_" _variant_upper "${_variant_upper}")
 set(OPS_REC_VENDORS ${OPS_REC_OPS_${_variant_upper}})
 message(STATUS "ops-rec: vendors for ${OPS_REC_SOC_VARIANT} = ${OPS_REC_VENDORS}")
 
+# OPS_REC_TARGET_OP — 由 cmake -D 或环境变量传入，设置且非空时，仅编译该指定op vendor
+set(OPS_REC_TARGET_OP "" CACHE STRING "ops-rec target op vendor (empty = all)")
+if(NOT OPS_REC_TARGET_OP AND DEFINED ENV{OPS_REC_TARGET_OP})
+    set(OPS_REC_TARGET_OP "$ENV{OPS_REC_TARGET_OP}" CACHE STRING "ops-rec target op vendor" FORCE)
+endif()
+if(OPS_REC_TARGET_OP)
+    message(STATUS "ops-rec: building only op vendor '${OPS_REC_TARGET_OP}'")
+endif()
+
 # ---------------------------------------------------------------------------
 # 算子编译 — 仅在 OPS_REC_VENDORS 中存在的算子才被编译
 # ---------------------------------------------------------------------------
@@ -80,11 +89,16 @@ foreach(_gd ${_op_group_dirs})
         # 检查算子名是否在当前 variant 的编译列表中
         list(FIND OPS_REC_VENDORS ${_od} _vendor_idx)
         if(_vendor_idx EQUAL -1)
-            message(STATUS "ops-rec: skipping operator '${_gd}/${_od}' (not in ${OPS_REC_SOC_VARIANT} list)")
+            message(STATUS "ops-rec: skipping op vendor '${_gd}/${_od}' (not in ${OPS_REC_SOC_VARIANT} list)")
+            continue()
+        endif()
+        # 若指定了 OPS_REC_TARGET_OP，只编译该op vendor
+        if(OPS_REC_TARGET_OP AND NOT _od STREQUAL OPS_REC_TARGET_OP)
+            message(STATUS "ops-rec: skipping op vendor '${_gd}/${_od}' (not target ${OPS_REC_TARGET_OP})")
             continue()
         endif()
         add_subdirectory(ascendc/${_gd}/${_od})
-        message(STATUS "ops-rec: added operator '${_gd}/${_od}'")
+        message(STATUS "ops-rec: added op vendor '${_gd}/${_od}'")
     endforeach()
 endforeach()
 

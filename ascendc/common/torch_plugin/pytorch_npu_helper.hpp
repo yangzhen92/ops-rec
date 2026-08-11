@@ -13,9 +13,12 @@ See the License for the specific language governing permissions and
         limitations under the License.
 ==============================================================================*/
 #ifndef PYTORCH_NPU_HELPER_HPP_
-#define PYTORCH_NPU_HELPER_HPP_
+#define PYTORCH_NPU_HELPER_HPP_ssss
 
 #include <iostream>
+#include <mutex>
+#include <vector>
+#include <unordered_map>
 #include "pytorch_npu_const.h"
 
 constexpr aclDataType kATenScalarTypeToAclDataTypeTable[static_cast<int64_t>(at::ScalarType::NumOptions) + 1] = {
@@ -56,63 +59,84 @@ inline void* GetOpApiLibHandler(const char* libName)
 
 inline std::vector<std::string> GetCustLibPath()
 {
-    // 1. 尝试从 ASCEND_OPP_PATH 找 vendors/config.ini
-    std::string vendorPath;
-    char* ascendOppPath = std::getenv("ASCEND_OPP_PATH");
-    if (ascendOppPath != nullptr) {
-        vendorPath = std::string(ascendOppPath) + "/vendors";
+    const char* customOpp = std::getenv("ASCEND_CUSTOM_OPP_PATH");
+    const char* ascendOppPath = std::getenv("ASCEND_OPP_PATH");
+
+    std::string combined;
+    if (customOpp && *customOpp) {
+        combined = customOpp;
+        if (ascendOppPath && *ascendOppPath) {
+            combined += ":";
+            combined += ascendOppPath;
+        }
+    } else if (ascendOppPath && *ascendOppPath) {
+        combined = ascendOppPath;
+    } else {
+        ASCEND_LOGW("ASCEND_CUSTOM_OPP_PATH and ASCEND_OPP_PATH are not set.");
+        return std::vector<std::string>();
     }
 
-    std::string vendorConfigFile = vendorPath + "/config.ini";
-    if (!std::filesystem::exists(vendorConfigFile)) {
-        // 2. 遍历 ASCEND_CUSTOM_OPP_PATH，找 config.ini
-        char* customOppPtr = std::getenv("ASCEND_CUSTOM_OPP_PATH");
-        if (customOppPtr != nullptr) {
-            std::string customOppPath(customOppPtr);
-            size_t start = 0;
-            while (start < customOppPath.size()) {
-                auto end = customOppPath.find(':', start);
-                std::string entry =
-                    (end != std::string::npos) ? customOppPath.substr(start, end - start) : customOppPath.substr(start);
-                if (!entry.empty()) {
-                    // entry 形如 .../vendors/ln_mul，父目录 .../vendors 下应有 config.ini
-                    std::string parent = std::filesystem::path(entry).parent_path().string();
-                    std::string candidate = parent + "/config.ini";
-                    if (std::filesystem::exists(candidate)) {
-                        vendorConfigFile = candidate;
-                        vendorPath = parent;
-                        break;
-                    }
+    std::vector<std::string> opp_roots;
+    size_t start = 0;
+    while (start <= combined.size()) {
+        size_t pos = combined.find(':', start);
+        std::string token = combined.substr(start, pos - start);
+        if (!token.empty()) {
+            opp_roots.push_back(token);
+        }
+        if (pos == std::string::npos) {
+            break;
+        }
+        start = pos + 1;
+    }
+
+    if (opp_roots.empty()) {
+        ASCEND_LOGW("ASCEND custom/op path is empty.");
+        return std::vector<std::string>();
+    }
+
+    std::vector<std::string> paths;
+    for (const auto& root : opp_roots) {
+        std::string vendorPath = root + "/vendors";
+        std::string vendorConfigFile = vendorPath + "/config.ini";
+
+        if (vendorConfigFile.empty()) {
+            continue;
+        }
+
+        if (!std::filesystem::exists(vendorConfigFile)) {
+            continue;
+        }
+
+        std::ifstream ifs(vendorConfigFile);
+        std::string line;
+        while (std::getline(ifs, line)) {
+            if (line.find("load_priority") == 0) {
+                std::string head = "load_priority=";
+                if (line.size() >= head.size()) {
+                    line.erase(0, head.size());
+                } else {
+                    line.clear();
                 }
-                if (end == std::string::npos)
-                    break;
-                start = end + 1;
+
+                size_t pos = 0;
+                while ((pos = line.find(',')) != std::string::npos) {
+                    std::string vendor = line.substr(0, pos);
+                    paths.push_back(vendorPath + "/" + vendor + "/op_api/lib");
+                    line.erase(0, pos + 1);
+                }
+                if (!line.empty()) {
+                    paths.push_back(vendorPath + "/" + line + "/op_api/lib");
+                }
+                break;
             }
         }
     }
 
-    if (!std::filesystem::exists(vendorConfigFile)) {
-        ASCEND_LOGW("config.ini not found under ASCEND_OPP_PATH or ASCEND_CUSTOM_OPP_PATH.");
-        return std::vector<std::string>();
-    }
-    std::ifstream ifs(vendorConfigFile);
-    std::string line;
-    while (std::getline(ifs, line)) {
-        if (line.find("load_priority") == 0) {
-            break;
-        }
+    if (paths.empty()) {
+        ASCEND_LOGW("No valid vendor libraries found under ASCEND_OPP_PATH/ASCEND_CUSTOM_OPP_PATH.");
     }
 
-    std::string head = "load_priority=";
-    line.erase(0, head.length());
-
-    std::vector<std::string> paths;
-    size_t pos = 0;
-    while ((pos = line.find(',')) != std::string::npos) {
-        paths.push_back(vendorPath + "/" + line.substr(0, pos) + "/op_api/lib");
-        line.erase(0, pos + 1);
-    }
-    paths.push_back(vendorPath + "/" + line + "/op_api/lib");
     return paths;
 }
 
@@ -138,6 +162,55 @@ inline void* GetOpApiFuncAddr(const char* apiName)
         return nullptr;
     }
     return GetOpApiFuncAddrInLib(opApiHandler, GetOpApiLibName(), apiName);
+}
+
+// 定位并 dlopen 指定 vendor 的 op_api 库，带进程级 handler 缓存（每 vendor 只 dlopen 一次）。
+// ASCEND_CUSTOM_OPP_PATH 的首个 entry 形如 <root>/opp/<variant>/vendors/<vendor>，
+// 截到 "/vendors" 前的 variant 根后直接拼接各 vendor 的库路径，无需遍历/试探多种候选。
+inline void* GetVendorOpApiHandler(const char* vendor)
+{
+    static std::unordered_map<std::string, void*> gVendorHandler;
+    static std::mutex gVendorHandlerMutex;
+    std::lock_guard<std::mutex> lock(gVendorHandlerMutex);
+    auto it = gVendorHandler.find(vendor);
+    if (it != gVendorHandler.end()) {
+        return it->second;
+    }
+
+    void* handler = nullptr;
+    const char* customOpp = std::getenv("ASCEND_CUSTOM_OPP_PATH");
+    if (customOpp != nullptr && *customOpp != '\0') {
+        std::string first = customOpp;
+        size_t colon = first.find(':');
+        if (colon != std::string::npos) {
+            first = first.substr(0, colon);  // 取首个 entry
+        }
+        std::string vendorRoot = first;
+        size_t vendPos = first.rfind("/vendors");
+        if (vendPos != std::string::npos) {
+            vendorRoot = first.substr(0, vendPos);  // 截到 /vendors 前的 variant 根
+        }
+        const std::string lib = vendorRoot + "/vendors/" + vendor + "/op_api/lib/" + GetCustOpApiLibName();
+        if (std::filesystem::exists(lib)) {
+            handler = GetOpApiLibHandler(lib.c_str());
+        }
+    }
+
+    gVendorHandler[vendor] = handler;
+    return handler;
+}
+
+// 仅查找指定 vendor 的 op_api 符号，复用缓存的 dlopen 句柄
+inline void* GetOpApiFuncAddrForVendor(const char* vendor, const char* apiName)
+{
+    if (vendor == nullptr || *vendor == '\0' || apiName == nullptr) {
+        return nullptr;
+    }
+    void* handler = GetVendorOpApiHandler(vendor);
+    if (handler == nullptr) {
+        return nullptr;
+    }
+    return GetOpApiFuncAddrInLib(handler, GetCustOpApiLibName(), apiName);
 }
 
 inline c10::Scalar ConvertTensorToScalar(const at::Tensor& tensor)
@@ -483,13 +556,15 @@ typedef int (*InitHugeMemThreadLocal)(void*, bool);
 typedef void (*UnInitHugeMemThreadLocal)(void*, bool);
 typedef void (*ReleaseHugeMem)(void*, bool);
 
-#define EXEC_NPU_CMD(aclnn_api, ...)                                                                          \
-    do {                                                                                                      \
-        static const auto getWorkspaceSizeFuncAddr = GetOpApiFuncAddr(#aclnn_api "GetWorkspaceSize");         \
-        static const auto opApiFuncAddr = GetOpApiFuncAddr(#aclnn_api);                                       \
-        static const auto initMemAddr = GetOpApiFuncAddr("InitHugeMemThreadLocal");                           \
-        static const auto unInitMemAddr = GetOpApiFuncAddr("UnInitHugeMemThreadLocal");                       \
-        static const auto releaseMemAddr = GetOpApiFuncAddr("ReleaseHugeMem");                                \
+// clang-format off
+#define EXEC_NPU_CMD(aclnn_api, ...)                                                                                  \
+    do {                                                                                                              \
+        static const auto getWorkspaceSizeFuncAddr = GetOpApiFuncAddrForVendor(OPS_REC_CUST_VENDOR,                   \
+                                                                               #aclnn_api "GetWorkspaceSize");        \
+        static const auto opApiFuncAddr = GetOpApiFuncAddrForVendor(OPS_REC_CUST_VENDOR, #aclnn_api);                 \
+        static const auto initMemAddr = GetOpApiFuncAddrForVendor(OPS_REC_CUST_VENDOR, "InitHugeMemThreadLocal");     \
+        static const auto unInitMemAddr = GetOpApiFuncAddrForVendor(OPS_REC_CUST_VENDOR, "UnInitHugeMemThreadLocal"); \
+        static const auto releaseMemAddr = GetOpApiFuncAddrForVendor(OPS_REC_CUST_VENDOR, "ReleaseHugeMem");          \
         TORCH_CHECK(getWorkspaceSizeFuncAddr != nullptr && opApiFuncAddr != nullptr, #aclnn_api, " or ",      \
                     #aclnn_api "GetWorkspaceSize", " not in ", GetOpApiLibName(), ", or ", GetOpApiLibName(), \
                     "not found.");                                                                            \
@@ -534,5 +609,6 @@ typedef void (*ReleaseHugeMem)(void*, bool);
             unInitMemFunc(nullptr, false);                                                                    \
         }                                                                                                     \
     } while (false)
+// clang-format on
 
 #endif  // PYTORCH_NPU_HELPER_HPP_

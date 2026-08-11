@@ -118,6 +118,16 @@ echo "  - CMake Generator     : ${CMAKE_GENERATOR}"
 echo "==========================================================="
 
 # ---------------------------------------------------------------------------
+# 工具函数：获取某 SOC 的算子清单。
+#   cmake -DSOC=atlas_950 -P cmake/soc_ops_config.cmake
+# ---------------------------------------------------------------------------
+ops_for_soc() {
+    local soc="$1"
+    # message() 在 cmake -P 脚本模式下输出到 stderr，用 2>&1 并入 stdout 以便命令替换捕获。
+    cmake -DSOC="${soc}" -P "${SCRIPT_DIR}/cmake/soc_ops_config.cmake" 2>&1
+}
+
+# ---------------------------------------------------------------------------
 # 工具函数：构建单个 (SOC, vendor) 组合。
 # vendor 为空时表示构建该 SOC 的全部 vendor（一个 configure）。
 # ---------------------------------------------------------------------------
@@ -208,8 +218,16 @@ main() {
         soc="$(echo "${soc}" | xargs)"
         [ -z "${soc}" ] && continue
         if [ "${op_mode}" = "all" ]; then
-            # 编译该 SOC 全部算子（单个 configure，OPS_REC_TARGET_OP 不设置）
-            build_one "${soc}" ""
+            # 全量模式：从 soc_ops_config.cmake 解析该 SOC 的算子清单，
+            local op_list
+            op_list=$(ops_for_soc "${soc}")
+            if [ -z "${op_list}" ]; then
+                echo "[WARN] No ops found for SOC ${soc} in cmake/soc_ops_config.cmake; skipping"
+                continue
+            fi
+            for op in ${op_list}; do
+                build_one "${soc}" "${op}"
+            done
         else
             # 逐个算子独立 configure，规避 CANN 高层封装对多 vendor 单工程的全局耦合
             for op in "${OP_ARRAY[@]}"; do

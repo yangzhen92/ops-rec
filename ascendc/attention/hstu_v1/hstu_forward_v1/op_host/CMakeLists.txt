@@ -3,7 +3,9 @@
 # ----------------------------------------------------------------------------
 # 使用 CANN 的 npu_op_code_gen + npu_op_library 编译。
 # npu_op_package 已在上层 CMakeLists.txt 调用。
-set(MY_COMMON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../common)
+# 注意：本 vendor 位于 hstu_v1/hstu_forward_v1 两级嵌套子组下，
+# 相对 common 需上溯 4 级（../../../..），与 ln_mul 等一层子目录的 vendor 不同。
+set(MY_COMMON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../common)
 
 # OPS_REC_SOC_CXX_DEFS 由根 CMakeLists.txt 统一设置（SUPPORT_950 / SUPPORT_A2 / SUPPORT_A3）
 # 该算子按 SOC 使用不同布局的 hstu_kernel_tiling_key.h（host 侧 tiling 生成依赖其字段布局）：

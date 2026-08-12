@@ -57,18 +57,46 @@ string(REPLACE "." "_" _variant_upper "${_variant_upper}")
 set(OPS_REC_VENDORS ${OPS_REC_OPS_${_variant_upper}})
 message(STATUS "ops-rec: vendors for ${OPS_REC_SOC_VARIANT} = ${OPS_REC_VENDORS}")
 
-# OPS_REC_TARGET_OP — 由 cmake -D 或环境变量传入，设置且非空时，仅编译该指定op vendor
-set(OPS_REC_TARGET_OP "" CACHE STRING "ops-rec target op vendor (empty = all)")
+# OPS_REC_TARGET_OP — 由 cmake -D 或环境变量传入
+# 设置且非空时，仅编译该指定算子（用于 build.sh 逐算子独立 configure
+# 留空 = 编该 SOC 全部。
+set(OPS_REC_TARGET_OP "" CACHE STRING "ops-rec target operator (empty = all)")
 if(NOT OPS_REC_TARGET_OP AND DEFINED ENV{OPS_REC_TARGET_OP})
-    set(OPS_REC_TARGET_OP "$ENV{OPS_REC_TARGET_OP}" CACHE STRING "ops-rec target op vendor" FORCE)
+    set(OPS_REC_TARGET_OP "$ENV{OPS_REC_TARGET_OP}" CACHE STRING "ops-rec target operator" FORCE)
 endif()
 if(OPS_REC_TARGET_OP)
-    message(STATUS "ops-rec: building only op vendor '${OPS_REC_TARGET_OP}'")
+    message(STATUS "ops-rec: building only operator '${OPS_REC_TARGET_OP}'")
+endif()
+
+# OPS_REC_SKIP_OPS — 由 cmake -D 或环境变量传入。
+# 设为 ON 时跳过全部算子的 add_subdirectory，只编译 Torch 适配层 .so。
+# 用于 build.sh 的"适配层单次 pass"：并行逐算子编译（各自独立 configure）完成后，
+# 单独再 configure 一次，仅产出 ops_rec_atlas_<variant>.so。
+set(OPS_REC_SKIP_OPS "" CACHE STRING "ops-rec skip operator subdirs (ON=adapter-only pass)")
+if(NOT OPS_REC_SKIP_OPS AND DEFINED ENV{OPS_REC_SKIP_OPS})
+    set(OPS_REC_SKIP_OPS "$ENV{OPS_REC_SKIP_OPS}" CACHE STRING "ops-rec skip operator subdirs" FORCE)
+endif()
+if(OPS_REC_SKIP_OPS)
+    message(STATUS "ops-rec: skipping all operator subdirs (adapter-only pass)")
+endif()
+
+# OPS_REC_SKIP_TORCH_PLUGIN — 由 cmake -D 或环境变量传入。
+# 设为 ON 时跳过 Torch 适配层 .so 的构建与安装。
+# 用于 build.sh 的"逐算子并行 pass"：每个算子独立 configure 时只编译该算子的
+# kernel/opapi，不重复编译适配层，避免并行进程对同一 .so 的竞争写入。
+set(OPS_REC_SKIP_TORCH_PLUGIN "" CACHE STRING "ops-rec skip torch adapter .so (ON=op-only pass)")
+if(NOT OPS_REC_SKIP_TORCH_PLUGIN AND DEFINED ENV{OPS_REC_SKIP_TORCH_PLUGIN})
+    set(OPS_REC_SKIP_TORCH_PLUGIN "$ENV{OPS_REC_SKIP_TORCH_PLUGIN}" CACHE STRING "ops-rec skip torch adapter .so" FORCE)
+endif()
+if(OPS_REC_SKIP_TORCH_PLUGIN)
+    message(STATUS "ops-rec: skipping torch adapter .so (op-only pass)")
 endif()
 
 # ---------------------------------------------------------------------------
 # 算子编译 — 仅在 OPS_REC_VENDORS 中存在的算子才被编译
+# OPS_REC_SKIP_OPS 打开时跳过整个 add_subdirectory 循环（适配层单次 pass）。
 # ---------------------------------------------------------------------------
+if(NOT OPS_REC_SKIP_OPS)
 file(GLOB _op_group_dirs LIST_DIRECTORIES true
     RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/ascendc
     ${CMAKE_CURRENT_SOURCE_DIR}/ascendc/*)
@@ -89,22 +117,24 @@ foreach(_gd ${_op_group_dirs})
         # 检查算子名是否在当前 variant 的编译列表中
         list(FIND OPS_REC_VENDORS ${_od} _vendor_idx)
         if(_vendor_idx EQUAL -1)
-            message(STATUS "ops-rec: skipping op vendor '${_gd}/${_od}' (not in ${OPS_REC_SOC_VARIANT} list)")
+            message(STATUS "ops-rec: skipping operator '${_gd}/${_od}' (not in ${OPS_REC_SOC_VARIANT} list)")
             continue()
         endif()
-        # 若指定了 OPS_REC_TARGET_OP，只编译该op vendor
+        # 若指定了 OPS_REC_TARGET_OP，只编译该算子（逐算子独立 configure）
         if(OPS_REC_TARGET_OP AND NOT _od STREQUAL OPS_REC_TARGET_OP)
-            message(STATUS "ops-rec: skipping op vendor '${_gd}/${_od}' (not target ${OPS_REC_TARGET_OP})")
+            message(STATUS "ops-rec: skipping operator '${_gd}/${_od}' (not target ${OPS_REC_TARGET_OP})")
             continue()
         endif()
         add_subdirectory(ascendc/${_gd}/${_od})
-        message(STATUS "ops-rec: added op vendor '${_gd}/${_od}'")
+        message(STATUS "ops-rec: added operator '${_gd}/${_od}'")
     endforeach()
 endforeach()
+endif() # NOT OPS_REC_SKIP_OPS
 
 # ---------------------------------------------------------------------------
-# Torch 适配层编译
+# Torch 适配层编译（OPS_REC_SKIP_TORCH_PLUGIN=ON 时整体跳过，用于逐算子并行 pass）
 # ---------------------------------------------------------------------------
+if(NOT OPS_REC_SKIP_TORCH_PLUGIN)
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 
 if(CMAKE_PREFIX_PATH)
@@ -154,9 +184,9 @@ set(_OPS_REC_SOC_DEFS
     ${OPS_REC_SOC_CXX_DEFS}
 )
 
-# Torch 适配层源码 — 从每个算子的 torch_extension/ 目录收集
+# Torch 适配层源码 — 从每个算子的 torch_extension/ 目录收集。
 file(GLOB_RECURSE _ascendc_cpp_srcs
-      ${CMAKE_CURRENT_SOURCE_DIR}/ascendc/*.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ascendc/*.cpp
 )
 set(OPS_REC_TORCH_PLUGIN_SRCS "")
 foreach(_src ${_ascendc_cpp_srcs})
@@ -166,13 +196,36 @@ foreach(_src ${_ascendc_cpp_srcs})
 endforeach()
 unset(_ascendc_cpp_srcs)
 
-# 从文件路径提取 vendor 名 = torch_extension 的上一层目录名
-# 按文件注入 OPS_REC_CUST_VENDOR 编译宏，供 torch 适配层定位各 vendor 的 op_api 库。
 foreach(_plugin_src ${OPS_REC_TORCH_PLUGIN_SRCS})
     if(_plugin_src MATCHES "([^/]+)/torch_extension/[^/]+\\.cpp$")
         string(REGEX REPLACE "^.*/([^/]+)/torch_extension/[^/]+\\.cpp$" "\\1" _vendor_name "${_plugin_src}")
+        set(_cust_vendor "${_vendor_name}")
+        # vendor 目录名可能与路径不同（多级 vendor），直接从源码路径推导其所在目录
+        get_filename_component(_torch_plugin_dir "${_plugin_src}" DIRECTORY)      # .../torch_extension
+        get_filename_component(_vendor_dir "${_torch_plugin_dir}" DIRECTORY)      # .../<vendor>
+        if(NOT IS_DIRECTORY "${_vendor_dir}/op_kernel")
+            # 聚合 vendor：同层无 op_kernel，从一层子目录中收集含 forward/backward 的独立 vendor。
+            # 显式按 forward 在前、backward 在后的顺序收集，保证 vendor 列表可读性与确定性。
+            set(_sub_vendors "")
+            file(GLOB _subdirs LIST_DIRECTORIES true RELATIVE "${_vendor_dir}" "${_vendor_dir}/*forward*")
+            foreach(_sd ${_subdirs})
+                list(APPEND _sub_vendors "${_sd}")
+            endforeach()
+            file(GLOB _subdirs LIST_DIRECTORIES true RELATIVE "${_vendor_dir}" "${_vendor_dir}/*backward*")
+            foreach(_sd ${_subdirs})
+                list(APPEND _sub_vendors "${_sd}")
+            endforeach()
+            list(REMOVE_DUPLICATES _sub_vendors)
+            if(_sub_vendors)
+                string(REPLACE ";" "|" _cust_vendor "${_sub_vendors}")
+                message(STATUS "ops-rec: aggregated vendor '${_vendor_name}' -> sub-vendors '${_cust_vendor}'")
+            else()
+                message(WARNING "ops-rec: '${_vendor_name}' has no op_kernel/ and no forward/backward sub-vendor; "
+                                "OPS_REC_CUST_VENDOR stays '${_cust_vendor}'")
+            endif()
+        endif()
         set_source_files_properties("${_plugin_src}" PROPERTIES
-            COMPILE_DEFINITIONS "OPS_REC_CUST_VENDOR=\"${_vendor_name}\"")
+            COMPILE_DEFINITIONS "OPS_REC_CUST_VENDOR=\"${_cust_vendor}\"")
     else()
         message(WARNING "Failed to extract vendor name from source path: ${_plugin_src}")
     endif()
@@ -218,6 +271,7 @@ if(OPS_REC_TORCH_PLUGIN_SRCS)
         RUNTIME DESTINATION .
     )
 endif()
+endif() # NOT OPS_REC_SKIP_TORCH_PLUGIN
 
 # ===========================================================================
 # kernel 产物安装（按算子拆分的 install-time 动态拷贝）

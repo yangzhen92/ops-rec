@@ -64,6 +64,7 @@ npu_op_library(cust_op_proto GRAPH
 target_include_directories(cust_op_proto PRIVATE
     ${MY_COMMON_DIR}/log
     ${MY_COMMON_DIR}/utils
+    ${HSTU_KERNEL_INCLUDE_DIR}
 )
 
 target_compile_options(cust_op_proto PRIVATE

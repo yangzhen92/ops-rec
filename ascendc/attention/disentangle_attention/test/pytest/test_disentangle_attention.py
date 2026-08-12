@@ -24,7 +24,7 @@ from gendata import TestArgs, DataArgs, create_test_data
 from gloden import golden_disentangle_attention
 from verify import compare_result
 
-DEVICE = "npu:2"
+DEVICE = "npu:0"
 torch.npu.set_device(DEVICE)
 torch._dynamo.config.cache_size_limit = 1024
 
@@ -93,6 +93,23 @@ def test_graph(b, n, s, d, pos_att_type):
 
     # profiling test
     weight_compare_res, prob_comapre_res, output_compare_res = run_test(args, 1, compiled_fn)
+
+    assert weight_compare_res
+    assert prob_comapre_res
+    assert output_compare_res
+
+
+@pytest.mark.ci
+@pytest.mark.parametrize("b", [11])
+@pytest.mark.parametrize("n", [12])
+@pytest.mark.parametrize("s", [256])
+@pytest.mark.parametrize("d", [32])
+@pytest.mark.parametrize("pos_att_type", ["c2p|p2c"])
+def test_ci(b, n, s, d, pos_att_type):
+    args = create_test_data(DataArgs(b, n, s, d, -1, 512, pos_att_type), DEVICE)
+
+    # profiling test
+    weight_compare_res, prob_comapre_res, output_compare_res = run_test(args)
 
     assert weight_compare_res
     assert prob_comapre_res

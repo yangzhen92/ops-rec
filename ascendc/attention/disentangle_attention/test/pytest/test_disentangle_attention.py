@@ -24,6 +24,7 @@ from gendata import TestArgs, DataArgs, create_test_data
 from gloden import golden_disentangle_attention
 from verify import compare_result
 
+
 DEVICE = "npu:2"
 torch.npu.set_device(DEVICE)
 torch._dynamo.config.cache_size_limit = 1024

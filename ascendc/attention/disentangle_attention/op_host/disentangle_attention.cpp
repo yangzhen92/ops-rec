@@ -12,6 +12,7 @@
 #include "register/op_def_registry.h"
 #include "ops_log.h"
 
+
 constexpr uint32_t ACC_S = 256;  // 基本加速块的大小
 constexpr uint32_t LONG_ACC_S = ACC_S * 2;
 constexpr uint32_t UB_BUFFER_NUM = 1;

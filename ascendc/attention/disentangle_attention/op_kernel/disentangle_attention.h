@@ -8,6 +8,7 @@
 #include "kernel_operator.h"
 #include "lib/matmul_intf.h"
 
+
 using namespace AscendC;
 
 constexpr uint32_t UB_BUFFER_NUM = 1;

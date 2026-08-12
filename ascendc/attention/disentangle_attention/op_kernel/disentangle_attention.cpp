@@ -4,6 +4,7 @@
 
 #include "disentangle_attention.h"
 
+
 template <typename T>
 __aicore__ inline void InvokeImpl(const KernelArgs& kernel_args)
 {

@@ -12,6 +12,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
         See the License for the specific language governing permissions and
         limitations under the License.
 ==============================================================================*/
+#define OPS_REC_CUST_VENDORS "block_sparse_func"
 
 #include <torch/csrc/autograd/custom_function.h>
 #include <torch/library.h>
@@ -88,23 +89,11 @@ std::vector<Tensor> compact_no_sync_impl_npu(const Tensor& mask_block_cnt, const
     EXEC_NPU_CMD(aclnnDualExclusiveScan, maskBlockCntConti, fullBlockCntConti, maskOffset, fullOffset);
 
     // 调用 extract_compact kernel
-    EXEC_NPU_CMD(aclnnExtractCompact, blockIdxConti, maskBlockCntConti, fullBlockCntConti, maskOffset, fullOffset, maskCompact,
-                 fullCompact);
+    EXEC_NPU_CMD(aclnnExtractCompact, blockIdxConti, maskBlockCntConti, fullBlockCntConti, maskOffset, fullOffset,
+                 maskCompact, fullCompact);
 
     // 返回6-tuple
     return {maskBlockCntConti, maskOffset, maskCompact, fullBlockCntConti, fullOffset, fullCompact};
-}
-
-// 注册 ln_mul 的 schema
-TORCH_LIBRARY_FRAGMENT(ops_rec, m)
-{
-    m.def("compact_no_sync(Tensor mask_block_cnt, Tensor full_block_cnt, Tensor block_idx) -> Tensor[]");
-}
-
-// NPU 设备实现
-TORCH_LIBRARY_IMPL(ops_rec, PrivateUse1, m)
-{
-    m.impl("compact_no_sync", &compact_no_sync_impl_npu);
 }
 
 namespace {
@@ -135,15 +124,22 @@ tensor_list compact_no_sync_meta(const Tensor& mask_block_cnt, const Tensor& ful
     auto mask_compact = at::empty({nFlat * maxBlocks}, mask_block_cnt.options());
     auto full_compact = at::empty({nFlat * maxBlocks}, block_idx.options());
 
-    return {mask_cnt,
-            mask_offset,
-            mask_compact,
-            full_cnt,
-            full_offset,
-            full_compact};
+    return {mask_cnt, mask_offset, mask_compact, full_cnt, full_offset, full_compact};
 }
 
 }  // anonymous namespace
+
+// 注册 block_sparse_func 的 schema
+TORCH_LIBRARY_FRAGMENT(ops_rec, m)
+{
+    m.def("compact_no_sync(Tensor mask_block_cnt, Tensor full_block_cnt, Tensor block_idx) -> Tensor[]");
+}
+
+// NPU 设备实现
+TORCH_LIBRARY_IMPL(ops_rec, PrivateUse1, m)
+{
+    m.impl("compact_no_sync", &compact_no_sync_impl_npu);
+}
 
 TORCH_LIBRARY_IMPL(ops_rec, Meta, m)
 {

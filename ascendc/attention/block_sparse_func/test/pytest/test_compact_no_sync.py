@@ -42,10 +42,12 @@ torch._dynamo.config.cache_size_limit = 256
 
 logging.basicConfig(level=logging.INFO)
 
+
 def torch_compiled(model, **kwargs):
     if sys.version_info < (3, 12, 0):
         return torch.compile(model, **kwargs)
     return model
+
 
 # ---------------------------------------------------------------------------
 # CPU reference implementation
@@ -528,7 +530,6 @@ def test_compact_no_sync_full_and_mask_independent(device):
     """
     _require_npu()
 
-    B, H, num_blocks, max_blocks = 1, 1, 2, 4
     block_idx_a = np.array([[[[1, 2, 3, 4], [5, 6, 7, 8]]]], dtype=np.int32)
     block_idx_b = block_idx_a.copy()
 
@@ -555,6 +556,7 @@ def test_compact_no_sync_full_and_mask_independent(device):
 
     # sanity: mask stream DID change — otherwise the assertion above is trivial
     assert not torch.equal(out_a[1], out_b[1])  # mask_offset
+
 
 @pytest.mark.graph
 @pytest.mark.parametrize("device", ["npu:0"])
@@ -583,6 +585,7 @@ def test_compact_no_sync_graph(device):
     # Compacts are over-allocated; slice to the valid prefix from the offset tail.
     assert npu_mcp[: int(npu_mo[-1])].tolist() == [40]
     assert npu_fcp[: int(npu_fo[-1])].tolist() == [10, 20]
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-sv"])

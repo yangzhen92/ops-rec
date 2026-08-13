@@ -68,7 +68,7 @@ bash run_examples.sh --ops ln_mul
 
 ## 🛠️ 算子开发
 
-新增算子时，按 `<group>/<vendor>` 目录约定放置代码即可。完整迁移流程、SOC 注册、`torch_extension` 写法、PR 模板等见 [算子迁移指南](docs/contribute_guide.md)。
+新增算子时，按 `<group>/<vendor>` 目录约定放置代码即可。完整迁移流程、SOC 注册、`torch_extension` 写法、PR 模板等见 [算子贡献指南](docs/contribute_guide.md)。
 
 ## 🤝 建议与交流
 

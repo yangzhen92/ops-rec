@@ -2,6 +2,7 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2025-2025. All rights reserved.
  */
 
+#define OPS_REC_CUST_VENDORS "disentangle_attention"
 #include <torch/csrc/autograd/custom_function.h>
 #include <torch/library.h>
 

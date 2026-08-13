@@ -20,6 +20,9 @@ See the License for the specific language governing permissions and
 #include "register/op_def_registry.h"
 #include "ops_log.h"
 
+namespace {
+constexpr int32_t MAX_NUM_BLOCKS = 65535;
+}
 namespace optiling {
 
 static ge::graphStatus TilingFunc(gert::TilingContext* context)
@@ -46,7 +49,7 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
     tiling.set_maxBlocks(maxBlocks);
 
     // 使用多核执行
-    int grid = numBlocks >= 65535 ? 65535 : numBlocks;
+    int grid = numBlocks >= MAX_NUM_BLOCKS ? MAX_NUM_BLOCKS : numBlocks;
 
     context->SetBlockDim(grid);
 

@@ -17,6 +17,7 @@ See the License for the specific language governing permissions and
 #include <cstdint>
 
 #include "register/op_def_registry.h"
+#include "op_def_arch.h"
 #include "tiling_policy_dense.h"
 
 using namespace HstuForward;
@@ -61,7 +62,7 @@ public:
     {
         this->Input("q")
             .ParamType(REQUIRED)
-            .DataType({ge::DT_FLOAT, ge::DT_FLOAT16, ge::DT_BF16})
+            .DataType({HSTU_Q_DTYPES})
             .FormatList({ge::FORMAT_ND});
         this->Input("k")
             .ParamType(REQUIRED)
@@ -101,9 +102,7 @@ public:
         this->AICore().AddConfig("ascend310p", aicore_config);
         this->AICore().AddConfig("ascend910b", aicore_config);
         this->AICore().AddConfig("ascend910_93", aicore_config);
-#ifdef SUPPORT_950
-        this->AICore().AddConfig("ascend950", aicore_config);
-#endif
+        HSTU_REGISTER_AICORE_CONFIG(aicore_config);
     }
 };
 

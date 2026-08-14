@@ -63,6 +63,9 @@ public:
     virtual bool TilingCore(gert::TilingContext* context);
 };
 
+// 架构相关额外 workspace 大小（各架构 tiling_policy_arch.cpp 实现，A5 平台含 FP8 workspace）
+int64_t GetArchWorkspaceExtraSize(size_t coreNum);
+
 }
 
 #endif

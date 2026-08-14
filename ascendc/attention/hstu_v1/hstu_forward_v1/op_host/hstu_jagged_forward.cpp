@@ -17,6 +17,7 @@ See the License for the specific language governing permissions and
 #include <cstdint>
 
 #include "register/op_def_registry.h"
+#include "op_def_arch.h"
 #include "tiling_policy_jagged.h"
 
 using namespace HstuForward;
@@ -61,11 +62,7 @@ public:
     {
         this->Input("q")
             .ParamType(REQUIRED)
-#ifndef SUPPORT_950
-            .DataType({ge::DT_FLOAT, ge::DT_FLOAT16, ge::DT_BF16})
-#else
-            .DataType({ge::DT_FLOAT, ge::DT_FLOAT16, ge::DT_BF16, ge::DT_FLOAT8_E4M3FN})
-#endif
+            .DataType({HSTU_Q_DTYPES})
             .FormatList({ge::FORMAT_ND});
         this->Input("k")
             .ParamType(REQUIRED)
@@ -101,11 +98,7 @@ public:
             .FormatList({ge::FORMAT_ND});
         this->Output("attn_output")
             .ParamType(REQUIRED)
-#ifndef SUPPORT_950
-            .Follow("q", FollowType::DTYPE)
-#else
-            .DataType({ge::DT_FLOAT, ge::DT_FLOAT16, ge::DT_BF16, ge::DT_FLOAT16})
-#endif
+            .DataType({HSTU_OUT_DTYPES})
             .FormatList({ge::FORMAT_ND});
         this->Attr("mask_type").Int();
         this->Attr("max_seqlen_q").Int();
@@ -128,9 +121,7 @@ public:
 
         this->AICore().AddConfig("ascend910b", aicore_config);
         this->AICore().AddConfig("ascend910_93", aicore_config);
-#ifdef SUPPORT_950
-        this->AICore().AddConfig("ascend950", aicore_config);
-#endif
+        HSTU_REGISTER_AICORE_CONFIG(aicore_config);
     }
 };
 

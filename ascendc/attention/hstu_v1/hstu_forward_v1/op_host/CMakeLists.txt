@@ -20,7 +20,8 @@ file(GLOB ops_cc_srcs ${CMAKE_CURRENT_SOURCE_DIR}/*.cc)
 list(APPEND ops_srcs ${ops_cc_srcs})
 
 # 收集 SOC 架构特化源码（op_host/atlas950/ 或 op_host/atlasA2/ 目录下的额外实现）。
-# 本算子的 arch 目录仅含 hstu_kernel_tiling_key.h（供 -I include 使用，非编译单元），
+# 本算子的 arch 目录含编译单元 tiling_policy_arch.cpp（TilingKeySetImpl/GetArchWorkspaceExtraSize），
+# 以及头文件 op_def_arch.h / hstu_kernel_tiling_key.h（供 -I include 使用，非编译单元），
 # 过滤掉 .h 避免作为源文件传入 npu_op_code_gen。
 ops_rec_collect_arch_sources(ops_srcs)
 list(FILTER ops_srcs EXCLUDE REGEX "\\.h$")

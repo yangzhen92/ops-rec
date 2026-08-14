@@ -66,11 +66,12 @@ Usage: bash build.sh [flags]
 
 Flags:
   --install                 Compile and then install the merged whl
-  -j[N]                     Compile thread nums (default: CPU/2)
+  -j[N]                     Outer concurrency cap: max parallel op builds.
+                            (default: number of CPU cores)
   --socs <list>             SOC variants to build, comma-separated
                             eg: --socs atlas_950
                                 --socs atlas_a2,atlas_a3,atlas_950 (default: all)
-  --ops <list>              Op vendors to build, comma-separated (default: all)
+  --ops <list>              op vendors to build, comma-separated (default: all)
                             Values are the CANN vendor package names
                             eg: --ops ln_mul,disentangle_attention
 
@@ -97,8 +98,14 @@ done
 # ---------------------------------------------------------------------------
 export ASCEND_HOME_PATH="${ASCEND_HOME_PATH:-/usr/local/Ascend/latest}"
 
+# OUTER_PARALLEL 是外层并行（同时编译的算子数）的"上限"。
+# 实际并发度 = min(该 SOC 的算子数, OUTER_PARALLEL)，据此反推每个算子的
+# 内层 make 线程数（见 main() 中 actual_outer/inner 的计算），保证总并行
+# 进程数大致等于总核数、且单个算子不无限拉高内存占用。
 if [ -n "$JOBS" ]; then
-    export CMAKE_BUILD_PARALLEL_LEVEL="$JOBS"
+    OUTER_PARALLEL="$JOBS"
+else
+    OUTER_PARALLEL="$(nproc 2>/dev/null || echo 4)"
 fi
 
 # CANN 的 npu_op_kernel_library 生成 $(MAKE) 引用，与 Ninja 不兼容
@@ -107,47 +114,81 @@ export CMAKE_GENERATOR="${CMAKE_GENERATOR:-Unix Makefiles}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" || exit 1
 cd "${SCRIPT_DIR}" || exit 1
 
+MERGE_ROOT="${SCRIPT_DIR}/dist_merge/ops_rec"      # 最终包内容（merge_wheel 的 merge-dir 根）
+STAGE_ROOT="${SCRIPT_DIR}/dist_merge/stage"        # 各算子/适配层独立 staging
+
 echo "==========================================================="
 echo "[INFO] Build Configuration:"
 echo "  - Install Mode        : ${INSTALL_MODE}"
 echo "  - SOCs                : ${SOCS}"
 echo "  - Op Vendors          : ${OPS:-<all>}"
 echo "  - Ascend Home         : ${ASCEND_HOME_PATH}"
-echo "  - Parallel Jobs       : ${CMAKE_BUILD_PARALLEL_LEVEL:-<auto>}"
+echo "  - Parallel (outer)    : ${OUTER_PARALLEL}"
 echo "  - CMake Generator     : ${CMAKE_GENERATOR}"
 echo "==========================================================="
 
 # ---------------------------------------------------------------------------
-# 工具函数：获取某 SOC 的算子清单。
-#   cmake -DSOC=atlas_950 -P cmake/soc_ops_config.cmake
+# 工具函数：查询某 SOC/op 的"真实 vendor"清单（每行一个）。
 # ---------------------------------------------------------------------------
-ops_for_soc() {
+op_leaves_for_soc() {
     local soc="$1"
-    # message() 在 cmake -P 脚本模式下输出到 stderr，用 2>&1 并入 stdout 以便命令替换捕获。
-    cmake -DSOC="${soc}" -P "${SCRIPT_DIR}/cmake/soc_ops_config.cmake" 2>&1
+    local op="$2"
+    cmake -DSOC="${soc}" -DOPS_REC_QUERY_OP="${op}" \
+        -P "${SCRIPT_DIR}/cmake/soc_ops_config.cmake" 2>&1
 }
 
 # ---------------------------------------------------------------------------
-# 工具函数：构建单个 (SOC, vendor) 组合。
-# vendor 为空时表示构建该 SOC 的全部 vendor（一个 configure）。
+# 工具函数：某真实 vendor 是否存在于源码树（顶层 ascendc/<g>/<vendor> 或其下
+# 嵌套的聚合子目录 ascendc/<g>/<agg>/<vendor>）。
 # ---------------------------------------------------------------------------
-build_one() {
-    local soc="$1"
-    local op="$2"
-    local label="${soc}"
-    if [ -n "${op}" ]; then
-        label="${soc}/${op}"
-    fi
-    echo ""
-    echo "-----------------------------------------------------------"
-    echo "[INFO] Building ${label}"
-    echo "-----------------------------------------------------------"
+vendor_dir_exists() {
+    local op="$1"
+    local found=""
+    local g
+    for g in "${SCRIPT_DIR}"/ascendc/*; do
+        [ -d "${g}/${op}" ] && found="1" && break
+        local a
+        for a in "${g}"/*; do
+            [ -d "${a}/${op}" ] && found="1" && break
+        done
+        [ -n "${found}" ] && break
+    done
+    [ -n "${found}" ]
+}
 
-    # 清理旧编译产物
-    rm -rf _skbuild/ build/ dist_tmp/
+# ---------------------------------------------------------------------------
+# 工具函数：生成公共 cmake 参数。
+# 拆成两部分：
+#   CMAKEOP_COMMON  —— 逐算子 pass 与适配层 pass 共用（kernel/opapi 编译所需，
+#                      不含 torch/python 变量，避免 configure 时报"set but not used"）。
+#   CMAKEOP_ADAPTER —— 适配层 pass 专属（需要 find_package(Python3)/torch/ABI 宏）。
+# ---------------------------------------------------------------------------
+CMAKEOP_COMMON=()
+CMAKEOP_ADAPTER=()
+init_common_cmake_args() {
+    local pyexe cmake_prefix abi
+    pyexe=$(which python3)
+    cmake_prefix=$(dirname "$(python3 -c "import torch; print(torch.__file__)")")
+    abi=$(python3 -c "import torch; print(int(torch._C._GLIBCXX_USE_CXX11_ABI))")
+    CMAKEOP_COMMON=(
+        "-DCMAKE_CXX_FLAGS=-fstack-protector-strong"
+        "-DCMAKE_EXE_LINKER_FLAGS=-Wl,-z,relro -Wl,-z,now -Wl,-s"
+        "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,relro -Wl,-z,now -Wl,-s"
+        "-DCMAKE_SKIP_BUILD_RPATH=FALSE"
+        "-DCMAKE_SKIP_INSTALL_RPATH=FALSE"
+    )
+    CMAKEOP_ADAPTER=(
+        "-DPython3_EXECUTABLE=${pyexe}"
+        "-DCMAKE_PREFIX_PATH=${cmake_prefix}"
+        "-D_GLIBCXX_USE_CXX11_ABI=${abi}"
+    )
+}
 
-    # 同步 experimental/triton/ -> ops_rec/experimental/triton/
-    # 仅拷贝 .py 文件（不含 test/、README.md 等），清除非 .py 文件
+# ---------------------------------------------------------------------------
+# 工具函数：同步 experimental/triton/ -> ops_rec/experimental/triton/
+# 仅拷贝 .py 文件（不含 test/、README.md 等），清除非 .py 文件。
+# ---------------------------------------------------------------------------
+sync_triton() {
     local triton_src="${SCRIPT_DIR}/experimental/triton"
     local triton_dst="${SCRIPT_DIR}/ops_rec/experimental/triton"
     if [ -d "${triton_src}" ]; then
@@ -158,40 +199,109 @@ build_one() {
         find "${triton_dst}" -type d -empty -delete 2>/dev/null || true
         echo "[INFO] Synced experimental/triton/ -> ${triton_dst} (source only)"
     fi
+}
 
-    export OPS_REC_SOC_VARIANT="${soc}"
+# 打印错误并以非零退出（替代隐式依赖 set -e，确保失败被显式传播）。
+die() {
+    echo "[ERROR] $*" >&2
+    exit 1
+}
 
-    # 指定单算子时通过环境变量让根 CMakeLists 只编译该算子
-    if [ -n "${op}" ]; then
-        export OPS_REC_TARGET_OP="${op}"
-    else
-        unset OPS_REC_TARGET_OP
+# 等待并检查一批后台编译任务（pids 数组）。
+# 显式检查每个 wait 的返回值；任一失败立即报错并终止，同时回收同批其余残留任务，
+# 避免遗留孤儿 make 进程或半成品 staging。
+wait_and_check() {
+    local -a pids=("$@")
+    local pid rc
+    for pid in "${pids[@]}"; do
+        wait "${pid}"
+        rc=$?
+        if [ "${rc}" -ne 0 ]; then
+            # 回收同批尚未 wait 的残留后台任务
+            for remaining in "${pids[@]}"; do
+                kill "${remaining}" 2>/dev/null || true
+            done
+            die "parallel op build failed (background pid ${pid} exited ${rc})"
+        fi
+    done
+}
+
+# ---------------------------------------------------------------------------
+# 工具函数：并行构建单个 (SOC, vendor) 的 kernel/opapi 产物。
+# 每个算子独立 configure（OPS_REC_TARGET_OP 过滤 + OPS_REC_SKIP_TORCH_PLUGIN），
+# install 到独立 staging，避免并行冲突。内部 make 用 INNER_JOBS 线程。
+# ---------------------------------------------------------------------------
+build_one_kernel() {
+    local soc="$1"
+    local op="$2"
+    local bdir="${SCRIPT_DIR}/build/${soc}/ops/${op}"
+    local stage="${STAGE_ROOT}/${soc}/${op}"
+
+    echo ""
+    echo "-----------------------------------------------------------"
+    echo "[INFO] Building ${soc}/${op}"
+    echo "-----------------------------------------------------------"
+
+    rm -rf "${bdir}" "${stage}"
+
+    env OPS_REC_SOC_VARIANT="${soc}" OPS_REC_TARGET_OP="${op}" OPS_REC_SKIP_TORCH_PLUGIN=ON \
+        cmake -S "${SCRIPT_DIR}" -B "${bdir}" \
+            "${CMAKEOP_COMMON[@]}" -DCMAKE_INSTALL_PREFIX="${stage}" || return 1
+
+    cmake --build "${bdir}" -j"${INNER_JOBS}" || return 1
+    cmake --install "${bdir}" || return 1
+
+    echo "[INFO] Built ${soc}/${op} -> ${stage}"
+}
+
+# ---------------------------------------------------------------------------
+# 工具函数：单次构建某 SOC 的 Torch 适配层 .so（OPS_REC_SKIP_OPS=ON，只编适配层）。
+# ---------------------------------------------------------------------------
+build_adapter() {
+    local soc="$1"
+    local bdir="${SCRIPT_DIR}/build/${soc}/adapter"
+    local stage="${STAGE_ROOT}/${soc}/adapter"
+
+    echo ""
+    echo "-----------------------------------------------------------"
+    echo "[INFO] Building adapter for ${soc}"
+    echo "-----------------------------------------------------------"
+
+    rm -rf "${bdir}" "${stage}"
+
+    env OPS_REC_SOC_VARIANT="${soc}" OPS_REC_SKIP_OPS=ON \
+        cmake -S "${SCRIPT_DIR}" -B "${bdir}" \
+            "${CMAKEOP_COMMON[@]}" "${CMAKEOP_ADAPTER[@]}" -DCMAKE_INSTALL_PREFIX="${stage}"
+
+    cmake --build "${bdir}" -j"${INNER_JOBS}"
+    cmake --install "${bdir}"
+
+    echo "[INFO] Built adapter for ${soc} -> ${stage}"
+}
+
+# ---------------------------------------------------------------------------
+# 工具函数：打包前校验每个目标 (SOC, op) 的 vendor 产物确实已合并进
+# dist_merge/ops_rec/opp/<variant>/vendors/ 目录树。
+# 用 find 跨 variant 名（atlas_950 / atlas_a2 可能不同）逐 op 确认存在，
+# 任一缺失即报错，避免"编译成功但打包缺失/空 whl 却提示成功"。
+# ---------------------------------------------------------------------------
+verify_merged_ops() {
+    local soc op leaf missing=0
+    for soc in "${SOC_ARRAY[@]}"; do
+        soc="$(echo "${soc}" | xargs)"
+        [ -z "${soc}" ] && continue
+        while IFS= read -r leaf; do
+            [ -z "${leaf}" ] && continue
+            if ! find "${MERGE_ROOT}/opp" -type d -name "${leaf}" 2>/dev/null | grep -q .; then
+                echo "[ERROR] ${soc}/${leaf}: vendor dir missing from merged opp/ tree" >&2
+                missing=1
+            fi
+        done < <(cmake -DSOC="${soc}" -DOPS_REC_LIST_MODE=leaf \
+                    -P "${SCRIPT_DIR}/cmake/soc_ops_config.cmake" 2>&1)
+    done
+    if [ "${missing}" -eq 1 ]; then
+        die "some vendor artifacts missing from merged package; aborting wheel build"
     fi
-
-    # 执行构建
-    pip wheel . --no-build-isolation --no-deps -v -w dist_tmp/ 2>&1
-
-    # 确认 whl 已生成
-    local whl_file
-    whl_file=$(ls dist_tmp/ops_rec-*.whl 2>/dev/null | head -1)
-    if [ -z "${whl_file}" ]; then
-        echo "[ERROR] wheel not found in dist_tmp/ for ${label}"
-        exit 1
-    fi
-
-    # 构建完成，删除同步过来的临时文件
-    if [ -d "${triton_dst}" ]; then
-        rm -rf "${triton_dst}"
-    fi
-
-    # 提取此 (soc, op vendor) 的产物到合并目录
-    local merge_dir="${SCRIPT_DIR}/dist_merge"
-    mkdir -p "${merge_dir}"
-
-    python3 "${SCRIPT_DIR}/scripts/merge_wheel.py" \
-        --src "${whl_file}" \
-        --soc "${soc}" \
-        --merge-dir "${merge_dir}"
 }
 
 # ---------------------------------------------------------------------------
@@ -199,7 +309,11 @@ build_one() {
 # ---------------------------------------------------------------------------
 main() {
     # 清理历史残余目录
-    rm -rf dist_merge/ dist_tmp/ dist/
+    rm -rf dist_merge/ dist/ build/
+    mkdir -p "${MERGE_ROOT}"
+
+    # 预计算公共 cmake 参数（每个子进程共享同一数组定义）
+    init_common_cmake_args
 
     # 解析 --ops 参数
     local op_mode="all"
@@ -212,29 +326,138 @@ main() {
         done
     fi
 
-    # 1. 循环编译各个 (SOC, OP) 组合
+    # 同步 experimental/triton -> ops_rec（每次构建前做一次）
+    sync_triton
+
     IFS=',' read -ra SOC_ARRAY <<< "${SOCS}"
     for soc in "${SOC_ARRAY[@]}"; do
         soc="$(echo "${soc}" | xargs)"
         [ -z "${soc}" ] && continue
+
+        # 组装该 SOC 的"真实 vendor"编译清单（每个 vendor 独立 configure）。
+        local -a op_list=()
+        local op
         if [ "${op_mode}" = "all" ]; then
-            # 全量模式：从 soc_ops_config.cmake 解析该 SOC 的算子清单，
-            local op_list
-            op_list=$(ops_for_soc "${soc}")
-            if [ -z "${op_list}" ]; then
-                echo "[WARN] No ops found for SOC ${soc} in cmake/soc_ops_config.cmake; skipping"
-                continue
-            fi
-            for op in ${op_list}; do
-                build_one "${soc}" "${op}"
-            done
+            while IFS= read -r raw_op; do
+                op="$(echo "${raw_op}" | xargs)"
+                [ -z "${op}" ] && continue
+                vendor_dir_exists "${op}" && op_list+=("${op}")
+            done < <(cmake -DSOC="${soc}" -DOPS_REC_LIST_MODE=leaf \
+                        -P "${SCRIPT_DIR}/cmake/soc_ops_config.cmake" 2>&1)
         else
-            # 逐个算子独立 configure，规避 CANN 高层封装对多 vendor 单工程的全局耦合
             for op in "${OP_ARRAY[@]}"; do
                 [ -z "${op}" ] && continue
-                build_one "${soc}" "${op}"
+                if ! vendor_dir_exists "${op}"; then
+                    die "unknown op/vendor '${op}' (not in ascendc/ tree); refusing to build"
+                fi
+                local leaf
+                while IFS= read -r leaf; do
+                    [ -n "${leaf}" ] && op_list+=("${leaf}")
+                done < <(op_leaves_for_soc "${soc}" "${op}")
             done
         fi
+        if [ "${#op_list[@]}" -eq 0 ]; then
+            die "no ops to build for SOC ${soc}; refusing to produce an empty wheel"
+        fi
+
+        # 实际外层并发度 = min(该 SOC 的算子数, OUTER_PARALLEL)。
+        # 用它推内层线程数：inner = 总核数 / 实际并发（保证总并行进程数 ≈ 总核数），
+        # 下限 1；再设上限 INNER_JOBS_MAX，避免单算子 make 独占过多核造成内存压力。
+        local total_cpus actual_outer inner inner_max
+        total_cpus="$(nproc 2>/dev/null || echo 4)"
+        actual_outer="${#op_list[@]}"
+        [ "${actual_outer}" -gt "${OUTER_PARALLEL}" ] && actual_outer="${OUTER_PARALLEL}"
+        inner_max=$(( total_cpus / 2 ))   # 单个 make 至多占一半核，其余留给外层并行
+        [ "${inner_max}" -lt 1 ] && inner_max=1
+        inner=$(( total_cpus / actual_outer ))
+        [ "${inner}" -lt 1 ] && inner=1
+        [ "${inner}" -gt "${inner_max}" ] && inner="${inner_max}"
+        INNER_JOBS="${inner}"
+        echo "[INFO] ${soc}: ${#op_list[@]} ops, outer(actual)=${actual_outer}, inner make -j${inner} (cap ${inner_max})"
+
+        # 1) 并行逐算子编译（各自独立 configure + 独立 staging）
+        local -a pids=()
+        for op in "${op_list[@]}"; do
+            build_one_kernel "${soc}" "${op}" &
+            pids+=("$!")
+            # 控制并发度：到达 OUTER_PARALLEL 个后台任务时等待（并检查）全部完成
+            if [ "${#pids[@]}" -ge "${OUTER_PARALLEL}" ]; then
+                wait_and_check "${pids[@]}"
+                pids=()
+            fi
+        done
+        wait_and_check "${pids[@]}"
+
+        # 2) 串行收集各 op staging -> 共享 merge 目录（安全的纯 copy）
+        echo ""
+        echo "-----------------------------------------------------------"
+        echo "[INFO] Collecting kernel artifacts for ${soc}"
+        echo "-----------------------------------------------------------"
+        for op in "${op_list[@]}"; do
+            local sstage="${STAGE_ROOT}/${soc}/${op}"
+            # 该 SOC 的 OPP 归档目录（variant 目录名由 CMake 确定，可能是 atlas_950 / atlas_a2 / atlas_a3）
+            local oppdir
+            oppdir=$(find "${sstage}/opp" -maxdepth 2 -type d -name 'vendors' 2>/dev/null | head -1)
+            if [ -z "${oppdir}" ]; then
+                die "${soc}/${op}: build succeeded but no opp/vendors staged; refusing to produce a wheel missing this op"
+            fi
+            local variant=$(basename "$(dirname "${oppdir}")")
+            local collected=0
+            for vend in "${oppdir}"/*/; do
+                [ -d "${vend}" ] || continue
+                local vname
+                vname="$(basename "${vend}")"
+                local vend_pkg="${MERGE_ROOT}/opp/${variant}/vendors/${vname}"
+                mkdir -p "${vend_pkg}"
+                cp -a "${vend}/." "${vend_pkg}/"
+                echo "[INFO] Collected ${soc}/${op} -> ${variant}/vendors/${vname}"
+                collected=1
+            done
+            if [ "${collected}" -eq 0 ]; then
+                die "${soc}/${op}: no vendor dirs under ${oppdir}; refusing to produce a wheel missing this op"
+            fi
+
+            # config.ini 取任一个 op 的（内容为该 SOC 全量 load_priority，各 op 一致）
+            local cfg="${oppdir}/config.ini"
+            if [ -f "${cfg}" ]; then
+                mkdir -p "${MERGE_ROOT}/opp/${variant}/vendors"
+                cp -f "${cfg}" "${MERGE_ROOT}/opp/${variant}/vendors/config.ini"
+            fi
+        done
+
+        # 3) 单次构建适配层并收集
+        build_adapter "${soc}"
+        # 收集 ops_rec_atlas_<variant>.so（适配层 install 到 stage 根目录）
+        local so
+        so=$(find "${STAGE_ROOT}/${soc}/adapter" -maxdepth 1 -name 'ops_rec_atlas_*.so' 2>/dev/null | head -1)
+        if [ -n "${so}" ]; then
+            cp -f "${so}" "${MERGE_ROOT}/$(basename "${so}")"
+            echo "[INFO] Collected $(basename "${so}")"
+        else
+            die "adapter .so not produced for ${soc}; refusing to build"
+        fi
+    done
+
+    # 收集完成后、打包前，校验每个 (SOC, op) 的 vendor 产物确实已合并进 opp/ 树。
+    # 防止"编译成功但打包缺失/空 whl"被当成成功。
+    verify_merged_ops
+
+    # 4) 收集 Python 包树（含 triton、env_setup.sh）——排除工具链生成的 opp/
+    echo ""
+    echo "-----------------------------------------------------------"
+    echo "[INFO] Copying python package tree"
+    echo "-----------------------------------------------------------"
+    for item in "${SCRIPT_DIR}"/ops_rec/*; do
+        [ -e "${item}" ] || continue
+        local name
+        name="$(basename "${item}")"
+        # 排除：工具链生成的 opp/（由算子/适配层 install 单独生成）、编译缓存、
+        # 以及历史遗留的适配层 .so（由适配层 pass 重新生成）。
+        if [ "${name}" = "opp" ] || [ "${name}" = "__pycache__" ] \
+           || [[ "${name}" == ops_rec_atlas_*.so ]]; then
+            continue
+        fi
+        cp -a "${item}" "${MERGE_ROOT}/${name}"
     done
 
     echo ""
@@ -248,12 +471,12 @@ main() {
 
     python3 "${SCRIPT_DIR}/scripts/merge_wheel.py" \
         --build-final \
-        --merge-dir "${SCRIPT_DIR}/dist_merge" \
+        --merge-dir "${MERGE_ROOT}" \
         --out-dir "${SCRIPT_DIR}/dist" \
         --version "${torch_ver}"
 
     # 清理中间过渡目录
-    rm -rf dist_merge/ dist_tmp/
+    rm -rf dist_merge/
 
     # 检查最终 wheel 是否创建成功
     local final_whl
@@ -265,7 +488,7 @@ main() {
 
     echo "[INFO] Build successful: ${final_whl}"
 
-    # 2. 如果开启了 --install 模式，则自动安装
+    # 5. 如果开启了 --install 模式，则自动安装
     if [ "${INSTALL_MODE}" = true ]; then
         echo ""
         echo "==========================================================="

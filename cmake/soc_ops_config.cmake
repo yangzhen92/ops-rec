@@ -7,20 +7,22 @@ set(OPS_REC_OPS_ATLAS_950
     ln_mul
     hstu_v1
     disentangle_attention
+    disentangle_attention
+    block_sparse_func
 )
 
 # ================================ A3 ops ================================
 set(OPS_REC_OPS_ATLAS_A3
     ln_mul
-    hstu_v1
     disentangle_attention
+    hstu_v1
 )
 
 # ================================ A2 ops ================================
 set(OPS_REC_OPS_ATLAS_A2
     ln_mul
-    hstu_v1
     disentangle_attention
+    hstu_v1
 )
 
 

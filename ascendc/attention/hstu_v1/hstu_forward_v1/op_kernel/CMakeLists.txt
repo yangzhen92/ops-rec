@@ -34,8 +34,10 @@ npu_op_kernel_sources(${_KERNEL_TARGET}
         ${CMAKE_CURRENT_SOURCE_DIR}/${_KERNEL_SRC_DIR}/hstu_paged_forward.cpp
 )
 
+# SRC_BASE 必须与 op 实现文件所在目录一致：opbuild 按 SRC_BASE + <op名>.cpp 定位实现文件，
+# 本算子实现位于架构子目录（atlas950/ 或 atlasA2/），不能指向 op_kernel 根目录。
 npu_op_kernel_library(${_KERNEL_TARGET}
-    SRC_BASE ${CMAKE_CURRENT_SOURCE_DIR}/
+    SRC_BASE ${CMAKE_CURRENT_SOURCE_DIR}/${_KERNEL_SRC_DIR}/
     TILING_LIBRARY cust_optiling
 )
 

@@ -2,7 +2,7 @@
 # cmake/soc_config.cmake — SOC 变体 -> 芯片宏映射 + CANN 构建框架初始化
 # ----------------------------------------------------------------------------
 # 本文件包含工程相关的 SOC 配置和 CANN 构建框架的加载。
-# 编译器/toolchain 配置在 toolchain_ascend.cmake 中（由 CMAKE_TOOLCHAIN_FILE 引用）。
+# ASCEND_HOME_PATH 由环境变量或 -D 提供（见下方定义）。
 #
 # 提供以下变量供其他 CMakeLists.txt 使用：
 #   NPU_CHIP_ATLAS_950 / NPU_CHIP_ATLAS_A2 / NPU_CHIP_ATLAS_A3
@@ -11,7 +11,7 @@
 # ============================================================================
 
 # ---------------------------------------------------------------------------
-# ASCEND_HOME_PATH — 若未通过 toolchain 设置（非 CMAKE_TOOLCHAIN_FILE 模式）
+# ASCEND_HOME_PATH — 从环境变量或 -D 读取，未设置则报错
 # ---------------------------------------------------------------------------
 if(NOT DEFINED ASCEND_HOME_PATH)
     if(DEFINED ENV{ASCEND_HOME_PATH})

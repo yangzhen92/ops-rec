@@ -213,6 +213,34 @@ inline void* GetOpApiFuncAddrForVendor(const char* vendor, const char* apiName)
     return GetOpApiFuncAddrInLib(handler, GetCustOpApiLibName(), apiName);
 }
 
+// 支持 vendor 列表（以 ',' 分隔，如聚合 vendor "hstu_forward_v1,hstu_backward_v1"；由每个
+// torch 适配层插件通过 #define OPS_REC_CUST_VENDORS 显式声明其所依赖的 vendor）。
+// 依次在各 vendor 下查找 apiName，返回第一个命中的符号；列表仅含单个 vendor（无 ','）
+// 时等价于直接调用 GetOpApiFuncAddrForVendor，因此对普通 vendor 完全向后兼容。
+inline void* GetOpApiFuncAddrForVendorList(const char* vendors, const char* apiName)
+{
+    if (vendors == nullptr || *vendors == '\0' || apiName == nullptr) {
+        return nullptr;
+    }
+    std::string list(vendors);
+    size_t start = 0;
+    while (true) {
+        size_t pos = list.find(',', start);
+        std::string vendor = list.substr(start, pos - start);
+        if (!vendor.empty()) {
+            void* addr = GetOpApiFuncAddrForVendor(vendor.c_str(), apiName);
+            if (addr != nullptr) {
+                return addr;
+            }
+        }
+        if (pos == std::string::npos) {
+            break;
+        }
+        start = pos + 1;
+    }
+    return nullptr;
+}
+
 inline c10::Scalar ConvertTensorToScalar(const at::Tensor& tensor)
 {
     c10::Scalar expScalar;
@@ -557,14 +585,14 @@ typedef void (*UnInitHugeMemThreadLocal)(void*, bool);
 typedef void (*ReleaseHugeMem)(void*, bool);
 
 // clang-format off
-#define EXEC_NPU_CMD(aclnn_api, ...)                                                                                  \
-    do {                                                                                                              \
-        static const auto getWorkspaceSizeFuncAddr = GetOpApiFuncAddrForVendor(OPS_REC_CUST_VENDOR,                   \
-                                                                               #aclnn_api "GetWorkspaceSize");        \
-        static const auto opApiFuncAddr = GetOpApiFuncAddrForVendor(OPS_REC_CUST_VENDOR, #aclnn_api);                 \
-        static const auto initMemAddr = GetOpApiFuncAddrForVendor(OPS_REC_CUST_VENDOR, "InitHugeMemThreadLocal");     \
-        static const auto unInitMemAddr = GetOpApiFuncAddrForVendor(OPS_REC_CUST_VENDOR, "UnInitHugeMemThreadLocal"); \
-        static const auto releaseMemAddr = GetOpApiFuncAddrForVendor(OPS_REC_CUST_VENDOR, "ReleaseHugeMem");          \
+#define EXEC_NPU_CMD(aclnn_api, ...)                                                                                       \
+    do {                                                                                                                   \
+        static const auto getWorkspaceSizeFuncAddr = GetOpApiFuncAddrForVendorList(OPS_REC_CUST_VENDORS,                   \
+                                                                               #aclnn_api "GetWorkspaceSize");             \
+        static const auto opApiFuncAddr = GetOpApiFuncAddrForVendorList(OPS_REC_CUST_VENDORS, #aclnn_api);                 \
+        static const auto initMemAddr = GetOpApiFuncAddrForVendorList(OPS_REC_CUST_VENDORS, "InitHugeMemThreadLocal");     \
+        static const auto unInitMemAddr = GetOpApiFuncAddrForVendorList(OPS_REC_CUST_VENDORS, "UnInitHugeMemThreadLocal"); \
+        static const auto releaseMemAddr = GetOpApiFuncAddrForVendorList(OPS_REC_CUST_VENDORS, "ReleaseHugeMem");          \
         TORCH_CHECK(getWorkspaceSizeFuncAddr != nullptr && opApiFuncAddr != nullptr, #aclnn_api, " or ",      \
                     #aclnn_api "GetWorkspaceSize", " not in ", GetOpApiLibName(), ", or ", GetOpApiLibName(), \
                     "not found.");                                                                            \

@@ -25,19 +25,28 @@ npu_op_kernel_options(${_KERNEL_TARGET} ALL
 )
 
 # op 实现源文件按 SOC 切目录（atlas950/ 或 atlasA2/）。
-# 显式 SOURCES + 绝对路径列出：KERNEL_DIR 子目录模式下，opbuild 的 adapt 脚本
-# 在 build 目录执行时相对路径失效，找不到 op 源文件。
+# 官方机制：npu_op_kernel_sources 仅支持 OP_TYPE/KERNEL_DIR/COMPUTE_UNIT/KERNEL_FILE 配对，
+# KERNEL_DIR 相对 SRC_BASE 定位子目录，KERNEL_FILE 指定实现文件名；每个 op 一个调用。
+# （SOURCES 参数不存在，KERNEL_DIR 不带 KERNEL_FILE 时框架按 SRC_BASE + <op名>.cpp 定位，均找不到子目录文件）
 npu_op_kernel_sources(${_KERNEL_TARGET}
-    SOURCES
-        ${CMAKE_CURRENT_SOURCE_DIR}/${_KERNEL_SRC_DIR}/hstu_dense_forward.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/${_KERNEL_SRC_DIR}/hstu_jagged_forward.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/${_KERNEL_SRC_DIR}/hstu_paged_forward.cpp
+    OP_TYPE HstuDenseForward
+    KERNEL_DIR ./${_KERNEL_SRC_DIR}
+    KERNEL_FILE hstu_dense_forward.cpp
+)
+npu_op_kernel_sources(${_KERNEL_TARGET}
+    OP_TYPE HstuJaggedForward
+    KERNEL_DIR ./${_KERNEL_SRC_DIR}
+    KERNEL_FILE hstu_jagged_forward.cpp
+)
+npu_op_kernel_sources(${_KERNEL_TARGET}
+    OP_TYPE HstuPagedForward
+    KERNEL_DIR ./${_KERNEL_SRC_DIR}
+    KERNEL_FILE hstu_paged_forward.cpp
 )
 
-# SRC_BASE 必须与 op 实现文件所在目录一致：opbuild 按 SRC_BASE + <op名>.cpp 定位实现文件，
-# 本算子实现位于架构子目录（atlas950/ 或 atlasA2/），不能指向 op_kernel 根目录。
+# SRC_BASE 为 KERNEL_DIR 的相对基准（实际目录 = SRC_BASE + KERNEL_DIR）
 npu_op_kernel_library(${_KERNEL_TARGET}
-    SRC_BASE ${CMAKE_CURRENT_SOURCE_DIR}/${_KERNEL_SRC_DIR}/
+    SRC_BASE ${CMAKE_CURRENT_SOURCE_DIR}/
     TILING_LIBRARY cust_optiling
 )
 

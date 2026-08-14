@@ -35,6 +35,8 @@ npu_op_code_gen(
         -I${MY_COMMON_DIR}/log
         -I${MY_COMMON_DIR}/utils
         -I${HSTU_KERNEL_INCLUDE_DIR}
+        # arch 子目录下的 tiling_policy_arch.cpp 需 include op_host 根目录的公共头
+        -I${CMAKE_CURRENT_SOURCE_DIR}
 )
 
 file(GLOB autogen_aclnn_src ${ASCEND_AUTOGEN_PATH}/aclnn_*.cpp)
@@ -66,6 +68,7 @@ target_include_directories(cust_op_proto PRIVATE
     ${MY_COMMON_DIR}/log
     ${MY_COMMON_DIR}/utils
     ${HSTU_KERNEL_INCLUDE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
 target_compile_options(cust_op_proto PRIVATE
@@ -83,6 +86,7 @@ target_include_directories(cust_optiling PRIVATE
     ${MY_COMMON_DIR}/log
     ${MY_COMMON_DIR}/utils
     ${HSTU_KERNEL_INCLUDE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
 npu_op_package_add(${VENDOR_NAME}

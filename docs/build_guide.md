@@ -2,20 +2,20 @@
 
 ## 简介
 
-`build.sh` 是 ops-rec 的统一构建入口脚本，默认在项目根目录下。脚本将 AscendC 算子源码通过 CANN 编译框架与 scikit-build 编译、打包，最终生成可 `pip install` 的 whl 包，并支持多 SOC 变体合并打包。
+`build.sh` 是 ops-rec 的统一构建入口脚本，默认在项目根目录下。脚本直接驱动 CMake 编译 AscendC 算子（kernel、op_api、torch 适配层），并通过 `scripts/merge_wheel.py` 合并多 SOC 产物、打包生成可 `pip install` 的 whl 包。
 
 构建流程核心链路：
 
 ```text
-build_single_soc()                      ← 对每个 SOC 变体依次执行
-  └─ pip wheel . --no-build-isolation
-       └─ skbuild
-            ├─ cmake configure (CANN fwk_modules + 算子 CMakeLists)
-            ├─ make (kernel .o/.json, op_api .so, torch 适配 .so)
-            ├─ cmake --install (安装到 ops_rec/opp/<variant>/)
-            └─ 生成单 SOC whl
+build.sh                                  ← 统一构建入口，对每个 SOC 变体依次执行
+  ├─ 逐算子并行编译（各自独立 cmake configure + build + install 到独立 staging）
+  │    cmake configure (OPS_REC_TARGET_OP 过滤 + 跳过 torch 适配层)
+  │    make (kernel .o/.json, op_api .so)
+  │    cmake --install (安装到 stage/opp/<variant>/vendors/)
+  ├─ 适配层单次 pass（OPS_REC_SKIP_OPS=ON，产出 ops_rec_atlas_<variant>.so）
+  └─ 串行收集各 op staging -> 合并目录 dist_merge/ops_rec/
 
-merge_wheel.py --build-final            ← 合并所有 SOC 产物为多 SOC whl
+merge_wheel.py --build-final              ← 打包合并目录为多 SOC whl
   └─ dist/ops_rec-<version>-<py>-<abi>-<plat>.whl
 ```
 
@@ -133,8 +133,8 @@ set(OPS_REC_OPS_ATLAS_A2   ln_mul)
 每个 kernel target 在根 `CMakeLists.txt` 中通过 `install(CODE ...)` 将产物拷贝到 `opp/<variant>/vendors/<vendor>/op_impl/ai_core/tbe/`。如未出现：
 
 1. 确认 vendor 名已加入 `cmake/soc_ops_config.cmake` 中对应 SOC 的列表。
-2. 检查 `_skbuild/<soc>/install_manifest.txt` 是否包含 `opp/<variant>/vendors/<vendor>/op_impl/ai_core/tbe/kernel/<soc>/` 下的 `.o` 与 `config/` 下的 `.json`。
-3. 若 `install_manifest.txt` 中没有 kernel 路径，说明该 SOC 没有命中 vendor 列表或 kernel target 未注册。
+2. 检查对应算子的 staging 目录 `dist_merge/stage/<soc>/<op>/opp/<variant>/vendors/<vendor>/op_impl/ai_core/tbe/` 下是否包含 `kernel/<soc>/` 下的 `.o` 与 `config/` 下的 `.json`。
+3. 若 staging 目录中没有 kernel 产物，说明该 SOC 没有命中 vendor 列表或 kernel target 未注册。
 
 ### 编译时找不到 ops_log.h
 

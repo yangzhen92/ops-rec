@@ -215,6 +215,12 @@ ops_rec_collect_arch_sources(ops_srcs)
 `torch_extension/<op_name>_plugin.cpp`：
 
 ```cpp
+// 声明本插件依赖的 vendor（a c l nn 接口所在 op_api 库）：
+// 单个 vendor ：#define OPS_REC_CUST_VENDORS "ln_mul"
+// 多个 vendor ：#define OPS_REC_CUST_VENDORS "hstu_forward_v1,hstu_backward_v1"（逗号分隔）
+// 必须在 #include "pytorch_npu_helper.hpp" 之前定义，否则 EXEC_NPU_CMD 展开处宏未定义会编译报错。
+#define OPS_REC_CUST_VENDORS "my_vendor"
+
 #include <torch/library.h>
 #include "common_utils.h"
 #include "pytorch_npu_helper.hpp"
@@ -259,7 +265,8 @@ TORCH_LIBRARY_IMPL(ops_rec, Meta, m)
 - **`TORCH_LIBRARY_FRAGMENT`**：声明算子的 schema（入参类型 + 返回值）。
 - **`TORCH_LIBRARY_IMPL(..., PrivateUse1, ...)`**：注册 NPU 设备实现。
 - **`TORCH_LIBRARY_IMPL(..., Meta, ...)`**（可选）：注册 Meta 实现，支持 `torch.compile` shape 推断。
-- **`EXEC_NPU_CMD(aclnnXxx, ...)`**：定义在 `ascendc/common/torch_plugin/pytorch_npu_helper.hpp`，封装 workspace 申请、执行器管理、流绑定等。
+- **`EXEC_NPU_CMD(aclnnXxx, ...)`**：定义在 `ascendc/common/torch_plugin/pytorch_npu_helper.hpp`，封装 workspace 申请、执行器管理、流绑定等。它通过宏 `OPS_REC_CUST_VENDORS` 定位 `aclnnXxx` 符号所在的 op_api 库（vendor）。
+- **`OPS_REC_CUST_VENDORS`（必填）**：每个插件**必须**在包含 `pytorch_npu_helper.hpp` **之前** `#define OPS_REC_CUST_VENDORS "..."`，值是该插件 aclnn 接口所在的一个或多个 vendor（逗号分隔，如 `"hstu_forward_v1,hstu_backward_v1"`）。运行时会按逗号拆分、依次在各 vendor 中查找 aclnn 符号。该宏未定义会直接编译报错，多个 vendor 只能通过逗号分隔声明，不再由 CMake 目录结构推断。
 
 ### Python 代理
 

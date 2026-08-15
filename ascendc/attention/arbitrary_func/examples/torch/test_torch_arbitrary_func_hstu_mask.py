@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-
+# pylint: disable=duplicate-code
 """
 build_hstu_mask_arbitrary_func 算子 PyTorch 接口使用样例
 

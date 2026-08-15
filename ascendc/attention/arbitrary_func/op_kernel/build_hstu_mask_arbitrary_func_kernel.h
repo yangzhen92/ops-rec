@@ -30,11 +30,10 @@ __simt_vf__ __aicore__ LAUNCH_BOUND(BLOCK_THREAD_NUM_256) inline void SimtBuildH
     const __gm__ int32_t* __restrict__ offsets,  // [batch_size + 1]
     const __gm__ int32_t* __restrict__ ctxLens,  // [batch_size]
     const __gm__ int32_t* __restrict__ tgtLens,  // [batch_size]
-    int32_t targetGroupSize, int32_t totalSeqLen, int32_t batchSize, const uint32_t blockId,
-    const uint32_t totalThread)
+    int32_t targetGroupSize, int32_t totalSeqLen, int32_t batchSize, const uint32_t blockId, const uint32_t totalThread)
 {
     int32_t pos = blockId * blockDim.x + threadIdx.x;
-    if (pos >= totalSeqLen) 
+    if (pos >= totalSeqLen)
         return;
 
     for (; pos < totalSeqLen; pos += totalThread) {

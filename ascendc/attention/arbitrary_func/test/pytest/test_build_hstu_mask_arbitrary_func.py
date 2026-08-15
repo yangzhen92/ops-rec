@@ -91,16 +91,10 @@ def run_compare(offsets, ctx, tgt, group_size, total_seqlen, use_graph=False):
     torch.npu.set_device(DEVICE)
     cpu = build_hstu_mask_arbitrary_func_mask_cpu(offsets, ctx, tgt, group_size, total_seqlen)
 
-    call = lambda: ops_rec.ascendc.attention.build_hstu_mask_arbitrary_func(
-        torch.from_numpy(offsets).to(DEVICE),
-        torch.from_numpy(ctx).to(DEVICE),
-        torch.from_numpy(tgt).to(DEVICE),
-        group_size,
-        total_seqlen,
-    )
-
     if use_graph:
-        compiled_fn = torch_compiled(ops_rec.ascendc.attention.build_hstu_mask_arbitrary_func, dynamic=True, fullgraph=True)
+        compiled_fn = torch_compiled(
+            ops_rec.ascendc.attention.build_hstu_mask_arbitrary_func, dynamic=True, fullgraph=True
+        )
         y = compiled_fn(
             offsets=torch.from_numpy(offsets).to(DEVICE),
             ctx_lens=torch.from_numpy(ctx).to(DEVICE),
@@ -109,7 +103,13 @@ def run_compare(offsets, ctx, tgt, group_size, total_seqlen, use_graph=False):
             total_seqlen=total_seqlen,
         )
     else:
-        y = call()
+        y = ops_rec.ascendc.attention.build_hstu_mask_arbitrary_func(
+            torch.from_numpy(offsets).to(DEVICE),
+            torch.from_numpy(ctx).to(DEVICE),
+            torch.from_numpy(tgt).to(DEVICE),
+            group_size,
+            total_seqlen,
+        )
 
     y_np = y.cpu().numpy()
     assert y_np.shape == (1, 1, total_seqlen, 4), f"shape {y_np.shape}"

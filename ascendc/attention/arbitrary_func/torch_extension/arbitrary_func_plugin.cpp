@@ -23,7 +23,8 @@
 using namespace at;
 
 at::Tensor build_hstu_mask_arbitrary_func_impl_npu(const at::Tensor& offsets, const at::Tensor& ctx_lens,
-                                         const at::Tensor& tgt_lens, int64_t target_group_size, int64_t total_seqlen)
+                                                   const at::Tensor& tgt_lens, int64_t target_group_size,
+                                                   int64_t total_seqlen)
 {
     check_tensor_non_empty(offsets, "offsets");
     check_tensor_non_empty(ctx_lens, "ctx_lens");
@@ -48,9 +49,9 @@ at::Tensor build_hstu_mask_arbitrary_func_impl_npu(const at::Tensor& offsets, co
 
     // Kernel explicitly writes all 4 columns, so empty (not zeros) is safe.
     at::Tensor arbitrary_func = at::empty({1, 1, total_seqlen, 4}, offsets_conti.options());
-    if (total_seqlen == 0) 
+    if (total_seqlen == 0)
         return arbitrary_func;
-    
+
     EXEC_NPU_CMD(aclnnBuildHstuMaskArbitraryFunc, offsets_conti, ctx_lens_conti, tgt_lens_conti, target_group_size,
                  total_seqlen, arbitrary_func);
     return arbitrary_func;
@@ -59,9 +60,8 @@ at::Tensor build_hstu_mask_arbitrary_func_impl_npu(const at::Tensor& offsets, co
 // 注册 build_hstu_mask_arbitrary_func 的 schema
 TORCH_LIBRARY_FRAGMENT(ops_rec, m)
 {
-    m.def(
-        "build_hstu_mask_arbitrary_func(Tensor offsets, Tensor ctx_lens, Tensor tgt_lens, "
-        "int target_group_size, int total_seqlen) -> Tensor");
+    m.def("build_hstu_mask_arbitrary_func(Tensor offsets, Tensor ctx_lens, Tensor tgt_lens, "
+          "int target_group_size, int total_seqlen) -> Tensor");
 }
 
 // NPU 设备实现
@@ -72,8 +72,9 @@ TORCH_LIBRARY_IMPL(ops_rec, PrivateUse1, m)
 
 namespace {
 
-at::Tensor build_hstu_mask_arbitrary_func_meta(const at::Tensor& offsets, const at::Tensor& ctx_lens, const at::Tensor& tgt_lens,
-                                     int64_t target_group_size, int64_t total_seqlen)
+at::Tensor build_hstu_mask_arbitrary_func_meta(const at::Tensor& offsets, const at::Tensor& ctx_lens,
+                                               const at::Tensor& tgt_lens, int64_t target_group_size,
+                                               int64_t total_seqlen)
 {
     TORCH_CHECK(total_seqlen >= 0, "total_seqlen must be non-negative");
     return at::empty_symint({1, 1, total_seqlen, 4}, offsets.options());

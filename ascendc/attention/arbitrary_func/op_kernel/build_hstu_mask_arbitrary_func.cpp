@@ -17,7 +17,8 @@
 #include "build_hstu_mask_arbitrary_func_kernel.h"
 
 extern "C" __global__ __aicore__ void build_hstu_mask_arbitrary_func(GM_ADDR offsets, GM_ADDR ctxLens, GM_ADDR tgtLens,
-                                                           GM_ADDR arbitraryFunc, GM_ADDR workspace, GM_ADDR tiling)
+                                                                     GM_ADDR arbitraryFunc, GM_ADDR workspace,
+                                                                     GM_ADDR tiling)
 {
     GET_TILING_DATA(tilingData, tiling);
     int32_t totalSeqLen = tilingData.totalSeqLen;

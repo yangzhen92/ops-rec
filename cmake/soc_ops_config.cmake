@@ -10,6 +10,7 @@ set(OPS_REC_OPS_ATLAS_950
     arbitrary_func
     hstu_v1
     hstu_v2
+    reverse_sequence
 )
 
 # ================================ A3 ops ===================================
@@ -17,6 +18,7 @@ set(OPS_REC_OPS_ATLAS_A3
     ln_mul
     disentangle_attention
     hstu_v1
+    reverse_sequence
 )
 
 # ================================ A2 ops ===================================
@@ -24,6 +26,7 @@ set(OPS_REC_OPS_ATLAS_A2
     ln_mul
     disentangle_attention
     hstu_v1
+    reverse_sequence
 )
 
 

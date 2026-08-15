@@ -6,7 +6,6 @@
 set(OPS_REC_OPS_ATLAS_950
     ln_mul
     disentangle_attention
-    arbitrary_func
 )
 
 # ================================ A3 ops ================================

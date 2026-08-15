@@ -15,10 +15,10 @@
 # ==============================================================================
 
 """
-build_arbitrary_func 算子 PyTorch 接口使用样例
+build_hstu_mask_arbitrary_func 算子 PyTorch 接口使用样例
 
 用法:
-    python3 test_torch_build_arbitrary_func.py
+    python3 test_torch_arbitrary_func_hstu_mask.py
 """
 
 import numpy as np
@@ -26,7 +26,7 @@ import torch
 import ops_rec
 
 
-def build_arbitrary_func_mask_cpu(offsets_i32, ctx_lens, tgt_lens, target_group_size, total_seqlen):
+def build_hstu_mask_arbitrary_func_mask_cpu(offsets_i32, ctx_lens, tgt_lens, target_group_size, total_seqlen):
     """NumPy reference, output [1, 1, total_seqlen, 4]."""
     arbitrary_func = np.zeros((1, 1, total_seqlen, 4), dtype=np.int32)
     af = arbitrary_func[0, 0, :, :]
@@ -67,7 +67,7 @@ def build_arbitrary_func_mask_cpu(offsets_i32, ctx_lens, tgt_lens, target_group_
     return arbitrary_func
 
 
-def test_build_arbitrary_func():
+def test_build_hstu_mask_arbitrary_func():
     # 两个序列：[2 ctx, 1 tgt], [3 ctx, 2 tgt]，无 history，total_seqlen = 8
     offsets = np.array([0, 3, 8], dtype=np.int32)
     ctx_lens = np.array([2, 3], dtype=np.int32)
@@ -75,18 +75,20 @@ def test_build_arbitrary_func():
     group_size = 2
     total_seqlen = 8
 
-    y = ops_rec.ascendc.attention.build_arbitrary_func(
+    y = ops_rec.ascendc.attention.build_hstu_mask_arbitrary_func(
         torch.from_numpy(offsets).npu(),
         torch.from_numpy(ctx_lens).npu(),
         torch.from_numpy(tgt_lens).npu(),
-        group_size, total_seqlen)
+        group_size,
+        total_seqlen,
+    )
 
     y_np = y.cpu().numpy()
-    cpu = build_arbitrary_func_mask_cpu(offsets, ctx_lens, tgt_lens, group_size, total_seqlen)
+    cpu = build_hstu_mask_arbitrary_func_mask_cpu(offsets, ctx_lens, tgt_lens, group_size, total_seqlen)
     assert y_np.shape == (1, 1, total_seqlen, 4), f"shape {y_np.shape}"
-    assert np.array_equal(y_np, cpu), "build_arbitrary_func result mismatch with CPU reference"
-    print("[torch] build_arbitrary_func torch example PASSED")
+    assert np.array_equal(y_np, cpu), "build_hstu_mask_arbitrary_func result mismatch with CPU reference"
+    print("[torch] build_hstu_mask_arbitrary_func torch example PASSED")
 
 
 if __name__ == "__main__":
-    test_build_arbitrary_func()
+    test_build_hstu_mask_arbitrary_func()

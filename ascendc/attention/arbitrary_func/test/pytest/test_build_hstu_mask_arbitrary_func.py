@@ -33,7 +33,7 @@ def torch_compiled(model, **kwargs):
     return model
 
 
-def build_arbitrary_func_mask_cpu(offsets_i32, ctx_lens, tgt_lens, target_group_size, total_seqlen):
+def build_hstu_mask_arbitrary_func_mask_cpu(offsets_i32, ctx_lens, tgt_lens, target_group_size, total_seqlen):
     """NumPy reference (v2 layout, n_func=4), output [1, 1, total_seqlen, 4]."""
     arbitrary_func = np.zeros((1, 1, total_seqlen, 4), dtype=np.int32)
     af = arbitrary_func[0, 0, :, :]
@@ -82,35 +82,36 @@ def make_sequences(batch_size, ctx_lens_list, tgt_lens_list, hist_lens_list):
     offsets = np.zeros(batch_size + 1, dtype=np.int32)
     offsets[1:] = np.cumsum(seq_lens, dtype=np.int32)
     total_seqlen = int(offsets[-1])
-    return (offsets,
-            np.asarray(ctx_lens_list, dtype=np.int32),
-            np.asarray(tgt_lens_list, dtype=np.int32),
-            total_seqlen)
+    return (offsets, np.asarray(ctx_lens_list, dtype=np.int32), np.asarray(tgt_lens_list, dtype=np.int32), total_seqlen)
 
 
 def run_compare(offsets, ctx, tgt, group_size, total_seqlen, use_graph=False):
     torch.npu.set_device(0)
-    cpu = build_arbitrary_func_mask_cpu(offsets, ctx, tgt, group_size, total_seqlen)
+    cpu = build_hstu_mask_arbitrary_func_mask_cpu(offsets, ctx, tgt, group_size, total_seqlen)
 
-    call = lambda: ops_rec.ascendc.attention.build_arbitrary_func(
+    call = lambda: ops_rec.ascendc.attention.build_hstu_mask_arbitrary_func(
         torch.from_numpy(offsets).npu(),
         torch.from_numpy(ctx).npu(),
         torch.from_numpy(tgt).npu(),
-        group_size, total_seqlen)
+        group_size,
+        total_seqlen,
+    )
 
     if use_graph:
-        compiled_fn = torch_compiled(ops_rec.ascendc.attention.build_arbitrary_func, dynamic=True, fullgraph=True)
-        y = compiled_fn(offsets=torch.from_numpy(offsets).npu(),
-                        ctx_lens=torch.from_numpy(ctx).npu(),
-                        tgt_lens=torch.from_numpy(tgt).npu(),
-                        target_group_size=group_size, total_seqlen=total_seqlen)
+        compiled_fn = torch_compiled(ops_rec.ascendc.attention.build_hstu_mask_arbitrary_func, dynamic=True, fullgraph=True)
+        y = compiled_fn(
+            offsets=torch.from_numpy(offsets).npu(),
+            ctx_lens=torch.from_numpy(ctx).npu(),
+            tgt_lens=torch.from_numpy(tgt).npu(),
+            target_group_size=group_size,
+            total_seqlen=total_seqlen,
+        )
     else:
         y = call()
 
     y_np = y.cpu().numpy()
     assert y_np.shape == (1, 1, total_seqlen, 4), f"shape {y_np.shape}"
-    assert np.array_equal(y_np, cpu), (
-        f"mismatch; first diffs: {np.argwhere(y_np != cpu)[:5].tolist()}")
+    assert np.array_equal(y_np, cpu), f"mismatch; first diffs: {np.argwhere(y_np != cpu)[:5].tolist()}"
 
 
 CASES = [
@@ -129,22 +130,21 @@ CASES = [
 
 @pytest.mark.ci
 @pytest.mark.parametrize("name,bs,cl,tl,hl,g", CASES)
-def test_build_arbitrary_func_eager(name, bs, cl, tl, hl, g):
+def test_build_hstu_mask_arbitrary_func_eager(name, bs, cl, tl, hl, g):
     offsets, ctx, tgt, total = make_sequences(bs, cl, tl, hl)
     run_compare(offsets, ctx, tgt, g, total, use_graph=False)
 
 
 @pytest.mark.graph
 @pytest.mark.parametrize("name,bs,cl,tl,hl,g", CASES)
-def test_build_arbitrary_func_graph(name, bs, cl, tl, hl, g):
+def test_build_hstu_mask_arbitrary_func_graph(name, bs, cl, tl, hl, g):
     offsets, ctx, tgt, total = make_sequences(bs, cl, tl, hl)
     run_compare(offsets, ctx, tgt, g, total, use_graph=True)
 
 
-
 @pytest.mark.parametrize("bs", [2, 4, 8, 16])
 @pytest.mark.parametrize("g", [1, 2, 4])
-def test_build_arbitrary_func_multi_batch(bs, g):
+def test_build_hstu_mask_arbitrary_func_multi_batch(bs, g):
     np.random.seed(bs * 100 + g)
     c = np.random.randint(0, 8, size=bs).tolist()
     t = np.random.randint(0, 8, size=bs).tolist()
@@ -153,8 +153,7 @@ def test_build_arbitrary_func_multi_batch(bs, g):
     run_compare(offsets, ctx, tgt, g, total, use_graph=False)
 
 
-
-def test_build_arbitrary_func_large():
+def test_build_hstu_mask_arbitrary_func_large():
     bs = 100
     c = [500] * bs
     t = [300] * bs

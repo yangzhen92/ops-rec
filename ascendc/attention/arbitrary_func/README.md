@@ -1,4 +1,4 @@
-# build_arbitrary_func
+# build_hstu_mask_arbitrary_func
 
 ## 产品支持情况
 
@@ -24,11 +24,23 @@
 其中 `seq_start=offsets[seq_id]`，`base=seq_start+hist_end`，`hist_end=ctx_len+hist_len`，
 `hist_len=seq_len-ctx_len-tgt_len`。
 
-## 接口原型
+对应接口：
 
-```python
-ops_rec.ascendc.attention.build_arbitrary_func(offsets, ctx_lens, tgt_lens, target_group_size, total_seqlen) -> Tensor
-```
+- aclnn 接口：`aclnnBuildHstuMaskArbitraryFunc`
+- torch 接口：`ops_rec.ascendc.attention.build_hstu_mask_arbitrary_func`
+
+## 算子实现原理
+
+算子采用 AscendC SIMT（`__simt_vf__`）开发。每个全局 token 位置由一个 SIMT 线程处理，
+核心步骤：
+
+1. 二分查找定位 `pos` 所属序列 `seq_id`
+2. 计算 `seq_start` / `base` / `hist_end`
+3. 按 ctx / history / target 三段分类，显式写出 4 列（非 target 的 col2/col3 填 0）
+4. 用单次 int4（16B）向量 store 写出 4 列
+
+SIMT 内核由 `op_kernel/build_hstu_mask_arbitrary_func_kernel.h` 的 `SimtBuildHstuMaskArbitraryFunc` 实现，经
+`extern "C" __global__ __aicore__` 入口 `VF_CALL` 调度。
 
 ## 参数说明
 
@@ -43,30 +55,16 @@ ops_rec.ascendc.attention.build_arbitrary_func(offsets, ctx_lens, tgt_lens, targ
 
 ## 约束说明
 
-约束分为两层：算子自身语义适用于 aclnn 与 torch 两条调用路径；torch 扩展层额外加的入参校验仅在调用
-`ops_rec.ascendc.attention.build_arbitrary_func` 时生效。
-
-### 算子约束
-
 - 仅支持 INT32 数据类型
 - `offsets`、`ctx_lens`、`tgt_lens` 必须为 1D
 - `total_seqlen` 须等于 `offsets[-1]`
 - 该算子需要在 NPU 设备上运行
 
-### torch 扩展层额外校验
-
-由 [build_arbitrary_func_plugin.cpp](../torch_extension/build_arbitrary_func_plugin.cpp) 在调用算子前完成：
-
-- 输入 tensor 必须已定义且非空
-- 所有输入 tensor 必须位于同一 NPU 设备
-- 需要安装 `torch_npu`
-
-## 安装方式
-
-```bash
-bash build.sh --install -j16
-```
+> 通过 torch 接口调用时，扩展层还会额外校验：输入 tensor 必须已定义且非空、所有输入 tensor 必须位于同一 NPU 设备。详见 [build_hstu_mask_arbitrary_func 接口文档](./docs/torch_build_hstu_mask_arbitrary_func.md)。
 
 ## 调用示例
 
-完整调用示例参考 [test_torch_build_arbitrary_func.py](../examples/torch/test_torch_build_arbitrary_func.py)。
+- [aclnn 调用示例](./examples/aclnn/test_aclnn_arbitrary_func_hstu_mask.cpp)
+- [torch 调用示例](./examples/torch/test_torch_arbitrary_func_hstu_mask.py)
+- [aclnn 接口文档](./docs/aclnn_build_hstu_mask_arbitrary_func.md)
+- [torch 接口文档](./docs/torch_build_hstu_mask_arbitrary_func.md)

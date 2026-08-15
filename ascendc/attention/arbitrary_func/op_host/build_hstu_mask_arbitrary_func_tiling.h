@@ -14,21 +14,19 @@
  * limitations under the License.
  */
 
-#ifndef ASCENDC_BUILD_ARBITRARY_FUNC_TILING_H_
-#define ASCENDC_BUILD_ARBITRARY_FUNC_TILING_H_
+#ifndef ASCENDC_BUILD_HSTU_MASK_ARBITRARY_FUNC_TILING_H_
+#define ASCENDC_BUILD_HSTU_MASK_ARBITRARY_FUNC_TILING_H_
 
 #include "register/tilingdata_base.h"
 
 namespace optiling {
-BEGIN_TILING_DATA_DEF(BuildArbitraryFuncTilingData)
-    TILING_DATA_FIELD_DEF(int32_t, totalSeqLen);
-
-    TILING_DATA_FIELD_DEF(int32_t, targetGroupSize);
-
-    TILING_DATA_FIELD_DEF(int32_t, batchSize);
+BEGIN_TILING_DATA_DEF(BuildHstuMaskArbitraryFuncTilingData)
+TILING_DATA_FIELD_DEF(int32_t, totalSeqLen);
+TILING_DATA_FIELD_DEF(int32_t, targetGroupSize);
+TILING_DATA_FIELD_DEF(int32_t, batchSize);
 END_TILING_DATA_DEF;
 
-REGISTER_TILING_DATA_CLASS(BuildArbitraryFunc, BuildArbitraryFuncTilingData)
+REGISTER_TILING_DATA_CLASS(BuildHstuMaskArbitraryFunc, BuildHstuMaskArbitraryFuncTilingData)
 }  // namespace optiling
 
-#endif  // ASCENDC_BUILD_ARBITRARY_FUNC_TILING_H_
+#endif  // ASCENDC_BUILD_HSTU_MASK_ARBITRARY_FUNC_TILING_H_

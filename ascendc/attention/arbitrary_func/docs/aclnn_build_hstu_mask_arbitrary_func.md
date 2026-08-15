@@ -1,4 +1,4 @@
-# aclnnBuildArbitraryFunc
+# aclnnBuildHstuMaskArbitraryFunc
 
 ## 产品支持情况
 
@@ -26,11 +26,11 @@
 
 ## 函数原型
 
-两段式接口，必须先调用 `aclnnBuildArbitraryFuncGetWorkspaceSize` 接口获取 workspace 大小和执行器，
-再调用 `aclnnBuildArbitraryFunc` 接口执行计算。
+两段式接口，必须先调用 `aclnnBuildHstuMaskArbitraryFuncGetWorkspaceSize` 接口获取 workspace 大小和执行器，
+再调用 `aclnnBuildHstuMaskArbitraryFunc` 接口执行计算。
 
 ```c
-aclnnStatus aclnnBuildArbitraryFuncGetWorkspaceSize(
+aclnnStatus aclnnBuildHstuMaskArbitraryFuncGetWorkspaceSize(
     const aclTensor *offsets,
     const aclTensor *ctxLens,
     const aclTensor *tgtLens,
@@ -40,14 +40,14 @@ aclnnStatus aclnnBuildArbitraryFuncGetWorkspaceSize(
     uint64_t *workspaceSize,
     aclOpExecutor **executor);
 
-aclnnStatus aclnnBuildArbitraryFunc(
+aclnnStatus aclnnBuildHstuMaskArbitraryFunc(
     void *workspace,
     uint64_t workspaceSize,
     aclOpExecutor *executor,
     aclrtStream stream);
 ```
 
-## aclnnBuildArbitraryFuncGetWorkspaceSize
+## aclnnBuildHstuMaskArbitraryFuncGetWorkspaceSize
 
 ### 参数说明
 
@@ -56,11 +56,11 @@ aclnnStatus aclnnBuildArbitraryFunc(
 | offsets（aclTensor） | 输入 | 每序列起始偏移，shape [batch_size+1] | INT32 | ND |
 | ctxLens（aclTensor） | 输入 | 每序列 context 长度，shape [batch_size] | INT32 | ND |
 | tgtLens（aclTensor） | 输入 | 每序列 target 长度，shape [batch_size] | INT32 | ND |
-| targetGroupSize（int64_t） | 输入 | target 分组的组大小标量 | - | - |
-| totalSeqLen（int64_t） | 输入 | 所有序列长度之和，须等于 `offsets` 最后一个元素 | - | - |
+| targetGroupSize（int64_t） | 输入 | target 分组的组大小标量 | INT64 | 标量 |
+| totalSeqLen（int64_t） | 输入 | 所有序列长度之和，须等于 `offsets` 最后一个元素 | INT64 | 标量 |
 | out（aclTensor） | 输出 | af 编码输出，shape [1,1,total_seqlen,4] | INT32 | ND |
-| workspaceSize（uint64_t*） | 输出 | 返回需要在 Device 侧申请的 workspace 大小 | - | - |
-| executor（aclOpExecutor**） | 输出 | 返回算子执行器 | - | - |
+| workspaceSize（uint64_t*） | 输出 | 返回需要在 Device 侧申请的 workspace 大小 | UINT64 | 指针 |
+| executor（aclOpExecutor**） | 输出 | 返回算子执行器 | 执行器指针 | 指针 |
 
 ### 返回值
 
@@ -69,14 +69,14 @@ aclnnStatus aclnnBuildArbitraryFunc(
 | ACLNN_ERR_PARAM_NULLPTR | 161001 | 传入参数是必选输入/输出且为空指针 |
 | ACLNN_ERR_PARAM_INVALID | 161002 | 参数数据类型或数据格式不在支持范围内 |
 
-## aclnnBuildArbitraryFunc
+## aclnnBuildHstuMaskArbitraryFunc
 
 ### 参数说明
 
 | 参数名 | 输入/输出 | 描述 |
 |--------|---------|------|
 | workspace | 输入 | 在 Device 侧申请的 workspace 内存地址 |
-| workspaceSize | 输入 | workspace 大小，由 `aclnnBuildArbitraryFuncGetWorkspaceSize` 获取 |
+| workspaceSize | 输入 | workspace 大小，由 `aclnnBuildHstuMaskArbitraryFuncGetWorkspaceSize` 获取 |
 | executor | 输入 | 算子执行器 |
 | stream | 输入 | 指定执行任务的 Stream |
 
@@ -90,7 +90,8 @@ aclnnStatus：返回状态码，成功返回 `ACLNN_SUCCESS`。
 - `offsets`、`ctxLens`、`tgtLens` 必须为 1D
 - `totalSeqLen` 须等于 `offsets[-1]`
 - 该算子需要在 NPU 设备上运行
+- `targetGroupSize` 须大于 0
 
 ## 调用示例
 
-具体参考 [test_aclnn_build_arbitrary_func.cpp](../examples/aclnn/test_aclnn_build_arbitrary_func.cpp) 的完整实现。
+具体参考 [test_aclnn_arbitrary_func_hstu_mask.cpp](../examples/aclnn/test_aclnn_arbitrary_func_hstu_mask.cpp) 的完整实现。

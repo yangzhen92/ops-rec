@@ -14,14 +14,14 @@ See the License for the specific language governing permissions and
 ==============================================================================*/
 
 /**
- * @file test_aclnn_build_arbitrary_func.cpp
- * @brief 演示如何通过 aclnnBuildArbitraryFunc 接口调用 BuildArbitraryFunc 算子
+ * @file test_aclnn_arbitrary_func_hstu_mask.cpp
+ * @brief 演示如何通过 aclnnBuildHstuMaskArbitraryFunc 接口调用 BuildHstuMaskArbitraryFunc 算子
  */
 
 #include <iostream>
 #include <vector>
 #include "acl/acl.h"
-#include "aclnn_build_arbitrary_func.h"
+#include "aclnn_build_hstu_mask_arbitrary_func.h"
 
 #define CHECK_RET(cond, return_expr) \
     do {                             \
@@ -108,9 +108,9 @@ int main()
 
     uint64_t workspaceSize = 0;
     aclOpExecutor* executor = nullptr;
-    ret = aclnnBuildArbitraryFuncGetWorkspaceSize(offsets, ctxLens, tgtLens, targetGroupSize, totalSeqLen, out,
+    ret = aclnnBuildHstuMaskArbitraryFuncGetWorkspaceSize(offsets, ctxLens, tgtLens, targetGroupSize, totalSeqLen, out,
                                                   &workspaceSize, &executor);
-    CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("aclnnBuildArbitraryFuncGetWorkspaceSize failed. ERROR: %d\n", ret);
+    CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("aclnnBuildHstuMaskArbitraryFuncGetWorkspaceSize failed. ERROR: %d\n", ret);
               return ret);
 
     void* workspaceAddr = nullptr;
@@ -118,8 +118,8 @@ int main()
         ret = aclrtMalloc(&workspaceAddr, workspaceSize, ACL_MEM_MALLOC_HUGE_FIRST);
         CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("aclrtMalloc workspace failed. ERROR: %d\n", ret); return ret);
     }
-    ret = aclnnBuildArbitraryFunc(workspaceAddr, workspaceSize, executor, stream);
-    CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("aclnnBuildArbitraryFunc failed. ERROR: %d\n", ret); return ret);
+    ret = aclnnBuildHstuMaskArbitraryFunc(workspaceAddr, workspaceSize, executor, stream);
+    CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("aclnnBuildHstuMaskArbitraryFunc failed. ERROR: %d\n", ret); return ret);
 
     ret = aclrtSynchronizeDevice();
     CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("aclrtSynchronizeDevice failed. ERROR: %d\n", ret); return ret);
@@ -128,7 +128,7 @@ int main()
     ret = aclrtMemcpy(outHost.data(), outSize, outDev, outSize, ACL_MEMCPY_DEVICE_TO_HOST);
     CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("aclrtMemcpy output failed. ERROR: %d\n", ret); return ret);
 
-    LOG_PRINT("build_arbitrary_func output shape [1,1,%lld,4]\n", static_cast<long long>(totalSeqLen));
+    LOG_PRINT("build_hstu_mask_arbitrary_func output shape [1,1,%lld,4]\n", static_cast<long long>(totalSeqLen));
     LOG_PRINT("first row (pos0 ctx): %d %d %d %d\n", outHost[0], outHost[1], outHost[2], outHost[3]);
     LOG_PRINT("last  row (pos7 tgt): %d %d %d %d\n", outHost[28], outHost[29], outHost[30], outHost[31]);
 

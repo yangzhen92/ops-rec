@@ -1,12 +1,12 @@
 # ============================================================================
-# build_arbitrary_func 算子聚合 CMakeLists
+# arbitrary_func 算子聚合 CMakeLists
 # ----------------------------------------------------------------------------
 # 设置 vendor 名，使用 npu_op_package + INSTALL_PATH 将产物
 # 定向到 opp/<variant>/vendors/<op_name>/ 目录。
 # ============================================================================
 
 # vendor 名，同时也是 CANN package 名
-set(VENDOR_NAME "build_arbitrary_func")
+set(VENDOR_NAME "arbitrary_func")
 
 # 独立 autogen 路径，避免多个算子共享冲突
 set(ASCEND_AUTOGEN_PATH "${CMAKE_CURRENT_BINARY_DIR}/autogen")

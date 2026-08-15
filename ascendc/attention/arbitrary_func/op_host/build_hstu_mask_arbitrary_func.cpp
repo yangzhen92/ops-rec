@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "build_arbitrary_func_tiling.h"
+#include "build_hstu_mask_arbitrary_func_tiling.h"
 
 #include "register/op_def_registry.h"
 #include "tiling/platform/platform_ascendc.h"
@@ -34,6 +34,10 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
     OPS_LOG_E_IF_NULL("targetGroupSizePtr", targetGroupSizePtr, return ge::GRAPH_FAILED);
     const int64_t* totalSeqLenPtr = attrs->GetAttrPointer<int64_t>(1);
     OPS_LOG_E_IF_NULL("totalSeqLenPtr", totalSeqLenPtr, return ge::GRAPH_FAILED);
+    if (*targetGroupSizePtr <= 0) {
+        OPS_LOG_E("[ERROR]", "targetGroupSize must be greater than 0");
+        return ge::GRAPH_FAILED;
+    }
 
     auto ascendPlatform = platform_ascendc::PlatformAscendC(context->GetPlatformInfo());
     uint32_t blockDim = static_cast<uint32_t>(ascendPlatform.GetCoreNumAiv());
@@ -42,7 +46,7 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
         return ge::GRAPH_FAILED;
     }
 
-    BuildArbitraryFuncTilingData tiling;
+    BuildHstuMaskArbitraryFuncTilingData tiling;
     tiling.set_totalSeqLen(static_cast<int32_t>(*totalSeqLenPtr));
     tiling.set_targetGroupSize(static_cast<int32_t>(*targetGroupSizePtr));
     tiling.set_batchSize(batchSize);
@@ -79,9 +83,9 @@ static ge::graphStatus InferShape(gert::InferShapeContext* context)
 }  // namespace ge
 
 namespace ops {
-class BuildArbitraryFunc : public OpDef {
+class BuildHstuMaskArbitraryFunc : public OpDef {
 public:
-    explicit BuildArbitraryFunc(const char* name) : OpDef(name)
+    explicit BuildHstuMaskArbitraryFunc(const char* name) : OpDef(name)
     {
         this->Input("offsets")
             .ParamType(REQUIRED)
@@ -122,5 +126,5 @@ public:
     }
 };
 
-OP_ADD(BuildArbitraryFunc);
+OP_ADD(BuildHstuMaskArbitraryFunc);
 }  // namespace ops

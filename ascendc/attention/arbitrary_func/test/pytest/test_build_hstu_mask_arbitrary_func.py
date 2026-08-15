@@ -21,6 +21,8 @@ import numpy as np
 
 import ops_rec
 
+DEVICE = "npu:0"
+
 torch.npu.config.allow_internal_format = False
 
 # dynamic=True 图模式会在不同 shape 下重编译，增大 cache 避免超限报错
@@ -86,13 +88,13 @@ def make_sequences(batch_size, ctx_lens_list, tgt_lens_list, hist_lens_list):
 
 
 def run_compare(offsets, ctx, tgt, group_size, total_seqlen, use_graph=False):
-    torch.npu.set_device(0)
+    torch.npu.set_device(DEVICE)
     cpu = build_hstu_mask_arbitrary_func_mask_cpu(offsets, ctx, tgt, group_size, total_seqlen)
 
     call = lambda: ops_rec.ascendc.attention.build_hstu_mask_arbitrary_func(
-        torch.from_numpy(offsets).npu(),
-        torch.from_numpy(ctx).npu(),
-        torch.from_numpy(tgt).npu(),
+        torch.from_numpy(offsets).to(DEVICE),
+        torch.from_numpy(ctx).to(DEVICE),
+        torch.from_numpy(tgt).to(DEVICE),
         group_size,
         total_seqlen,
     )
@@ -100,9 +102,9 @@ def run_compare(offsets, ctx, tgt, group_size, total_seqlen, use_graph=False):
     if use_graph:
         compiled_fn = torch_compiled(ops_rec.ascendc.attention.build_hstu_mask_arbitrary_func, dynamic=True, fullgraph=True)
         y = compiled_fn(
-            offsets=torch.from_numpy(offsets).npu(),
-            ctx_lens=torch.from_numpy(ctx).npu(),
-            tgt_lens=torch.from_numpy(tgt).npu(),
+            offsets=torch.from_numpy(offsets).to(DEVICE),
+            ctx_lens=torch.from_numpy(ctx).to(DEVICE),
+            tgt_lens=torch.from_numpy(tgt).to(DEVICE),
             target_group_size=group_size,
             total_seqlen=total_seqlen,
         )

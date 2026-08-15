@@ -8,7 +8,6 @@ set(OPS_REC_OPS_ATLAS_950
     disentangle_attention
     block_sparse_func
     arbitrary_func
-
 )
 
 # ================================ A3 ops ===================================

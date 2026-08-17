@@ -27,6 +27,8 @@ See the License for the specific language governing permissions and
 #undef OPS_REC_CUST_VENDOR
 #endif
 #define OPS_REC_CUST_VENDOR "token_mixing"
+#define OPS_REC_CUST_VENDORS "token_mixing"
+
 
 #include "pytorch_npu_helper.hpp"
 

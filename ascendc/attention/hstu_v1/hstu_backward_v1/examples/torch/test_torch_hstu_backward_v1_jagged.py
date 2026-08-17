@@ -23,10 +23,21 @@ hstu_jagged_backward 算子 PyTorch 接口使用样例
 
 import torch
 import ops_rec
+import torch_npu
+import random
+import numpy as np
 
 # pylint: disable=duplicate-code
 torch.npu.config.allow_internal_format = False
-torch.npu.set_device(1)
+
+
+def set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch_npu.npu.manual_seed_all(seed)  # 如果使用多GPU
+    torch.backends.cudnn.deterministic = True  # 确保CuDNN使用确定性算法
+    torch.backends.cudnn.benchmark = False  # 关闭CuDNN自动优化
 
 
 def _describe(name, tensor):
@@ -120,6 +131,8 @@ def test_hstu_jagged_backward(
 
 
 def main():
+    torch.npu.set_device(2)
+    set_seed(1234)
     # 无掩码、无 bias
     test_hstu_jagged_backward("无掩码、无 bias", mask_type=2, enable_bias=False)
     # 无掩码 + bias

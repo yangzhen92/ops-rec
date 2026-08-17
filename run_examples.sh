@@ -116,11 +116,31 @@ _op_from_example_path() {
     awk -F/ '{gsub(/\.[^.]+$/, "", $NF); sub(/^test_(aclnn|torch)_/, "", $NF); print $NF}'
 }
 
+# 查询聚合 vendor 在 soc_ops_config.cmake 中展开后的真实子 vendor 列表。
+op_leaves_for_soc() {
+    local op="$1"
+    # soc_ops_config.cmake 用 message() 把查询结果打到 stderr，需 2>&1 合并捕获
+    cmake -DSOC=atlas_950 -DOPS_REC_QUERY_OP="${op}" \
+        -P "${SCRIPT_DIR}/cmake/soc_ops_config.cmake" 2>&1
+}
+
 collect_ops() {
     if [ -n "${EXAMPLE_OPS}" ]; then
         IFS=',' read -ra parts <<< "${EXAMPLE_OPS}"
         for op in "${parts[@]}"; do
-            echo "$(echo "${op}" | xargs)"
+            op="$(echo "${op}" | xargs)"
+            [ -z "${op}" ] && continue
+            local -a leaves=()
+            while IFS= read -r leaf; do
+                leaf="$(echo "${leaf}" | xargs)"
+                [ -n "${leaf}" ] && leaves+=("${leaf}")
+            done < <(op_leaves_for_soc "${op}")
+            if [ "${#leaves[@]}" -gt 0 ] \
+               && ! { [ "${#leaves[@]}" -eq 1 ] && [ "${leaves[0]}" = "${op}" ]; }; then
+                printf '%s\n' "${leaves[@]}"
+            else
+                echo "${op}"
+            fi
         done
     else
         {

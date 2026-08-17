@@ -26,6 +26,16 @@ list(APPEND ops_srcs ${ops_cc_srcs})
 ops_rec_collect_arch_sources(ops_srcs)
 list(FILTER ops_srcs EXCLUDE REGEX "\\.h$")
 
+# ── 纯 tiling 实现编译单元拆分（修复 libcust_opapi.so multiple definition）──
+# tiling_policy*.cpp（根目录）与 <arch>/tiling_policy_arch.cpp 是纯 TilingPolicy
+# 实现编译单元，不含 OP_ADD/REG_OP 注册宏（不参与 op def 注册与 codegen 扫描）。
+# 若同时编入 cust_op_proto（GRAPH）与 cust_optiling（TILING），最终链接
+# libcust_opapi.so 时同一批符号出现两份定义 → /usr/bin/ld multiple definition。
+# 因此从 GRAPH 源列表剔除，仅编译进 TILING 库；hstu_*_forward.cpp.o 中对
+# TilingPolicy 符号的未定义引用由 cust_optiling 在最终 .so 链接时解析。
+set(tiling_impl_srcs ${ops_srcs})
+list(FILTER tiling_impl_srcs INCLUDE REGEX "[/\\]tiling_policy[^/\\]*\\.cpp$")
+
 npu_op_code_gen(
     SRC ${ops_srcs}
     PACKAGE ${VENDOR_NAME}
@@ -58,6 +68,10 @@ file(GLOB group_proto_src ${ASCEND_AUTOGEN_PATH}/group_op_proto/*.cc)
 file(GLOB proto_src ${ASCEND_AUTOGEN_PATH}/op_proto.cc)
 set_source_files_properties(${group_proto_src} PROPERTIES GENERATED TRUE)
 set_source_files_properties(${proto_src} PROPERTIES GENERATED TRUE)
+# GRAPH 库仅编译 op-def 注册/推导单元（hstu_*_forward.cpp）；
+# 纯 tiling 实现（tiling_policy*.cpp / arch/tiling_policy_arch.cpp）仅进 TILING 库，
+# 避免同一符号两份定义被同时链接进 libcust_opapi.so。
+list(REMOVE_ITEM ops_srcs ${tiling_impl_srcs})
 npu_op_library(cust_op_proto GRAPH
     ${ops_srcs}
     ${group_proto_src}
@@ -77,8 +91,10 @@ target_compile_options(cust_op_proto PRIVATE
 
 file(GLOB fallback_src ${ASCEND_AUTOGEN_PATH}/fallback_*.cpp)
 set_source_files_properties(${fallback_src} PROPERTIES GENERATED TRUE)
+# TILING 库编译 op-def（tiling 入口注册）+ 纯 tiling 实现，符号在最终 .so 链接时统一解析
 npu_op_library(cust_optiling TILING
     ${ops_srcs}
+    ${tiling_impl_srcs}
     ${fallback_src}
 )
 

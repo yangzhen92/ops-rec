@@ -1,0 +1,31 @@
+# ---------------------------------------------------------------------------
+# ops-rec 构建产物忽略规则
+# ---------------------------------------------------------------------------
+
+# ---- 系统及 IDE 缓存文件 ----
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# ---- CMake / build 产物 ----
+/build/
+/dist/
+/dist_merge/
+/dist_tmp/
+/_skbuild/
+
+# ---- Python / 测试缓存 ----
+*.egg-info/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.pyc
+
+# ---- 打包产物与日志 ----
+*.whl
+*.log
+
+# ---- 算子用例运行时生成物 ----
+torch_compile_debug/
+graph_time.txt

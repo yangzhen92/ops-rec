@@ -15,6 +15,7 @@ See the License for the specific language governing permissions and
 
 // hstu_dense_forward 算子 PyTorch 适配层（由 RecSDK torch_library/hstu 迁移合并）
 // 注册：hstu_dense / hstu_dense_backward / hstu_jagged.equal|delta / hstu_paged
+#define OPS_REC_CUST_VENDORS "hstu_forward_v1"
 
 #include <cstdint>
 #include "c10/core/ScalarType.h"

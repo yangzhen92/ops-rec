@@ -59,7 +59,7 @@ set(OPS_REC_VENDORS ${OPS_REC_OPS_${_variant_upper}})
 message(STATUS "ops-rec: vendors for ${OPS_REC_SOC_VARIANT} = ${OPS_REC_VENDORS}")
 
 # OPS_REC_TARGET_OP — 由 cmake -D 或环境变量传入
-# 设置且非空时，仅编译该指定算子（用于 build.sh 逐算子独立 configure
+# 设置且非空时，仅编译该指定算子（用于 build.sh 逐算子独立 configure）
 # 留空 = 编该 SOC 全部。
 set(OPS_REC_TARGET_OP "" CACHE STRING "ops-rec target op vendor (empty = all)")
 if(NOT OPS_REC_TARGET_OP AND DEFINED ENV{OPS_REC_TARGET_OP})

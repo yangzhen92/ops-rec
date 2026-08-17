@@ -22,6 +22,8 @@
 
 using namespace at;
 
+constexpr uint32_t N_FUNC = 4;
+
 at::Tensor build_hstu_mask_arbitrary_func_impl_npu(const at::Tensor& offsets, const at::Tensor& ctx_lens,
                                                    const at::Tensor& tgt_lens, int64_t target_group_size,
                                                    int64_t total_seqlen)
@@ -48,7 +50,7 @@ at::Tensor build_hstu_mask_arbitrary_func_impl_npu(const at::Tensor& offsets, co
     auto tgt_lens_conti = tgt_lens.contiguous();
 
     // Kernel explicitly writes all 4 columns, so empty (not zeros) is safe.
-    at::Tensor arbitrary_func = at::empty({1, 1, total_seqlen, 4}, offsets_conti.options());
+    at::Tensor arbitrary_func = at::empty({1, 1, total_seqlen, N_FUNC}, offsets_conti.options());
     if (total_seqlen == 0)
         return arbitrary_func;
 
@@ -77,7 +79,7 @@ at::Tensor build_hstu_mask_arbitrary_func_meta(const at::Tensor& offsets, const 
                                                int64_t total_seqlen)
 {
     TORCH_CHECK(total_seqlen >= 0, "total_seqlen must be non-negative");
-    return at::empty_symint({1, 1, total_seqlen, 4}, offsets.options());
+    return at::empty_symint({1, 1, total_seqlen, N_FUNC}, offsets.options());
 }
 
 }  // anonymous namespace

@@ -256,12 +256,12 @@ class TestHstuNormalDemo:
 
     @pytest.mark.graph
     @pytest.mark.parametrize("batch_size", [2])
-    @pytest.mark.parametrize("max_seq_len", [64])
+    @pytest.mark.parametrize("max_seq_len", [64, 512])
     @pytest.mark.parametrize("head_num", [4])
     @pytest.mark.parametrize("head_dim", [64])
-    @pytest.mark.parametrize("mask_type", [2])
+    @pytest.mark.parametrize("mask_type", [0, 2, 3])
     @pytest.mark.parametrize("silu_scale", [1.0 / 256])
-    @pytest.mark.parametrize("enable_bias", [False])
+    @pytest.mark.parametrize("enable_bias", [True, False])
     @pytest.mark.parametrize("data_type", [torch.float32])
     def test_hstu_normal_graph(
         self,
@@ -280,20 +280,25 @@ class TestHstuNormalDemo:
         q = q.npu()
         k = k.npu()
         v = v.npu()
-        if mask is not None:
-            mask = mask.npu()
+
+        bias_npu = None
+        if enable_bias:
+            bias_npu = bias.to("npu")
+        mask_npu = None
+        if mask_type in (0, 3):
+            mask_npu = mask.to("npu")
 
         compiled_fn = torch_compiled(
             ops_rec.ascendc.attention.hstu_dense_backward,
             dynamic=True,
             fullgraph=True,
         )
-        q_grad, k_grad, v_grad, _ = compiled_fn(
-            grad, q, k, v, mask, None, mask_type=mask_type, max_seq_len=max_seq_len, silu_scale=silu_scale
+        q_grad, k_grad, v_grad, attn_bias_grad = compiled_fn(
+            grad, q, k, v, mask_npu, bias_npu, mask_type=mask_type, max_seq_len=max_seq_len, silu_scale=silu_scale
         )
 
-        q_grad_golden, k_grad_golden, v_grad_golden, _ = self.golden_op_exec(
-            grad, q, k, v, bias, mask, mask_type, max_seq_len, silu_scale, enable_bias, data_type
+        q_grad_golden, k_grad_golden, v_grad_golden, attn_bias_grad_golden = self.golden_op_exec(
+            grad, q, k, v, bias_npu, mask_npu, mask_type, max_seq_len, silu_scale, enable_bias, data_type
         )
 
         loss = 1e-4
@@ -302,10 +307,11 @@ class TestHstuNormalDemo:
         elif data_type == torch.bfloat16:
             loss = 5e-3
 
-        q_res = allclose(q_grad, q_grad_golden, loss, loss)
-        k_res = allclose(k_grad, k_grad_golden, loss, loss)
-        v_res = allclose(v_grad, v_grad_golden, loss, loss)
-        assert q_res and k_res and v_res, "hstu_dense_backward graph mode allclose check failed"
+        q_res = allclose(q_grad.cpu(), q_grad_golden, loss, loss)
+        k_res = allclose(k_grad.cpu(), k_grad_golden, loss, loss)
+        v_res = allclose(v_grad.cpu(), v_grad_golden, loss, loss)
+        bias_res = not enable_bias or allclose(attn_bias_grad.cpu(), attn_bias_grad_golden, loss, loss)
+        assert q_res and k_res and v_res and bias_res, "hstu_dense_backward graph mode allclose check failed"
 
 
 if __name__ == "__main__":

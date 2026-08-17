@@ -286,19 +286,16 @@ build_adapter() {
 # 任一缺失即报错，避免"编译成功但打包缺失/空 whl 却提示成功"。
 # ---------------------------------------------------------------------------
 verify_merged_ops() {
-    local soc op leaf missing=0
-    for soc in "${SOC_ARRAY[@]}"; do
-        soc="$(echo "${soc}" | xargs)"
+    local missing=0
+    local soc leaf
+    while IFS=$'\t' read -r soc leaf; do
         [ -z "${soc}" ] && continue
-        while IFS= read -r leaf; do
-            [ -z "${leaf}" ] && continue
-            if ! find "${MERGE_ROOT}/opp" -type d -name "${leaf}" 2>/dev/null | grep -q .; then
-                echo "[ERROR] ${soc}/${leaf}: vendor dir missing from merged opp/ tree" >&2
-                missing=1
-            fi
-        done < <(cmake -DSOC="${soc}" -DOPS_REC_LIST_MODE=leaf \
-                    -P "${SCRIPT_DIR}/cmake/soc_ops_config.cmake" 2>&1)
-    done
+        [ -z "${leaf}" ] && continue
+        if ! find "${MERGE_ROOT}/opp" -type d -name "${leaf}" 2>/dev/null | grep -q .; then
+            echo "[ERROR] ${soc}/${leaf}: vendor dir missing from merged opp/ tree" >&2
+            missing=1
+        fi
+    done <<< "$1"
     if [ "${missing}" -eq 1 ]; then
         die "some vendor artifacts missing from merged package; aborting wheel build"
     fi
@@ -329,6 +326,9 @@ main() {
     # 同步 experimental/triton -> ops_rec（每次构建前做一次）
     sync_triton
 
+    # 累积"实际构建"的 (soc leaf) 对，供 verify_merged_ops 校验
+    local -a BUILT_OPS=()
+
     IFS=',' read -ra SOC_ARRAY <<< "${SOCS}"
     for soc in "${SOC_ARRAY[@]}"; do
         soc="$(echo "${soc}" | xargs)"
@@ -345,18 +345,47 @@ main() {
             done < <(cmake -DSOC="${soc}" -DOPS_REC_LIST_MODE=leaf \
                         -P "${SCRIPT_DIR}/cmake/soc_ops_config.cmake" 2>&1)
         else
+            # 预先获取该 SOC 的叶子白名单（cmake leaf 模式），用于过滤
+            # 当 --ops 指定的 op 不在某 SOC 的白名单中时，跳过该 SOC
+            local -a soc_leaves=()
+            while IFS= read -r raw_leaf; do
+                local leaf_trim
+                leaf_trim="$(echo "${raw_leaf}" | xargs)"
+                [ -n "${leaf_trim}" ] && soc_leaves+=("${leaf_trim}")
+            done < <(cmake -DSOC="${soc}" -DOPS_REC_LIST_MODE=leaf \
+                        -P "${SCRIPT_DIR}/cmake/soc_ops_config.cmake" 2>&1)
+
             for op in "${OP_ARRAY[@]}"; do
                 [ -z "${op}" ] && continue
                 if ! vendor_dir_exists "${op}"; then
                     die "unknown op/vendor '${op}' (not in ascendc/ tree); refusing to build"
                 fi
-                local leaf
-                while IFS= read -r leaf; do
-                    [ -n "${leaf}" ] && op_list+=("${leaf}")
-                done < <(op_leaves_for_soc "${soc}" "${op}")
+                local matched=0
+                local sl
+                for sl in "${soc_leaves[@]}"; do
+                    if [ "${sl}" = "${op}" ]; then
+                        op_list+=("${sl}")
+                        matched=1
+                    fi
+                done
+                if [ "${matched}" -eq 0 ]; then
+                    while IFS= read -r leaf; do
+                        [ -n "${leaf}" ] || continue
+                        for sl in "${soc_leaves[@]}"; do
+                            if [ "${sl}" = "${leaf}" ]; then
+                                op_list+=("${leaf}")
+                                break
+                            fi
+                        done
+                    done < <(op_leaves_for_soc "${soc}" "${op}")
+                fi
             done
         fi
         if [ "${#op_list[@]}" -eq 0 ]; then
+            if [ "${op_mode}" = "specified" ]; then
+                echo "[INFO] ${soc}: no matching ops from --ops filter; skipping"
+                continue
+            fi
             die "no ops to build for SOC ${soc}; refusing to produce an empty wheel"
         fi
 
@@ -394,6 +423,7 @@ main() {
         echo "[INFO] Collecting kernel artifacts for ${soc}"
         echo "-----------------------------------------------------------"
         for op in "${op_list[@]}"; do
+            BUILT_OPS+=("${soc}	${op}")
             local sstage="${STAGE_ROOT}/${soc}/${op}"
             # 该 SOC 的 OPP 归档目录（variant 目录名由 CMake 确定，可能是 atlas_950 / atlas_a2 / atlas_a3）
             local oppdir
@@ -438,9 +468,7 @@ main() {
         fi
     done
 
-    # 收集完成后、打包前，校验每个 (SOC, op) 的 vendor 产物确实已合并进 opp/ 树。
-    # 防止"编译成功但打包缺失/空 whl"被当成成功。
-    verify_merged_ops
+    verify_merged_ops "$(IFS=$'\n'; echo "${BUILT_OPS[*]}")"
 
     # 4) 收集 Python 包树（含 triton、env_setup.sh）——排除工具链生成的 opp/
     echo ""

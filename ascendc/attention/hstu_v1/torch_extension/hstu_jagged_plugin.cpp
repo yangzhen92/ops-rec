@@ -184,7 +184,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> hstu_deltaq_backward(
                                          seqOffsetQ, seqOffsetK, numContext, numTarget, targetGroupSize, alpha);
 }
 
-TORCH_LIBRARY_FRAGMENT(mxrec, m)
+TORCH_LIBRARY_FRAGMENT(ops_rec, m)
 {
     m.def("hstu_jagged.equal(Tensor q, "
           "                  Tensor k, "
@@ -248,7 +248,7 @@ TORCH_LIBRARY_FRAGMENT(mxrec, m)
           "                           float? alpha=1.0) -> (Tensor, Tensor, Tensor, Tensor)");
 }
 
-TORCH_LIBRARY_IMPL(mxrec, PrivateUse1, m)
+TORCH_LIBRARY_IMPL(ops_rec, PrivateUse1, m)
 {
     m.impl("hstu_jagged.equal", TORCH_FN(hstu_jagged_equal));
     m.impl("hstu_jagged_backward.equal", TORCH_FN(hstu_jagged_backward));
@@ -350,9 +350,78 @@ at::Tensor hstu_deltaq_autograd(const at::Tensor& q, const at::Tensor& k, const 
                                       seqOffsetK, numContext, numTarget, targetGroupSize, alpha);
 }
 
-TORCH_LIBRARY_IMPL(mxrec, AutogradPrivateUse1, m)
+TORCH_LIBRARY_IMPL(ops_rec, AutogradPrivateUse1, m)
 {
     m.impl("hstu_jagged.equal", TORCH_FN(hstu_jagged_autograd));
     m.impl("hstu_jagged.delta", TORCH_FN(hstu_deltaq_autograd));
 }
+
+namespace {
+
+at::Tensor hstu_jagged_equal_meta(const at::Tensor& q, const at::Tensor& k, const at::Tensor& v,
+                                  const c10::optional<at::Tensor>& mask, const c10::optional<at::Tensor>& attnBias,
+                                  const int64_t maskType, const int64_t maxSeqLen, const double siluScale,
+                                  const at::Tensor& seqOffset, const c10::optional<at::Tensor>& numContext,
+                                  const c10::optional<at::Tensor>& numTarget,
+                                  const c10::optional<int64_t>& targetGroupSize, const c10::optional<double>& alpha,
+                                  const bool deterministic)
+{
+    TORCH_CHECK(q.dim() == 3, "The q should be 3D in jagged layout");
+    return at::empty_like(q, q.options());
+}
+
+std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> hstu_jagged_backward_equal_meta(
+    const at::Tensor& grad, const at::Tensor& q, const at::Tensor& k, const at::Tensor& v,
+    const c10::optional<at::Tensor> mask, const c10::optional<at::Tensor> attnBias, const int64_t maskType,
+    const int64_t maxSeqLen, const double siluScale, const at::Tensor& seqOffset,
+    const c10::optional<at::Tensor>& numContext, const c10::optional<at::Tensor>& numTarget,
+    const c10::optional<int64_t>& targetGroupSize, const c10::optional<double>& alpha)
+{
+    TORCH_CHECK(grad.dim() == 3, "The grad should be 3D in jagged layout");
+    auto qGradOutput = at::empty_like(q);
+    auto kGradOutput = at::empty_like(k);
+    auto vGradOutput = at::empty_like(v);
+    auto attnBiasGradOutput = at::empty_like(grad);
+    return std::make_tuple(qGradOutput, kGradOutput, vGradOutput, attnBiasGradOutput);
+}
+
+at::Tensor hstu_jagged_delta_meta(const at::Tensor& q, const at::Tensor& k, const at::Tensor& v,
+                                  const c10::optional<at::Tensor>& mask, const c10::optional<at::Tensor>& attnBias,
+                                  const int64_t maskType, const int64_t maxSeqLen, const int64_t maxSeqLenK,
+                                  const double siluScale, const at::Tensor& seqOffset, const at::Tensor& seqOffsetK,
+                                  const c10::optional<at::Tensor>& numContext,
+                                  const c10::optional<at::Tensor>& numTarget,
+                                  const c10::optional<int64_t>& targetGroupSize, const c10::optional<double>& alpha,
+                                  const bool deterministic)
+{
+    TORCH_CHECK(q.dim() == 3, "The q should be 3D in jagged layout");
+    return at::empty_like(q, q.options());
+}
+
+std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> hstu_jagged_backward_delta_meta(
+    const at::Tensor& grad, const at::Tensor& q, const at::Tensor& k, const at::Tensor& v,
+    const c10::optional<at::Tensor> mask, const c10::optional<at::Tensor> attnBias, const int64_t maskType,
+    const int64_t maxSeqLen, const int64_t maxSeqLenK, const double siluScale, const at::Tensor& seqOffsetQ,
+    const at::Tensor& seqOffsetK, const c10::optional<at::Tensor>& numContext,
+    const c10::optional<at::Tensor>& numTarget, const c10::optional<int64_t>& targetGroupSize,
+    const c10::optional<double>& alpha)
+{
+    TORCH_CHECK(grad.dim() == 3, "The grad should be 3D in jagged layout");
+    auto qGradOutput = at::empty_like(q);
+    auto kGradOutput = at::empty_like(k);
+    auto vGradOutput = at::empty_like(v);
+    auto attnBiasGradOutput = at::empty_like(grad);
+    return std::make_tuple(qGradOutput, kGradOutput, vGradOutput, attnBiasGradOutput);
+}
+
+}  // anonymous namespace
+
+TORCH_LIBRARY_IMPL(ops_rec, Meta, m)
+{
+    m.impl("hstu_jagged.equal", &hstu_jagged_equal_meta);
+    m.impl("hstu_jagged_backward.equal", &hstu_jagged_backward_equal_meta);
+    m.impl("hstu_jagged.delta", &hstu_jagged_delta_meta);
+    m.impl("hstu_jagged_backward.delta", &hstu_jagged_backward_delta_meta);
+}
+
 }  // namespace hstu

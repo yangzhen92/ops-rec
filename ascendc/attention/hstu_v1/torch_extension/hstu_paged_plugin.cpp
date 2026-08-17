@@ -70,7 +70,7 @@ at::Tensor hstu_paged_forward_impl_npu(const at::Tensor& q, const at::Tensor& k,
     return attnOutput;
 }
 
-TORCH_LIBRARY_FRAGMENT(mxrec, m)
+TORCH_LIBRARY_FRAGMENT(ops_rec, m)
 {
     m.def("hstu_paged(Tensor q, "
           "           Tensor k, "
@@ -89,12 +89,13 @@ TORCH_LIBRARY_FRAGMENT(mxrec, m)
           "           Tensor page_ids=None, "
           "           Tensor last_page_len=None, "
           "           Tensor num_target=None, "
+
           "           int target_group_size=0, "
           "           float? alpha=1.0, "
           "           bool deterministic=False) -> Tensor");
 }
 
-TORCH_LIBRARY_IMPL(mxrec, PrivateUse1, m)
+TORCH_LIBRARY_IMPL(ops_rec, PrivateUse1, m)
 
 {
     m.impl("hstu_paged", TORCH_FN(hstu_paged_forward_impl_npu));

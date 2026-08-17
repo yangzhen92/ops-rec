@@ -152,7 +152,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> hstu_dense_backward_i
     return std::make_tuple(qGradOutput, kGradOutput, vGradOutput, attnBiasGradOutput);
 }
 
-TORCH_LIBRARY_FRAGMENT(mxrec, m)
+TORCH_LIBRARY_FRAGMENT(ops_rec, m)
 {
     m.def("hstu_dense(Tensor q, "
           "           Tensor k, "
@@ -173,7 +173,7 @@ TORCH_LIBRARY_FRAGMENT(mxrec, m)
           "                    float silu_scale=0.0) -> (Tensor, Tensor, Tensor, Tensor)");
 }
 
-TORCH_LIBRARY_IMPL(mxrec, PrivateUse1, m)
+TORCH_LIBRARY_IMPL(ops_rec, PrivateUse1, m)
 {
     m.impl("hstu_dense", TORCH_FN(hstu_dense_forward_impl_npu));
     m.impl("hstu_dense_backward", TORCH_FN(hstu_dense_backward_impl_npu));
@@ -241,8 +241,59 @@ at::Tensor hstu_dense_autograd(const at::Tensor& q, const at::Tensor& k, const a
     return HstuDenseNpuFusion::apply(q, k, v, mask, attnBias, maskType, maxSeqLen, siluScale);
 }
 
-TORCH_LIBRARY_IMPL(mxrec, AutogradPrivateUse1, m)
+TORCH_LIBRARY_IMPL(ops_rec, AutogradPrivateUse1, m)
 {
     m.impl("hstu_dense", TORCH_FN(hstu_dense_autograd));
 }
+
+namespace {
+
+at::Tensor hstu_dense_meta(const at::Tensor& q, const at::Tensor& k, const at::Tensor& v,
+                           const c10::optional<at::Tensor>& mask, const c10::optional<at::Tensor>& attnBias,
+                           const int64_t maskType, const int64_t maxSeqLen, const double siluScale)
+{
+    TORCH_CHECK(q.dim() == 4, "The q should be 4D in dense layout");
+    return at::empty_like(q, q.options());
+}
+
+// std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> hstu_dense_backward_meta(
+//     const at::Tensor& grad, const at::Tensor& q, const at::Tensor& k, const at::Tensor& v,
+//     const c10::optional<at::Tensor> mask, const c10::optional<at::Tensor> attnBias, const int64_t maskType,
+//     const int64_t maxSeqLen, const double siluScale)
+//{
+//     TORCH_CHECK(grad.dim() == 4, "The grad should be 4D in normal layout");
+//     auto qGradOutput = at::empty_like(q);
+//     auto kGradOutput = at::empty_like(k);
+//     auto vGradOutput = at::empty_like(v);
+//     auto attnBiasGradOutput = at::empty_like(grad);
+//     return std::make_tuple(qGradOutput, kGradOutput, vGradOutput, attnBiasGradOutput);
+// }
+
+std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> hstu_dense_backward_meta(
+    const at::Tensor& grad, const at::Tensor& q, const at::Tensor& k, const at::Tensor& v,
+    const c10::optional<at::Tensor> mask, const c10::optional<at::Tensor> attnBias, const int64_t maskType,
+    const int64_t maxSeqLen, const double siluScale)
+{
+    TORCH_CHECK(grad.dim() == 4, "The grad should be 4D in normal layout");
+    auto qGradOutput = at::empty_like(q);
+    auto kGradOutput = at::empty_like(k);
+    auto vGradOutput = at::empty_like(v);
+    at::Tensor attnBiasGradOutput;
+    if (attnBias.has_value() && attnBias->defined()) {
+        attnBiasGradOutput = at::empty_like(*attnBias);
+    } else {
+        int64_t biasGradSeqLen = (grad.size(1) + 255) / 256 * 256;
+        attnBiasGradOutput = at::empty({grad.size(0), grad.size(2), biasGradSeqLen, biasGradSeqLen}, grad.options());
+    }
+    return std::make_tuple(qGradOutput, kGradOutput, vGradOutput, attnBiasGradOutput);
+}
+
+}  // anonymous namespace
+
+TORCH_LIBRARY_IMPL(ops_rec, Meta, m)
+{
+    m.impl("hstu_dense", &hstu_dense_meta);
+    m.impl("hstu_dense_backward", &hstu_dense_backward_meta);
+}
+
 }  // namespace hstu

@@ -26,6 +26,10 @@ using torch::autograd::Variable;
 using tensor_list = std::vector<at::Tensor>;
 using namespace at;
 
+namespace {
+#define DIVUP(x, y) (((x) + (y) - 1) / (y))
+}
+
 void validate_compact_no_sync_inputs(const Tensor& mask_block_cnt, const Tensor& full_block_cnt,
                                      const Tensor& block_idx)
 {
@@ -129,19 +133,202 @@ tensor_list compact_no_sync_meta(const Tensor& mask_block_cnt, const Tensor& ful
 
 }  // anonymous namespace
 
+// ---------------------------------------------------------------------------
+// create_q2k_block_sparse_from_func：由 func_tensor 生成 Q2K 块稀疏张量
+// ---------------------------------------------------------------------------
+void validate_create_q2k_inputs(const Tensor& func_tensor)
+{
+    // 检查设备
+    check_tensor_npu_device({func_tensor}, {"func_tensor"});
+    // 检查数据类型
+    TORCH_CHECK(func_tensor.dtype() == at::kInt, "func_tensor must be int32");
+    // 检查维度 [B, H, func_q_len, n_func]
+    TORCH_CHECK(func_tensor.dim() == 4, "func_tensor must be 4D [B, H, func_q_len, n_func]");
+}
+
+/**
+ * create_q2k_block_sparse_from_func算子的NPU实现
+ * @param func_tensor [B, H, func_q_len, n_func] 函数编码张量
+ * @param q_len Q 序列长度
+ * @param kv_len KV 序列长度
+ * @param q_block_size Q 块大小
+ * @param kv_block_size KV 块大小
+ * @param check_q_boundary 部分 q_block 是否不允许 FULL kv_block
+ * @return 元组 (mask_block_cnt, full_block_cnt, block_idx)
+ */
+std::tuple<Tensor, Tensor, Tensor> create_q2k_block_sparse_from_func_impl_npu(const Tensor& func_tensor, int64_t q_len,
+                                                                              int64_t kv_len, int64_t q_block_size,
+                                                                              int64_t kv_block_size,
+                                                                              bool check_q_boundary, bool debug)
+{
+    validate_create_q2k_inputs(func_tensor);
+
+    TORCH_CHECK(q_len > 0, "q_len must be positive");
+    TORCH_CHECK(kv_len > 0, "kv_len must be positive");
+    // catlass 限制
+    TORCH_CHECK(q_block_size > 0, "q_block_size must be positive");
+    TORCH_CHECK(kv_block_size > 0, "kv_block_size must be positive");
+
+    // func_tensor 可为非连续张量，保留 strides 以便 kernel 按步长索引
+    int32_t B = func_tensor.size(0);
+    int32_t H = func_tensor.size(1);
+    int32_t n_func = func_tensor.size(3);
+    TORCH_CHECK(n_func % 2 == 0, "n_func must be even (e.g., 2, 4, 6, 8, ...)");
+
+    int32_t stride_b = func_tensor.stride(0);
+    int32_t stride_h = func_tensor.stride(1);
+    int32_t stride_q = func_tensor.stride(2);
+    int32_t stride_f = func_tensor.stride(3);
+
+    int32_t num_q_blocks = DIVUP(q_len, q_block_size);
+    int32_t num_kv_blocks = DIVUP(kv_len, kv_block_size);
+
+    // 分配输出张量
+    Tensor mask_block_cnt = debug ? at::full({B, H, num_q_blocks}, -1, func_tensor.options())
+                                : at::empty({B, H, num_q_blocks}, func_tensor.options());
+    Tensor full_block_cnt = debug ? at::full({B, H, num_q_blocks}, -1, func_tensor.options())
+                                : at::empty({B, H, num_q_blocks}, func_tensor.options());
+    Tensor block_idx = debug ? at::full({B, H, num_q_blocks, num_kv_blocks}, -1, func_tensor.options())
+                            : at::empty({B, H, num_q_blocks, num_kv_blocks}, func_tensor.options());
+
+    // 调用 create_q2k_block_sparse_from_func kernel
+    EXEC_NPU_CMD(aclnnCreateQ2KBlockSparseFromFunc, func_tensor, stride_b, stride_h, stride_q, stride_f, q_len, kv_len,
+                 n_func, q_block_size, kv_block_size, check_q_boundary, mask_block_cnt, full_block_cnt, block_idx);
+
+    return std::make_tuple(mask_block_cnt, full_block_cnt, block_idx);
+}
+
+namespace {
+/**
+ * create_q2k_block_sparse_from_func算子的元函数实现
+ */
+std::tuple<Tensor, Tensor, Tensor> create_q2k_block_sparse_from_func_meta(const Tensor& func_tensor, int64_t q_len,
+                                                                          int64_t kv_len, int64_t q_block_size,
+                                                                          int64_t kv_block_size, bool check_q_boundary,
+                                                                          bool debug)
+{
+    TORCH_CHECK(func_tensor.dim() == 4, "func_tensor must be 4D");
+    int32_t B = func_tensor.size(0);
+    int32_t H = func_tensor.size(1);
+    int32_t num_q_blocks = DIVUP(q_len, q_block_size);
+    int32_t num_kv_blocks = DIVUP(kv_len, kv_block_size);
+
+    auto mask_block_cnt = at::empty({B, H, num_q_blocks}, func_tensor.options());
+    auto full_block_cnt = at::empty({B, H, num_q_blocks}, func_tensor.options());
+    auto block_idx = at::empty({B, H, num_q_blocks, num_kv_blocks}, func_tensor.options());
+
+    return std::make_tuple(mask_block_cnt, full_block_cnt, block_idx);
+}
+
+}  // anonymous namespace
+
+// ---------------------------------------------------------------------------
+// create_k2q_block_sparse_from_func：由 func_tensor 生成 K2Q 块稀疏张量（反向）
+// ---------------------------------------------------------------------------
+/**
+ * create_k2q_block_sparse_from_func算子的NPU实现（反向/transpose）
+ * @param func_tensor [B, H, func_q_len, n_func] 函数编码张量
+ * @param q_len Q 序列长度
+ * @param kv_len KV 序列长度
+ * @param q_block_size Q 块大小
+ * @param kv_block_size KV 块大小
+ * @return 元组 (mask_block_cnt, full_block_cnt, block_idx)
+ *
+ * K2Q 与 Q2K 共享 func_tensor 布局，但输出形状不同：
+ *   mask_block_cnt/full_block_cnt: [B, H, numKvBlocks]
+ *   block_idx: [B, H, numKvBlocks, numQBlocks]
+ * K2Q 始终进行 q_boundary 检查（部分 q_block 不允许 FULL），故无 check_q_boundary 参数。
+ */
+std::tuple<Tensor, Tensor, Tensor> create_k2q_block_sparse_from_func_impl_npu(const Tensor& func_tensor, int64_t q_len,
+                                                                              int64_t kv_len, int64_t q_block_size,
+                                                                              int64_t kv_block_size, bool debug)
+{
+    validate_create_q2k_inputs(func_tensor);
+
+    TORCH_CHECK(q_len > 0, "q_len must be positive");
+    TORCH_CHECK(kv_len > 0, "kv_len must be positive");
+    TORCH_CHECK(q_block_size > 0, "q_block_size must be positive");
+    TORCH_CHECK(kv_block_size > 0, "kv_block_size must be positive");
+
+    int32_t B = func_tensor.size(0);
+    int32_t H = func_tensor.size(1);
+    int32_t n_func = func_tensor.size(3);
+    TORCH_CHECK(n_func % 2 == 0, "n_func must be even (e.g., 2, 4, 6, 8, ...)");
+
+    // func_tensor 可为非连续张量，保留 strides 以便 kernel 按步长索引
+    int32_t stride_b = func_tensor.stride(0);
+    int32_t stride_h = func_tensor.stride(1);
+    int32_t stride_q = func_tensor.stride(2);
+    int32_t stride_f = func_tensor.stride(3);
+
+    int32_t num_q_blocks = DIVUP(q_len, q_block_size);
+    int32_t num_kv_blocks = DIVUP(kv_len, kv_block_size);
+    // 分配输出张量
+    Tensor mask_block_cnt = debug ? at::full({B, H, num_kv_blocks}, -1, func_tensor.options())
+                                : at::empty({B, H, num_kv_blocks}, func_tensor.options());
+    Tensor full_block_cnt = debug ? at::full({B, H, num_kv_blocks}, -1, func_tensor.options())
+                                : at::empty({B, H, num_kv_blocks}, func_tensor.options());
+    Tensor block_idx = debug ? at::full({B, H, num_kv_blocks, num_q_blocks}, -1, func_tensor.options())
+                            : at::empty({B, H, num_kv_blocks, num_q_blocks}, func_tensor.options());
+
+    // K2Q 前置阶段：预计算每个 (b, h, q_block) 的 q_block_kv_min / q_block_kv_max，
+    // 供 create_k2q_block_sparse_from_func 跳过 kv 范围无交叠的 q_block（kv-range 优化）。
+    Tensor q_block_kv_min = at::empty({B, H, num_q_blocks}, func_tensor.options());
+    Tensor q_block_kv_max = at::empty({B, H, num_q_blocks}, func_tensor.options());
+    EXEC_NPU_CMD(aclnnComputeQBlockKvRange, func_tensor, stride_b, stride_h, stride_q, stride_f, B, H, q_len, q_block_size,
+                 q_block_kv_min, q_block_kv_max);
+
+    // 调用 create_k2q_block_sparse_from_func kernel
+    EXEC_NPU_CMD(aclnnCreateK2QBlockSparseFromFunc, func_tensor, stride_b, stride_h, stride_q, stride_f, B, H, q_len, kv_len, n_func,
+                 q_block_size, kv_block_size, q_block_kv_min, q_block_kv_max, mask_block_cnt, full_block_cnt, block_idx);
+
+    return std::make_tuple(mask_block_cnt, full_block_cnt, block_idx);
+}
+
+namespace {
+/**
+ * create_k2q_block_sparse_from_func算子的元函数实现
+ */
+std::tuple<Tensor, Tensor, Tensor> create_k2q_block_sparse_from_func_meta(const Tensor& func_tensor, int64_t q_len,
+                                                                          int64_t kv_len, int64_t q_block_size,
+                                                                          int64_t kv_block_size, bool debug)
+{
+    TORCH_CHECK(func_tensor.dim() == 4, "func_tensor must be 4D");
+    int64_t B = func_tensor.size(0);
+    int64_t H = func_tensor.size(1);
+    int64_t num_q_blocks = DIVUP(q_len, q_block_size);
+    int64_t num_kv_blocks = DIVUP(kv_len, kv_block_size);
+
+    auto mask_block_cnt = at::empty({B, H, num_kv_blocks}, func_tensor.options());
+    auto full_block_cnt = at::empty({B, H, num_kv_blocks}, func_tensor.options());
+    auto block_idx = at::empty({B, H, num_kv_blocks, num_q_blocks}, func_tensor.options());
+
+    return std::make_tuple(mask_block_cnt, full_block_cnt, block_idx);
+}
+
+}  // anonymous namespace
+
 // 注册 block_sparse_func 的 schema
 TORCH_LIBRARY_FRAGMENT(ops_rec, m)
 {
     m.def("compact_no_sync(Tensor mask_block_cnt, Tensor full_block_cnt, Tensor block_idx) -> Tensor[]");
+    m.def("create_q2k_block_sparse_from_func(Tensor func_tensor, int q_len, int kv_len, int q_block_size, "
+          "int kv_block_size, bool check_q_boundary, bool debug) -> (Tensor, Tensor, Tensor)");
+    m.def("create_k2q_block_sparse_from_func(Tensor func_tensor, int q_len, int kv_len, int q_block_size, "
+          "int kv_block_size, bool debug) -> (Tensor, Tensor, Tensor)");
 }
 
 // NPU 设备实现
 TORCH_LIBRARY_IMPL(ops_rec, PrivateUse1, m)
 {
     m.impl("compact_no_sync", &compact_no_sync_impl_npu);
+    m.impl("create_q2k_block_sparse_from_func", &create_q2k_block_sparse_from_func_impl_npu);
+    m.impl("create_k2q_block_sparse_from_func", &create_k2q_block_sparse_from_func_impl_npu);
 }
 
 TORCH_LIBRARY_IMPL(ops_rec, Meta, m)
 {
     m.impl("compact_no_sync", &compact_no_sync_meta);
+    m.impl("create_q2k_block_sparse_from_func", &create_q2k_block_sparse_from_func_meta);
+    m.impl("create_k2q_block_sparse_from_func", &create_k2q_block_sparse_from_func_meta);
 }

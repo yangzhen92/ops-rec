@@ -30,8 +30,64 @@ TILING_DATA_FIELD_DEF(int32_t, nBlocks);
 TILING_DATA_FIELD_DEF(int32_t, maxBlocks);
 END_TILING_DATA_DEF;
 
+BEGIN_TILING_DATA_DEF(CreateQ2KBlockSparseFromFuncTilingData)
+TILING_DATA_FIELD_DEF(int32_t, strideB);
+TILING_DATA_FIELD_DEF(int32_t, strideH);
+TILING_DATA_FIELD_DEF(int32_t, strideQ);
+TILING_DATA_FIELD_DEF(int32_t, strideF);
+TILING_DATA_FIELD_DEF(int32_t, qLen);
+TILING_DATA_FIELD_DEF(int32_t, kvLen);
+TILING_DATA_FIELD_DEF(int32_t, nFunc);
+TILING_DATA_FIELD_DEF(int32_t, qBlockSize);
+TILING_DATA_FIELD_DEF(int32_t, kvBlockSize);
+TILING_DATA_FIELD_DEF(int32_t, numQBlocks);
+TILING_DATA_FIELD_DEF(int32_t, numKvBlocks);
+TILING_DATA_FIELD_DEF(int32_t, hNum);
+TILING_DATA_FIELD_DEF(int32_t, bNum);
+TILING_DATA_FIELD_DEF(int32_t, totalBlocks);
+TILING_DATA_FIELD_DEF(int32_t, checkQBoundary);
+END_TILING_DATA_DEF;
+
+// K2Q（反向）与 Q2K 共享 func_tensor 布局 [B, H, func_q_len, n_func]，但并行单元为
+// (b, h, kv_block)，且始终进行 q_boundary 检查（部分 q_block 不允许 FULL）。
+BEGIN_TILING_DATA_DEF(CreateK2QBlockSparseFromFuncTilingData)
+TILING_DATA_FIELD_DEF(int32_t, strideB);
+TILING_DATA_FIELD_DEF(int32_t, strideH);
+TILING_DATA_FIELD_DEF(int32_t, strideQ);
+TILING_DATA_FIELD_DEF(int32_t, strideF);
+TILING_DATA_FIELD_DEF(int32_t, qLen);
+TILING_DATA_FIELD_DEF(int32_t, kvLen);
+TILING_DATA_FIELD_DEF(int32_t, nFunc);
+TILING_DATA_FIELD_DEF(int32_t, qBlockSize);
+TILING_DATA_FIELD_DEF(int32_t, kvBlockSize);
+TILING_DATA_FIELD_DEF(int32_t, numQBlocks);
+TILING_DATA_FIELD_DEF(int32_t, numKvBlocks);
+TILING_DATA_FIELD_DEF(int32_t, hNum);
+TILING_DATA_FIELD_DEF(int32_t, bNum);
+TILING_DATA_FIELD_DEF(int32_t, totalBlocks);
+END_TILING_DATA_DEF;
+
+// K2Q 前置预计算算子：为每个 (b, h, q_block) 计算其 q_token 有效区间的 min/max kv。
+// 并行单元为 (b, h, q_block)，totalBlocks = numQBlocks * hNum * bNum。
+BEGIN_TILING_DATA_DEF(ComputeQBlockKvRangeTilingData)
+TILING_DATA_FIELD_DEF(int32_t, strideB);
+TILING_DATA_FIELD_DEF(int32_t, strideH);
+TILING_DATA_FIELD_DEF(int32_t, strideQ);
+TILING_DATA_FIELD_DEF(int32_t, strideF);
+TILING_DATA_FIELD_DEF(int32_t, qLen);
+TILING_DATA_FIELD_DEF(int32_t, nFunc);
+TILING_DATA_FIELD_DEF(int32_t, qBlockSize);
+TILING_DATA_FIELD_DEF(int32_t, numQBlocks);
+TILING_DATA_FIELD_DEF(int32_t, hNum);
+TILING_DATA_FIELD_DEF(int32_t, bNum);
+TILING_DATA_FIELD_DEF(int32_t, totalBlocks);
+END_TILING_DATA_DEF;
+
 REGISTER_TILING_DATA_CLASS(DualExclusiveScan, DualExclusiveScanTilingData)
 REGISTER_TILING_DATA_CLASS(ExtractCompact, ExtractCompactTilingData)
+REGISTER_TILING_DATA_CLASS(CreateQ2KBlockSparseFromFunc, CreateQ2KBlockSparseFromFuncTilingData)
+REGISTER_TILING_DATA_CLASS(CreateK2QBlockSparseFromFunc, CreateK2QBlockSparseFromFuncTilingData)
+REGISTER_TILING_DATA_CLASS(ComputeQBlockKvRange, ComputeQBlockKvRangeTilingData)
 }  // namespace optiling
 
 #endif  // TILING_POLICY_BLOCK_SPARSE_FUNC_H

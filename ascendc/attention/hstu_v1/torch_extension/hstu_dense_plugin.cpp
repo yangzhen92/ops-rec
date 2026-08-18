@@ -16,7 +16,7 @@ limitations under the License.
 #include "hstu_common.h"
 #include "common_utils.h"
 
-                                      namespace hstu
+namespace hstu
 {
     at::Tensor hstu_dense_forward_impl_npu(const at::Tensor& q, const at::Tensor& k, const at::Tensor& v,
                                            const c10::optional<at::Tensor>& mask,

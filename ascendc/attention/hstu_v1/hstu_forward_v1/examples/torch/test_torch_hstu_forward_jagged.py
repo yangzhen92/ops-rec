@@ -15,16 +15,14 @@
 # ==============================================================================
 
 """
-hstu_forward_v1 算子 PyTorch 接口使用样例
+hstu_forward_v1 算子 PyTorch 接口使用样例 — jagged 格式
 
-覆盖 4 种接口（参数名与 torch schema 一一对应）：
-    - hstu_dense            : normal（dense）格式，q/k/v 为 4 维 [B, S, N, D]
+覆盖接口（参数名与 torch schema 一一对应）：
     - hstu_jagged.equal     : jagged 格式，q 与 k/v 共用同一 seq_offset（段长一致）
     - hstu_jagged.delta     : jagged 格式，q 与 k/v 使用不同的 seq_offset / seq_offset_k（段长可不同）
-    - hstu_paged            : paged 格式，kv_cache 分页存储（解码场景）
 
 用法:
-    python3 test_torch_hstu_forward.py
+    python3 test_torch_hstu_forward_jagged.py
 """
 
 import torch
@@ -56,31 +54,6 @@ def _hstu_jagged_golden(q, k, v, seq_offset, seq_offset_k=None, silu_scale=1.0, 
             qk = qk * tril.unsqueeze(0)
         outs.append(torch.einsum("hnm,mhd->nhd", qk, vb))
     return torch.cat(outs, dim=0)
-
-
-def test_hstu_dense():
-    """验证 hstu_dense 算子的前向推理结果（normal 格式，内置下三角 mask）。"""
-    torch.npu.set_device(0)
-    B, S, N, D = 2, 16, 4, 32
-    silu_scale = 1.0 / S
-
-    q = torch.randn(B, S, N, D, dtype=torch.float16).npu()
-    k = torch.randn(B, S, N, D, dtype=torch.float16).npu()
-    v = torch.randn(B, S, N, D, dtype=torch.float16).npu()
-
-    y = ops_rec.ascendc.attention.hstu_dense(q, k, v, None, None, 0, S, silu_scale)
-
-    # 手动计算验证（fp32 精度）
-    qk = torch.einsum("bnhd,bmhd->bhnm", q.float(), k.float())
-    qk = F.silu(qk) * silu_scale
-    tril = torch.tril(torch.ones(S, S, dtype=torch.float32, device="npu"))
-    qk = qk * tril.unsqueeze(0).unsqueeze(0)
-    expected = torch.einsum("bhnm,bmhd->bnhd", qk, v.float())
-
-    diff = (y.float().cpu() - expected.cpu()).abs().max().item()
-    print(f"[torch] max diff vs manual: {diff:.6f}")
-    assert diff < 5e-2, f"max diff {diff} exceeds 5e-2"
-    print("[torch] hstu_dense torch example PASSED")
 
 
 def test_hstu_jagged_equal():
@@ -147,64 +120,7 @@ def test_hstu_jagged_delta():
     print("[torch] hstu_jagged.delta torch example PASSED")
 
 
-def test_hstu_paged():
-    """paged：kv_cache 分页构造（数据构造参考 pytest test_hstu_paged_graph，已实机验证）。
-
-    注：paged 的 numpy golden 过于复杂，此处仅验证输出 shape 与运行成功；
-    数值等价性验证见 pytest（同一输入下 compiled 与 eager 输出一致）。
-    """
-    torch.npu.set_device(0)
-    N, D = 4, 32
-    page_size = 32  # tiling 约束：page_size 必须 ∈ {32, 64, 128, 256}
-    batch = 2
-    # 每个 batch：历史 token 数（已存入 kv_cache）与目标（新生成）token 数
-    new_hist_lens = [32, 48]  # 覆盖恰好满页(32)与末页不足(48 % 32 = 16)两种情形
-    num_targets = [4, 6]
-
-    seq_lens = [h + t for h, t in zip(new_hist_lens, num_targets)]
-    total = sum(seq_lens)
-    max_seq_len = max(seq_lens)
-
-    q = torch.randn(total, N, D, dtype=torch.float16).npu()
-    k = torch.randn(total, N, D, dtype=torch.float16).npu()
-    v = torch.randn(total, N, D, dtype=torch.float16).npu()
-
-    seq_offset = torch.tensor([0] + [sum(seq_lens[: i + 1]) for i in range(batch)], device="npu", dtype=torch.int32)
-    seq_offset_k = seq_offset.clone()
-    seq_offset_t = torch.tensor([0] + [sum(num_targets[: i + 1]) for i in range(batch)], device="npu",
-                                dtype=torch.int32)
-    num_target = torch.tensor(num_targets, device="npu", dtype=torch.int32)
-
-    # kv_cache 分页：每个 batch 的历史 KV 按 page_size 分页存放（末页不足时以 last_page_len 标记）
-    # 注意：page_size 必须 ∈ {32, 64, 128, 256}（tiling 层 BLOCK_HEIGHT=256 / MIN_PAGE_SIZE=32 约束）
-    num_pages_per_batch = [(h + page_size - 1) // page_size for h in new_hist_lens]
-    page_ids = list(range(sum(num_pages_per_batch)))
-    page_offsets = [0] + [sum(num_pages_per_batch[: i + 1]) for i in range(batch)]
-    last_page_len = [h % page_size if h % page_size > 0 else page_size for h in new_hist_lens]
-
-    kv_cache = torch.randn(sum(num_pages_per_batch), 2, page_size, N, D, device="npu", dtype=torch.float16)
-    page_offsets = torch.tensor(page_offsets, device="npu", dtype=torch.int32)
-    page_ids = torch.tensor(page_ids, device="npu", dtype=torch.int32)
-    last_page_len = torch.tensor(last_page_len, device="npu", dtype=torch.int32)
-
-    # 注意：num_target 定义时 target_group_size 必须 > 0（torch 扩展层约束）
-    y = ops_rec.ascendc.attention.hstu_paged(
-        q, k, v, kv_cache,
-        mask=None, attn_bias=None, mask_type=0,
-        max_seq_len=max_seq_len, max_seq_len_k=max_seq_len, silu_scale=1.0 / max_seq_len,
-        seq_offset=seq_offset, seq_offset_k=seq_offset_k, seq_offset_t=seq_offset_t,
-        page_offsets=page_offsets, page_ids=page_ids, last_page_len=last_page_len,
-        num_target=num_target, target_group_size=1)
-
-    assert y.shape == (total, N, D), f"unexpected output shape {tuple(y.shape)}"
-    assert torch.isfinite(y).all(), "output contains non-finite values"
-    print(f"[torch] hstu_paged output shape: {tuple(y.shape)}")
-    print("[torch] hstu_paged torch example PASSED（shape/运行成功校验，数值等价性见 pytest）")
-
-
 if __name__ == "__main__":
-    test_hstu_dense()
     test_hstu_jagged_equal()
     test_hstu_jagged_delta()
-    test_hstu_paged()
-    print("[torch] all hstu_forward_v1 torch examples PASSED")
+    print("[torch] hstu_jagged torch examples done")

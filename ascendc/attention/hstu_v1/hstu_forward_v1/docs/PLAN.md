@@ -60,3 +60,18 @@
 | positive_regression | 原有约束行（`N_q % N_k == 0` 且 `N_k == N_v`）保持不变；jagged equal/delta/paged 等其他调用示例未受影响 |
 | remaining_boundary | 无（纯文档修正）。dense 路径不支持 GQA 属实机既有行为，本次无代码改动；本工程为 RecSDK 迁移工程，docs/ 下无 DESIGN.md（仅 aclnn_hstu_forward.md / torch_hstu_forward.md / PLAN.md），无对应设计文档需同步 |
 | skill_promotion | operator_local：GQA 支持范围须按布局（dense/jagged/paged）分别声明，README 示例与实机验证行为保持一致 |
+
+## 修复项记录（追加）
+
+### FIX-20260818-03：示例文件按 dense / jagged / paged 拆分（适配 run_examples.sh 自动发现）
+
+| 项目 | 内容 |
+|------|------|
+| issue_id | FIX-20260818-03 |
+| original_problem | run_examples.sh 通过 glob `*/{op}/examples/torch/test_torch_*.py` 与 `*/{op}/examples/aclnn/test_aclnn_*.cpp` 自动发现并逐个执行示例；hstu_forward_v1 的 torch/aclnn 示例各为单一合并文件（test_torch_hstu_forward.py / test_aclnn_hstu_forward.cpp），无法按 dense / jagged / paged 独立运行与独立编译 |
+| classification | actual_failure（示例工程结构不适配自动发现机制，非 kernel/精度缺陷） |
+| fix | ① examples/torch/ 拆为 3 个自包含文件：test_torch_hstu_forward_dense.py（test_hstu_dense + main 入口）、test_torch_hstu_forward_jagged.py（_hstu_jagged_golden + test_hstu_jagged_equal + test_hstu_jagged_delta + main 入口调用两个 test）、test_torch_hstu_forward_paged.py（test_hstu_paged + main 入口）；每个文件保留 license 头、import torch/F/ops_rec、模块级 `torch.npu.config.allow_internal_format = False`，头部 docstring 与用法注释按各文件内容调整，Test 函数体、数据构造、断言、打印语句原样保留，jagged golden 仅保留在 jagged 文件中。② examples/aclnn/ 拆为 3 个 .cpp + 1 个公共头：test_aclnn_hstu_forward_common.h（license、CHECK_RET/LOG_PRINT 宏、GetShapeSize、Init、CreateAclTensor template，不含具体 aclnn 头文件 include）、test_aclnn_hstu_forward_dense.cpp / _jagged.cpp / _paged.cpp（各含对应 aclnn 头 include + 独立 Test 函数 + 独立 main：Init + Test + aclrtDestroyStream/aclrtResetDevice/aclFinalize）；Test 函数体（数据构造、GetWorkspaceSize/执行两段式调用、清理逻辑）原样保留。③ 删除旧文件 test_torch_hstu_forward.py、test_aclnn_hstu_forward.cpp（避免 run_examples.sh 新旧文件重复执行）。④ docs/aclnn_hstu_forward.md L124 调用示例引用由单文件改为 examples/aclnn/ 目录下 4 个文件的列表说明；README.md 与 torch_hstu_forward.md 未引用具体旧示例文件名，无需修改。未改动 run_examples.sh、CMakeLists.txt、pytest 文件 |
+| verification | ① 3 个 torch 文件 `python3 -m py_compile` 语法检查通过；② 3 个 aclnn .cpp 各自仅有 1 个 main 且只调用本文件内定义的 Test 函数，include 各自的 aclnn 头文件；公共符号 CHECK_RET / LOG_PRINT / GetShapeSize / Init / CreateAclTensor 均已在 common.h 定义（逐文件引用核对无遗漏）；③ 目录清单核对：torch 下 3 个 .py（无旧文件与 __pycache__）、aclnn 下 3 个 .cpp + 1 个 .h（无旧文件）；④ 新文件名均以 test_torch_/test_aclnn_ 前缀开头，可被 run_examples.sh glob 自动发现；common.h 以 .h 结尾不会被 .cpp glob 单独编译执行 |
+| positive_regression | 拆分前后接口调用、数据构造、验证逻辑逐行比对一致（Test 函数体原样保留）；run_examples.sh 的 `--ops hstu_v1` 模式下每个布局示例只被发现执行一次，无新旧重复 |
+| remaining_boundary | 本机为 Windows 开发环境无 NPU 且无 CANN，未实机执行拆分后的示例；建议在 atlas_950 服务器运行 `bash run_examples.sh --ops hstu_v1 --type torch` / `--type aclnn` 回归确认各示例独立运行/编译成功 |
+| skill_promotion | reusable：run_examples.sh 自动发现模式下，多数据格式/多接口示例应按布局拆分为独立 test_<kind>_<op>_<layout>.<ext> 文件（各自带 main 入口），公共代码提取为 .h 公共头，避免合并文件无法独立运行与新旧重复执行 |

@@ -38,8 +38,18 @@ def get_golden(q, k, v, mask=None, attn_bias=None, mask_type=0, max_seq_len=None
     q_f = q.astype(np.float32)
     k_f = k.astype(np.float32)
     v_f = v.astype(np.float32)
-    B, S, N, D = q.shape
+    B, S, N_q, D = q.shape
     scale = silu_scale if silu_scale not in (None, 0.0) else 1.0 / max_seq_len
+
+    # GQA：N_q != N_k 时，k/v 的 head 维按 N_q // N_k 扩展（repeat_interleave 语义，
+    # q head i 共享 k/v head i // ratio），与 RecSDK golden（test_hstu_jagged_forward.py
+    # golden_op_exec）一致；dim 维不扩展。N_q == N_k 时行为不变。
+    N_k = k.shape[2]
+    if N_k != N_q:
+        assert N_q % N_k == 0, f"head_nums_q ({N_q}) must be divisible by head_nums_k ({N_k})"
+        h_qk_ratio = N_q // N_k
+        k_f = np.repeat(k_f, h_qk_ratio, axis=2)
+        v_f = np.repeat(v_f, h_qk_ratio, axis=2)
 
     qk = np.einsum("bnhd,bmhd->bhnm", q_f, k_f)
     if attn_bias is not None:

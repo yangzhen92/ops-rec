@@ -254,21 +254,22 @@ int TestHstuJagged(aclrtStream stream)
 int TestHstuPaged(aclrtStream stream)
 {
     // paged 数据构造（与 pytest test_hstu_paged_graph 一致，已实机验证）：
-    // 每个 batch：历史 token 数（已存入 kv_cache）new_hist_lens = [16, 24]，
-    // 目标（新生成）token 数 num_targets = [4, 6]
+    // 每个 batch：历史 token 数（已存入 kv_cache）new_hist_lens = [32, 48]，
+    // 目标（新生成）token 数 num_targets = [4, 6]；
+    // page_size 必须 ∈ {32, 64, 128, 256}（tiling 层 BLOCK_HEIGHT=256 / MIN_PAGE_SIZE=32 约束）
     constexpr int64_t N = 4;              // head_num
     constexpr int64_t D = 32;             // head_dim（16 的倍数）
-    constexpr int64_t PageSize = 16;      // 每页 KV 容量
+    constexpr int64_t PageSize = 32;      // 每页 KV 容量
     constexpr int64_t Batch = 2;
-    constexpr int64_t Total = 50;         // (16+4) + (24+6)
-    constexpr int64_t MaxSeqLen = 30;     // max(20, 30)
-    constexpr int64_t NumPages = 3;       // ceil(16/16) + ceil(24/16) = 1 + 2
+    constexpr int64_t Total = 90;         // (32+4) + (48+6)
+    constexpr int64_t MaxSeqLen = 54;     // max(36, 54)
+    constexpr int64_t NumPages = 3;       // ceil(32/32) + ceil(48/32) = 1 + 2
     constexpr int64_t MaskType = 0;       // 内置下三角 mask
     constexpr int64_t TargetGroupSize = 1;  // num_target 定义时必须 > 0（torch 扩展层同约束）
 
     std::vector<int64_t> qkvShape = {Total, N, D};
     std::vector<int64_t> kvCacheShape = {NumPages, 2, PageSize, N, D};
-    std::vector<int64_t> offsetShape = {Batch + 1};    // seq_offset_q/k：{0, 20, 50}
+    std::vector<int64_t> offsetShape = {Batch + 1};    // seq_offset_q/k：{0, 36, 90}
     std::vector<int64_t> offsetTShape = {Batch + 1};   // seq_offset_t：{0, 4, 10}
     std::vector<int64_t> numTargetShape = {Batch};     // num_context/num_target：[2]
 
@@ -288,12 +289,12 @@ int TestHstuPaged(aclrtStream stream)
         kvCacheHostData[i] = static_cast<int16_t>(i % 11 - 5);
     }
 
-    std::vector<int32_t> seqOffsetQHostData = {0, 20, 50};
-    std::vector<int32_t> seqOffsetKHostData = {0, 20, 50};
+    std::vector<int32_t> seqOffsetQHostData = {0, 36, 90};
+    std::vector<int32_t> seqOffsetKHostData = {0, 36, 90};
     std::vector<int32_t> seqOffsetTHostData = {0, 4, 10};
     std::vector<int32_t> pageOffsetsHostData = {0, 1, 3};   // 每个 batch 在 page_ids 中的起始页偏移
     std::vector<int32_t> pageIdsHostData = {0, 1, 2};       // 全局页号
-    std::vector<int32_t> lastPageLenHostData = {16, 8};     // 每个 batch 末页有效长度（不足 page_size 时）
+    std::vector<int32_t> lastPageLenHostData = {32, 16};    // 每个 batch 末页有效长度（不足 page_size 时；恰好满页取 page_size）
     std::vector<int32_t> numContextHostData = {0, 0};
     std::vector<int32_t> numTargetHostData = {4, 6};
 

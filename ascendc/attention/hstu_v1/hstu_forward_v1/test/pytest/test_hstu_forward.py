@@ -226,10 +226,10 @@ def test_hstu_paged_graph(dtype):
     """
     torch.npu.set_device(0)
     N, D = 4, 32
-    page_size = 16
+    page_size = 32  # tiling 约束：page_size 必须 ∈ {32, 64, 128, 256}
     batch = 2
     # 每个 batch：历史 token 数（已存入 kv_cache）与目标（新生成）token 数
-    new_hist_lens = [16, 24]
+    new_hist_lens = [32, 48]  # 覆盖恰好满页(32)与末页不足(48 % 32 = 16)两种情形
     num_targets = [4, 6]
 
     seq_lens = [h + t for h, t in zip(new_hist_lens, num_targets)]
@@ -248,6 +248,7 @@ def test_hstu_paged_graph(dtype):
     num_target = torch.tensor(num_targets, device="npu", dtype=torch.int32)
 
     # kv_cache 分页：每个 batch 的历史 KV 按 page_size 分页存放（末页不足时以 last_page_len 标记）
+    # 注意：page_size 必须 ∈ {32, 64, 128, 256}（tiling 层 BLOCK_HEIGHT=256 / MIN_PAGE_SIZE=32 约束）
     num_pages_per_batch = [(h + page_size - 1) // page_size for h in new_hist_lens]
     page_ids = list(range(sum(num_pages_per_batch)))
     page_offsets = [0] + [sum(num_pages_per_batch[: i + 1]) for i in range(batch)]

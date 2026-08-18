@@ -236,8 +236,8 @@ y = ops_rec.ascendc.attention.hstu_jagged.equal(
 decode 场景：每个 batch 的历史 KV 已按 page_size 分页存入 kv_cache，`num_target` 描述本次新生成的 token 数（定义时 `target_group_size` 必须 > 0）：
 
 ```python
-N, D, page_size, batch = 4, 32, 16, 2
-new_hist_lens = [16, 24]   # 每个 batch 的历史 token 数（已存入 kv_cache）
+N, D, page_size, batch = 4, 32, 32, 2   # 注意：page_size 必须 ∈ {32, 64, 128, 256}（tiling 层约束）
+new_hist_lens = [32, 48]   # 每个 batch 的历史 token 数（已存入 kv_cache），覆盖恰好满页(32)与末页不足(48 % 32 = 16)
 num_targets = [4, 6]       # 每个 batch 新生成的 token 数
 seq_lens = [h + t for h, t in zip(new_hist_lens, num_targets)]
 total, max_seq_len = sum(seq_lens), max(seq_lens)
@@ -252,6 +252,7 @@ seq_offset_t = torch.tensor([0] + [sum(num_targets[: i + 1]) for i in range(batc
 num_target = torch.tensor(num_targets, device="npu", dtype=torch.int32)
 
 # kv_cache 分页：每个 batch 的历史 KV 按 page_size 分页存放（末页不足时以 last_page_len 标记）
+# 注意：page_size 必须 ∈ {32, 64, 128, 256}（tiling 层 BLOCK_HEIGHT=256 / MIN_PAGE_SIZE=32 约束）
 num_pages_per_batch = [(h + page_size - 1) // page_size for h in new_hist_lens]
 page_ids = list(range(sum(num_pages_per_batch)))
 page_offsets = [0] + [sum(num_pages_per_batch[: i + 1]) for i in range(batch)]
@@ -269,7 +270,7 @@ y = ops_rec.ascendc.attention.hstu_paged(
     seq_offset=seq_offset, seq_offset_k=seq_offset_k, seq_offset_t=seq_offset_t,
     page_offsets=page_offsets, page_ids=page_ids, last_page_len=last_page_len,
     num_target=num_target, target_group_size=1)
-print(y.shape)  # torch.Size([50, 4, 32])
+print(y.shape)  # torch.Size([90, 4, 32])
 ```
 
 ### FP8 支持（仅 Atlas 950）

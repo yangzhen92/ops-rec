@@ -87,7 +87,7 @@ def test_hstu_dense_backward(label, mask_type, enable_bias, silu_scale=0.0):
 
 
 def main():
-    torch.npu.set_device(2)
+    torch.npu.set_device(0)
     set_seed(1234)
     test_hstu_dense_backward("无掩码、无 bias", mask_type=2, enable_bias=False)
     test_hstu_dense_backward("无掩码 + bias", mask_type=2, enable_bias=True)

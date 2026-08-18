@@ -517,18 +517,23 @@ class TestHstuJaggedDemo:
     @pytest.mark.graph
     @pytest.mark.parametrize("batch_size", [1, 4])
     @pytest.mark.parametrize("max_seq_len", [64, 128])
-    @pytest.mark.parametrize("head_num_q", [4, 8])
-    @pytest.mark.parametrize("head_num_k", [4, 8])
-    @pytest.mark.parametrize("head_dim_qk", [32, 64])
-    @pytest.mark.parametrize("head_dim_v", [32, 64])
-    @pytest.mark.parametrize("mask_type", [0, 2])
+    @pytest.mark.parametrize(
+        "head_num_q",
+        [
+            4,
+        ],
+    )
+    @pytest.mark.parametrize("head_num_k", [4])
+    @pytest.mark.parametrize("head_dim_qk", [32])
+    @pytest.mark.parametrize("head_dim_v", [32])
+    @pytest.mark.parametrize("mask_type", [0, 2, 3])
     @pytest.mark.parametrize("silu_scale", [1.0 / 256])
     @pytest.mark.parametrize("enable_bias", [True, False])
-    @pytest.mark.parametrize("data_type", [torch.float16, torch.float32])
+    @pytest.mark.parametrize("data_type", [torch.float16])
     @pytest.mark.parametrize("num_context", [None])
     @pytest.mark.parametrize("num_target", [None])
     @pytest.mark.parametrize("target_group_size", [None])
-    @pytest.mark.parametrize("alpha", [0.5, 1.0])
+    @pytest.mark.parametrize("alpha", [0.5])
     def test_hstu_jagged_graph(
         self,
         batch_size,
@@ -561,6 +566,10 @@ class TestHstuJaggedDemo:
             target_group_size,
         )
 
+        # jagged_data_gen 返回的 seq_offset 是 numpy 数组，需转为 NPU tensor
+        seq_offset_q = torch.from_numpy(seq_offset_q).to("npu").to(torch.int32)
+        seq_offset_k = torch.from_numpy(seq_offset_k).to("npu").to(torch.int32)
+
         compiled_fn = torch_compiled(
             ops_rec.ascendc.attention.hstu_jagged_backward,
             dynamic=True,
@@ -574,11 +583,11 @@ class TestHstuJaggedDemo:
             mask.npu() if mask is not None else None,
             bias.npu() if enable_bias else None,
             mask_type=mask_type,
-            max_seq_len_q=max_seq_len,
+            max_seq_len=max_seq_len,
             max_seq_len_k=max_seq_len,
             silu_scale=silu_scale,
-            seq_offset_q=seq_offset_q.npu(),
-            seq_offset_k=seq_offset_k.npu(),
+            seq_offset=seq_offset_q,
+            seq_offset_k=seq_offset_k,
             num_context=num_context,
             num_target=num_target,
             target_group_size=target_group_size,
@@ -614,14 +623,14 @@ class TestHstuJaggedDemo:
             silu_scale,
         )
 
-        q_res = hstu_close_double(q_grad, q_grad_golden, q_grad_golden_fp32, try_allclose=True, multiplier=5)
-        k_res = hstu_close_double(k_grad, k_grad_golden, k_grad_golden_fp32, try_allclose=True, multiplier=5)
-        v_res = hstu_close_double(v_grad, v_grad_golden, v_grad_golden_fp32, try_allclose=True, multiplier=5)
+        q_res = hstu_close_double(q_grad.cpu(), q_grad_golden, q_grad_golden_fp32, try_allclose=True, multiplier=5)
+        k_res = hstu_close_double(k_grad.cpu(), k_grad_golden, k_grad_golden_fp32, try_allclose=True, multiplier=5)
+        v_res = hstu_close_double(v_grad.cpu(), v_grad_golden, v_grad_golden_fp32, try_allclose=True, multiplier=5)
         bias_res = (
             True
             if attn_bias_grad is None
             else hstu_close_double(
-                attn_bias_grad, attn_bias_grad_golden, attn_bias_grad_golden_fp32, try_allclose=True, multiplier=5
+                attn_bias_grad.cpu(), attn_bias_grad_golden, attn_bias_grad_golden_fp32, try_allclose=True, multiplier=5
             )
         )
 

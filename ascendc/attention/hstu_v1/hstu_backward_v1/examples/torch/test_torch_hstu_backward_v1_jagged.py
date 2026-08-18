@@ -131,7 +131,7 @@ def test_hstu_jagged_backward(
 
 
 def main():
-    torch.npu.set_device(2)
+    torch.npu.set_device(0)
     set_seed(1234)
     # 无掩码、无 bias
     test_hstu_jagged_backward("无掩码、无 bias", mask_type=2, enable_bias=False)

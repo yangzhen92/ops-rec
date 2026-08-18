@@ -35,7 +35,7 @@ limitations under the License.
         printf(message, ##__VA_ARGS__); \
     } while (0)
 
-                                      int64_t GetShapeSize(const std::vector<int64_t>& shape)
+int64_t GetShapeSize(const std::vector<int64_t>& shape)
 {
     int64_t shapeSize = 1;
     for (auto i : shape) {

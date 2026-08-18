@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
         limitations under the License.
 ==============================================================================*/
 #ifndef PYTORCH_NPU_HELPER_HPP_
-#define PYTORCH_NPU_HELPER_HPP_ssss
+#define PYTORCH_NPU_HELPER_HPP_
 
 #include <iostream>
 #include <mutex>

@@ -36,6 +36,7 @@ ops_rec.ascendc.attention.hstu_jagged_backward(
     alpha: Optional[float] = None,
 ) -> Tuple[Tensor, Tensor, Tensor, Optional[Tensor]]
 ```
+
 ## 参数说明
 
 ### 输入参数

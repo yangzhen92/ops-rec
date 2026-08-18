@@ -10,7 +10,7 @@
 
 ## 目录层级
 
-```
+```text
 hstu_backward_v1/
 ├── CMakeLists.txt           # 根目录 CMake 配置
 ├── op_host/                 # Host 侧实现
@@ -29,6 +29,7 @@ hstu_backward_v1/
 算子的主要功能是实现 HSTU 融合算子的反向传播 (`hstu_backward`)。
 
 支持两种布局：
+
 - **Normal 布局**：输入 shape [B, S, N, D]，适用于固定长度序列
 - **Jagged 布局**：输入 shape [T, N, D]，适用于变长序列，其中 T 为所有 batch 的序列长度之和
 
@@ -144,6 +145,7 @@ Jagged Layout 的实现原理与 Normal Layout 类似，主要区别在于：
 - **Target 区域**（后 num_target 个 token）：只关注 context 和自身（不跨 target 相互关注）
 
 启用复合 Mask 时，必须同时提供以下三个参数：
+
 - `num_context`：每个 batch 的 context 长度，shape [B]
 - `num_target`：每个 batch 的 target 长度，shape [B]
 - `target_group_size`：target 分组大小，取值 {1, 3}
@@ -235,6 +237,7 @@ print(f"q_grad: {q_grad.shape}, k_grad: {k_grad.shape}, v_grad: {v_grad.shape}")
 ### 2. GQA（分组查询注意力）
 
 **相比示例 1 的改动：**
+
 - Query 头数（`head_num_q`）大于 Key/Value 头数（`head_num_k`），GQA ratio = 2
 - `grad` 和 `q` 使用 `head_num_q` 头，`k` 和 `v` 使用 `head_num_k` 头
 
@@ -256,10 +259,12 @@ v    = torch.empty(T, head_num_k, head_dim_v, dtype=data_type).uniform_(-1, 1).n
 ### 3. 复合 Mask（Causal + Context + Target）
 
 **相比示例 2 的改动：**
+
 - 新增 `num_context`、`num_target`、`target_group_size` 参数
 - `mask_type` 改为 0（TRIL），算子使用内置下三角 mask 并结合 `num_context`/`num_target`/`target_group_size` 在内部构建 HSTU 复合 mask
 
 > **复合 Mask 模式说明**：序列被划分为三个区域：
+
 > - **Context 区域**（前 num_context 个 token）：全量关注所有 context token
 > - **Causal 区域**（中间 token）：因果关注（context + 自身之前的 causal token）
 > - **Target 区域**（后 num_target 个 token）：只关注 context 和自身（不跨 target 关注）
@@ -276,7 +281,6 @@ num_target  = torch.tensor([1, 2], dtype=torch.int32).npu()   # batch 0=1, batch
 target_group_size = 1
 mask_type = 0                           # 使用内置下三角 mask，算子结合 num_context 等构造复合 mask
 ```
-
 
 ## 调用示例
 

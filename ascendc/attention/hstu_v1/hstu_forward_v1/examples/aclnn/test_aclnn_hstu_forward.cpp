@@ -158,6 +158,7 @@ int TestHstuDense(aclrtStream stream)
 int TestHstuJagged(aclrtStream stream)
 {
     // delta 数据构造：q 段长 [4, 6]，k/v 段长 [6, 8]（与 pytest test_hstu_jagged_delta_graph 一致）
+    constexpr int64_t Batch = 2;        // 序列段数（seq_offset 段数，num_context/num_target 长度）
     constexpr int64_t N = 4;            // head_num
     constexpr int64_t D = 32;           // head_dim（16 的倍数）
     constexpr int64_t TotalQ = 10;      // sum([4, 6])
@@ -182,14 +183,22 @@ int TestHstuJagged(aclrtStream stream)
         vHostData[i] = static_cast<int16_t>(i % 7);
     }
 
-    std::vector<int64_t> offsetShape = {3};
+    std::vector<int64_t> offsetShape = {Batch + 1};
+    std::vector<int64_t> numCtxShape = {Batch};
     std::vector<int32_t> seqOffsetQHostData = {0, 4, 10};
     std::vector<int32_t> seqOffsetKHostData = {0, 6, 14};
+    // num_context/num_target 按 kernel 契约必须传入有效张量（不能为 nullptr）：
+    // atlas950 jagged kernel 对这两个 GM 指针无条件解引用（PreInit/FillTaskInfo），
+    // 本用例不启用 context/target 掩码，传全零张量（与 torch 适配层无值时的行为一致）
+    std::vector<int32_t> numContextHostData(Batch, 0);
+    std::vector<int32_t> numTargetHostData(Batch, 0);
 
     void *qDeviceAddr = nullptr, *kDeviceAddr = nullptr, *vDeviceAddr = nullptr, *outDeviceAddr = nullptr;
     void *seqOffsetQDeviceAddr = nullptr, *seqOffsetKDeviceAddr = nullptr;
+    void *numContextDeviceAddr = nullptr, *numTargetDeviceAddr = nullptr;
     aclTensor *q = nullptr, *k = nullptr, *v = nullptr, *out = nullptr;
     aclTensor *seqOffsetQ = nullptr, *seqOffsetK = nullptr;
+    aclTensor *numContext = nullptr, *numTarget = nullptr;
     auto ret = CreateAclTensor(qHostData, qShape, &qDeviceAddr, aclDataType::ACL_FLOAT16, &q);
     CHECK_RET(ret == ACL_SUCCESS, return ret);
     ret = CreateAclTensor(kHostData, kvShape, &kDeviceAddr, aclDataType::ACL_FLOAT16, &k);
@@ -202,13 +211,18 @@ int TestHstuJagged(aclrtStream stream)
     CHECK_RET(ret == ACL_SUCCESS, return ret);
     ret = CreateAclTensor(seqOffsetKHostData, offsetShape, &seqOffsetKDeviceAddr, aclDataType::ACL_INT32, &seqOffsetK);
     CHECK_RET(ret == ACL_SUCCESS, return ret);
+    ret = CreateAclTensor(numContextHostData, numCtxShape, &numContextDeviceAddr, aclDataType::ACL_INT32, &numContext);
+    CHECK_RET(ret == ACL_SUCCESS, return ret);
+    ret = CreateAclTensor(numTargetHostData, numCtxShape, &numTargetDeviceAddr, aclDataType::ACL_INT32, &numTarget);
+    CHECK_RET(ret == ACL_SUCCESS, return ret);
 
     uint64_t workspaceSize = 0;
     aclOpExecutor* executor = nullptr;
-    // mask / attn_bias / num_context / num_target 为可选入参，不使用传 nullptr
+    // mask / attn_bias 为可选入参，不使用传 nullptr（kernel 编译期裁剪，不读 GM）；
+    // num_context / num_target 必须传有效张量（kernel 无条件解引用，见上注释），本用例传全零
     ret = aclnnHstuJaggedForwardGetWorkspaceSize(
         q, k, v, nullptr /*mask*/, nullptr /*attn_bias*/,
-        seqOffsetQ, seqOffsetK, nullptr /*num_context*/, nullptr /*num_target*/,
+        seqOffsetQ, seqOffsetK, numContext, numTarget,
         MaskType, MaxSeqLenQ, MaxSeqLenK, 1.0 / MaxSeqLenQ,
         0 /*target_group_size*/, 1.0 /*alpha*/, false /*deterministic*/,
         out, &workspaceSize, &executor);
@@ -240,12 +254,16 @@ int TestHstuJagged(aclrtStream stream)
     aclDestroyTensor(out);
     aclDestroyTensor(seqOffsetQ);
     aclDestroyTensor(seqOffsetK);
+    aclDestroyTensor(numContext);
+    aclDestroyTensor(numTarget);
     aclrtFree(qDeviceAddr);
     aclrtFree(kDeviceAddr);
     aclrtFree(vDeviceAddr);
     aclrtFree(outDeviceAddr);
     aclrtFree(seqOffsetQDeviceAddr);
     aclrtFree(seqOffsetKDeviceAddr);
+    aclrtFree(numContextDeviceAddr);
+    aclrtFree(numTargetDeviceAddr);
     if (workspaceAddr != nullptr)
         aclrtFree(workspaceAddr);
     return 0;

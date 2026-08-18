@@ -50,20 +50,27 @@ def get_golden(q, k, v, attn_bias=None, mask=None, mask_type=0, silu_scale=None,
     return out.astype(q.dtype)
 
 
-def get_golden_jagged(q, k, v, seq_offset, silu_scale, mask_type=0):
-    """numpy 实现 HSTU jagged（equal）前向：按 batch 拆分后每段做 silu(qk^T)*scale @ v"""
+def get_golden_jagged(q, k, v, seq_offset, silu_scale, mask_type=0, seq_offset_k=None):
+    """numpy 实现 HSTU jagged 前向：按 batch 拆分 q 段（seq_offset）与 k 段（seq_offset_k）后每段做 silu(qk^T)*scale @ v
+
+    delta 语义（seq_offset_k 与 seq_offset 不同）下 q 段长 S_q 与 k 段长 S_k 可以不同，
+    qk 形状为 (S_q, S_k)；mask_type=0 时按内核语义使用下三角（对角偏移 S_k - S_q）裁剪。
+    """
     q_f = q.astype(np.float32)
     k_f = k.astype(np.float32)
     v_f = v.astype(np.float32)
+    if seq_offset_k is None:
+        seq_offset_k = seq_offset
     outs = []
     for b in range(len(seq_offset) - 1):
-        s0, s1 = seq_offset[b], seq_offset[b + 1]
-        qb, kb, vb = q_f[s0:s1], k_f[s0:s1], v_f[s0:s1]
-        S = qb.shape[0]
+        q0, q1 = seq_offset[b], seq_offset[b + 1]
+        k0, k1 = seq_offset_k[b], seq_offset_k[b + 1]
+        qb, kb, vb = q_f[q0:q1], k_f[k0:k1], v_f[k0:k1]
+        S_q, S_k = qb.shape[0], kb.shape[0]
         qk = np.einsum("nhd,mhd->hnm", qb, kb)
         qk = qk * (1.0 / (1.0 + np.exp(-qk))) * silu_scale  # silu
         if mask_type == 0:
-            qk = qk * np.tril(np.ones((S, S), dtype=np.float32))[None, :, :]
+            qk = qk * np.tril(np.ones((S_q, S_k), dtype=np.float32), k=S_k - S_q)[None, :, :]
         outs.append(np.einsum("hnm,mhd->nhd", qk, vb))
     return np.concatenate(outs, axis=0).astype(q.dtype)
 
@@ -145,57 +152,13 @@ def test_hstu_dense_graph(dtype, shape):
 
     y_golden = get_golden(q.cpu().numpy(), k.cpu().numpy(), v.cpu().numpy(),
                           mask_type=0, silu_scale=1.0 / S, max_seq_len=S)
-    compiled_fn = torch_compiled(ops_rec.ascendc.attention.hstu_dense, dynamic=True, fullgraph=True)
+    compiled_fn = torch_compiled(ops_rec.ascendc.attention.hstu_dense, dynamic=True, fullgraph=True,
+                                 backend="inductor")
     y_op = compiled_fn(q=q, k=k, v=v, mask=None, attn_bias=None,
                        mask_type=0, max_seq_len=S, silu_scale=1.0 / S)
 
     rtol, atol = get_tolerance(dtype)
     np.testing.assert_allclose(y_op.cpu().numpy(), y_golden, rtol=rtol, atol=atol)
-
-
-@pytest.mark.graph
-def test_hstu_dense_backward_meta():
-    """inductor 构图：backward 算子 Meta 推导（fake tensor 下 shape 与 eager 实现一致）"""
-    B, S, N, D = 1, 16, 4, 32
-    torch.npu.set_device(0)
-    grad = torch.randn(B, S, N, D, device="npu", dtype=torch.float16)
-    q = torch.randn(B, S, N, D, device="npu", dtype=torch.float16)
-    k = torch.randn(B, S, N, D, device="npu", dtype=torch.float16)
-    v = torch.randn(B, S, N, D, device="npu", dtype=torch.float16)
-
-    with torch._subclasses.fake_tensor.FakeTensorMode():
-        gq, gk, gv, gbias = torch.ops.ops_rec.hstu_dense_backward(grad, q, k, v, None, None, 0, S, 1.0 / S)
-        assert gq.shape == q.shape and gq.dtype == q.dtype
-        assert gk.shape == k.shape and gv.shape == v.shape
-        # 无 attn_bias 时 bias 梯度为 256 对齐 shape（与 eager 实现一致）
-        assert gbias.shape == (B, N, (S + 255) // 256 * 256, (S + 255) // 256 * 256)
-
-
-@pytest.mark.graph
-@pytest.mark.parametrize("dtype", [torch.float16])
-@pytest.mark.parametrize("shape", [(1, 16, 4, 32)])
-def test_hstu_dense_backward_graph(dtype, shape):
-    """inductor 图模式：训练闭环（forward 编译 + 梯度回传），梯度与 eager 一致"""
-    torch.npu.set_device(0)
-    B, S, N, D = shape
-    q = torch.randn(*shape, device="npu", dtype=dtype, requires_grad=True)
-    k = torch.randn(*shape, device="npu", dtype=dtype, requires_grad=True)
-    v = torch.randn(*shape, device="npu", dtype=dtype, requires_grad=True)
-
-    compiled_fn = torch_compiled(ops_rec.ascendc.attention.hstu_dense, dynamic=True, fullgraph=True)
-    y = compiled_fn(q, k, v, None, None, 0, S, 1.0 / S)
-    y.sum().backward()
-
-    q2 = q.detach().clone().requires_grad_(True)
-    k2 = k.detach().clone().requires_grad_(True)
-    v2 = v.detach().clone().requires_grad_(True)
-    y2 = ops_rec.ascendc.attention.hstu_dense(q2, k2, v2, None, None, 0, S, 1.0 / S)
-    y2.sum().backward()
-
-    rtol, atol = get_tolerance(dtype)
-    np.testing.assert_allclose(q.grad.cpu().numpy(), q2.grad.cpu().numpy(), rtol=rtol, atol=atol)
-    np.testing.assert_allclose(k.grad.cpu().numpy(), k2.grad.cpu().numpy(), rtol=rtol, atol=atol)
-    np.testing.assert_allclose(v.grad.cpu().numpy(), v2.grad.cpu().numpy(), rtol=rtol, atol=atol)
 
 
 @pytest.mark.graph
@@ -215,11 +178,101 @@ def test_hstu_jagged_graph(dtype):
 
     y_golden = get_golden_jagged(q.cpu().numpy(), k.cpu().numpy(), v.cpu().numpy(),
                                  seq_offset.cpu().numpy(), silu_scale=1.0 / S, mask_type=0)
-    compiled_fn = torch_compiled(ops_rec.ascendc.attention.hstu_jagged.equal, dynamic=True, fullgraph=True)
+    compiled_fn = torch_compiled(ops_rec.ascendc.attention.hstu_jagged.equal, dynamic=True, fullgraph=True,
+                                 backend="inductor")
     y_op = compiled_fn(q, k, v, None, None, 0, S, 1.0 / S, seq_offset)
 
     rtol, atol = get_tolerance(dtype)
     np.testing.assert_allclose(y_op.cpu().numpy(), y_golden, rtol=rtol, atol=atol)
+
+
+@pytest.mark.graph
+@pytest.mark.parametrize("dtype", [torch.float16])
+def test_hstu_jagged_delta_graph(dtype):
+    """inductor 图模式：jagged（delta，q 与 k/v 使用不同的 seq_offset，段长可不同）前向入图"""
+    torch.npu.set_device(0)
+    N, D = 4, 32
+    seq_lens_q = [4, 6]
+    seq_lens_k = [6, 8]
+    batch = len(seq_lens_q)
+    total_q = sum(seq_lens_q)
+    total_k = sum(seq_lens_k)
+    S_q = max(seq_lens_q)
+    S_k = max(seq_lens_k)
+    q = torch.randn(total_q, N, D, device="npu", dtype=dtype)
+    k = torch.randn(total_k, N, D, device="npu", dtype=dtype)
+    v = torch.randn(total_k, N, D, device="npu", dtype=dtype)
+    seq_offset = torch.tensor([0] + [sum(seq_lens_q[: i + 1]) for i in range(batch)], device="npu", dtype=torch.int32)
+    seq_offset_k = torch.tensor([0] + [sum(seq_lens_k[: i + 1]) for i in range(batch)], device="npu", dtype=torch.int32)
+
+    y_golden = get_golden_jagged(q.cpu().numpy(), k.cpu().numpy(), v.cpu().numpy(),
+                                 seq_offset.cpu().numpy(), silu_scale=1.0 / S_q, mask_type=0,
+                                 seq_offset_k=seq_offset_k.cpu().numpy())
+    compiled_fn = torch_compiled(ops_rec.ascendc.attention.hstu_jagged.delta, dynamic=True, fullgraph=True,
+                                 backend="inductor")
+    y_op = compiled_fn(q, k, v, None, None, 0, S_q, S_k, 1.0 / S_q, seq_offset, seq_offset_k)
+
+    rtol, atol = get_tolerance(dtype)
+    np.testing.assert_allclose(y_op.cpu().numpy(), y_golden, rtol=rtol, atol=atol)
+
+
+@pytest.mark.graph
+@pytest.mark.parametrize("dtype", [torch.float16])
+def test_hstu_paged_graph(dtype):
+    """inductor 图模式：paged（kv_cache 分页解码）前向，compiled 与 eager 结果一致
+
+    paged 的 numpy golden 过于复杂，此处验证重点为：inductor 构图（Meta 走通）
+    + 实机执行与 eager 等价（同一输入分别跑 torch.compile 版与 eager 版）。
+    """
+    torch.npu.set_device(0)
+    N, D = 4, 32
+    page_size = 16
+    batch = 2
+    # 每个 batch：历史 token 数（已存入 kv_cache）与目标（新生成）token 数
+    new_hist_lens = [16, 24]
+    num_targets = [4, 6]
+
+    seq_lens = [h + t for h, t in zip(new_hist_lens, num_targets)]
+    total = sum(seq_lens)
+    max_seq_len_q = max(seq_lens)
+    max_seq_len_k = max(seq_lens)
+
+    q = torch.randn(total, N, D, device="npu", dtype=dtype)
+    k = torch.randn(total, N, D, device="npu", dtype=dtype)
+    v = torch.randn(total, N, D, device="npu", dtype=dtype)
+
+    seq_offset = torch.tensor([0] + [sum(seq_lens[: i + 1]) for i in range(batch)], device="npu", dtype=torch.int32)
+    seq_offset_k = seq_offset.clone()
+    seq_offset_t = torch.tensor([0] + [sum(num_targets[: i + 1]) for i in range(batch)], device="npu",
+                                dtype=torch.int32)
+    num_target = torch.tensor(num_targets, device="npu", dtype=torch.int32)
+
+    # kv_cache 分页：每个 batch 的历史 KV 按 page_size 分页存放（末页不足时以 last_page_len 标记）
+    num_pages_per_batch = [(h + page_size - 1) // page_size for h in new_hist_lens]
+    page_ids = list(range(sum(num_pages_per_batch)))
+    page_offsets = [0] + [sum(num_pages_per_batch[: i + 1]) for i in range(batch)]
+    last_page_len = [h % page_size if h % page_size > 0 else page_size for h in new_hist_lens]
+
+    kv_cache = torch.randn(sum(num_pages_per_batch), 2, page_size, N, D, device="npu", dtype=dtype)
+    page_offsets_t = torch.tensor(page_offsets, device="npu", dtype=torch.int32)
+    page_ids_t = torch.tensor(page_ids, device="npu", dtype=torch.int32)
+    last_page_len_t = torch.tensor(last_page_len, device="npu", dtype=torch.int32)
+
+    # 注意：num_target 定义时 target_group_size 必须 > 0（TORCH_CHECK 约束）
+    kwargs = dict(kv_cache=kv_cache, mask=None, attn_bias=None, mask_type=0,
+                  max_seq_len=max_seq_len_q, max_seq_len_k=max_seq_len_k,
+                  silu_scale=1.0 / max_seq_len_q,
+                  seq_offset=seq_offset, seq_offset_k=seq_offset_k, seq_offset_t=seq_offset_t,
+                  page_offsets=page_offsets_t, page_ids=page_ids_t, last_page_len=last_page_len_t,
+                  num_target=num_target, target_group_size=1)
+
+    y_eager = ops_rec.ascendc.attention.hstu_paged(q, k, v, **kwargs)
+    compiled_fn = torch_compiled(ops_rec.ascendc.attention.hstu_paged, dynamic=True, fullgraph=True,
+                                 backend="inductor")
+    y_op = compiled_fn(q, k, v, **kwargs)
+
+    rtol, atol = get_tolerance(dtype)
+    np.testing.assert_allclose(y_op.cpu().numpy(), y_eager.cpu().numpy(), rtol=rtol, atol=atol)
 
 
 @pytest.mark.ci

@@ -13,8 +13,8 @@ See the License for the specific language governing permissions and
         limitations under the License.
 ==============================================================================*/
 
-// hstu_dense_forward 算子 PyTorch 适配层（由 RecSDK torch_library/hstu 迁移合并）
-// 注册：hstu_dense / hstu_dense_backward / hstu_jagged.equal|delta / hstu_paged
+// hstu_forward_v1 算子 PyTorch 适配层（由 RecSDK torch_library/hstu 迁移合并，forward-only）
+// 注册：hstu_dense / hstu_jagged.equal|delta / hstu_paged（backward 算子不在本次迁移范围，未注册）
 #define OPS_REC_CUST_VENDORS "hstu_forward_v1"
 
 #include <cstdint>
@@ -316,10 +316,10 @@ at::Tensor hstu_paged_meta(const at::Tensor& q, const at::Tensor& k, const at::T
     return at::empty_like(q, q.options());
 }
 
-// ---- 反向算子 Meta 注册：inductor 训练图（梯度回传）构图阶段只做 shape/dtype 推导 ----
-// 输出 shape 必须与 hstu_*_backward_impl_npu 的真实输出完全一致，否则 fake tensor
-// 传播的 shape 与实际执行不一致会导致编译产物运行时报错。
-
+// ---- 前向算子 Meta 注册 ----
+// 当前为 forward-only 版本：仅注册 4 个前向算子的 Meta 实现，供 inductor 构图阶段
+// 做 shape/dtype 推导（不真正计算）。反向算子（hstu_*_backward）不在本次迁移范围内，
+// 本文件未注册任何 backward 算子。
 
 }  // anonymous namespace
 

@@ -15,7 +15,6 @@ limitations under the License.
 #define OPS_REC_CUST_VENDORS "hstu_forward_v1,hstu_backward_v1"
 #include "hstu_common.h"
 #include "common_utils.h"
-
 namespace hstu {
 at::Tensor hstu_dense_forward_impl_npu(const at::Tensor& q, const at::Tensor& k, const at::Tensor& v,
                                        const c10::optional<at::Tensor>& mask, const c10::optional<at::Tensor>& attnBias,

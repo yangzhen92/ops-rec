@@ -269,7 +269,6 @@ v    = torch.empty(T, head_num_k, head_dim_v, dtype=data_type).uniform_(-1, 1).n
 > - **Causal 区域**（中间 token）：因果关注（context + 自身之前的 causal token）
 > - **Target 区域**（后 num_target 个 token）：只关注 context 和自身（不跨 target 关注）
 
-
 ```python
 # ===================== 示例 3: 复合 Mask =====================
 # 相比示例 2 的改动：

@@ -13,6 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
+# 测试脚本迁移自 RecSDK-2026-Q3/cust_op/test/hstu_dense/torch，适配 ops_rec API
+# 并保留原有 inductor 图模式测试。backward/autograd 算子未注册，故不迁移。
+# ==============================================================================
 
 import sys
 import pytest
@@ -30,8 +33,11 @@ def torch_compiled(model, **kwargs):
     return model
 
 
+# ────────────────── Golden 实现 (numpy, fp32) ──────────────────
+
+
 def get_golden(q, k, v, mask=None, attn_bias=None, mask_type=0, max_seq_len=None, silu_scale=None):
-    """numpy 实现 HSTU 前向：out = (silu(qk^T + bias) * silu_scale * mask) @ v（fp32 精度）
+    """numpy 实现 HSTU dense 前向：out = (silu(qk^T + bias) * scale * mask) @ v（fp32 精度）
 
     参数顺序与算子接口 hstu_dense(q, k, v, mask, attn_bias, mask_type, max_seq_len, silu_scale) 对齐。
     """
@@ -41,11 +47,7 @@ def get_golden(q, k, v, mask=None, attn_bias=None, mask_type=0, max_seq_len=None
     B, S, N_q, D = q.shape
     scale = silu_scale if silu_scale not in (None, 0.0) else 1.0 / max_seq_len
 
-    # GQA：N_q != N_k 时，k/v 的 head 维按 N_q // N_k 扩展（repeat_interleave 语义，
-    # q head i 共享 k/v head i // ratio），与 RecSDK golden（test_hstu_jagged_forward.py
-    # golden_op_exec）一致；dim 维不扩展。N_q == N_k 时行为不变。
-    # 注：当前 dense 4D 布局路径不支持 GQA（N_k < N_q），该分支为与 RecSDK golden
-    # 对齐的通用参考实现，供未来用例复用。
+    # GQA：N_q != N_k 时，k/v 的 head 维按 N_q // N_k 扩展（repeat_interleave 语义）
     N_k = k.shape[2]
     if N_k != N_q:
         assert N_q % N_k == 0, f"head_nums_q ({N_q}) must be divisible by head_nums_k ({N_k})"
@@ -70,8 +72,7 @@ def get_golden_jagged(q, k, v, mask=None, attn_bias=None, mask_type=0, max_seq_l
     """numpy 实现 HSTU jagged 前向：按 batch 拆分 q 段（seq_offset）与 k 段（seq_offset_k）后每段做 silu(qk^T)*scale @ v
 
     参数顺序与算子接口 hstu_jagged.equal/delta 的公共部分 (q, k, v, mask, attn_bias, mask_type,
-    max_seq_len, silu_scale, seq_offset, seq_offset_k) 对齐；mask/attn_bias/max_seq_len 仅为
-    接口对齐保留（本函数内部逻辑不变，mask 由 mask_type 控制）。
+    max_seq_len, silu_scale, seq_offset, seq_offset_k) 对齐。
 
     delta 语义（seq_offset_k 与 seq_offset 不同）下 q 段长 S_q 与 k 段长 S_k 可以不同，
     qk 形状为 (S_q, S_k)；mask_type=0 时按内核语义使用下三角（对角偏移 S_k - S_q）裁剪。
@@ -83,6 +84,18 @@ def get_golden_jagged(q, k, v, mask=None, attn_bias=None, mask_type=0, max_seq_l
     v_f = v.astype(np.float32)
     if seq_offset_k is None:
         seq_offset_k = seq_offset
+
+    # GQA：expand k/v heads to match q (repeat_interleave 语义)
+    N_q = q_f.shape[1]
+    N_k = k_f.shape[1]
+    if N_k != N_q:
+        assert N_q % N_k == 0, f"head_nums_q ({N_q}) must be divisible by head_nums_k ({N_k})"
+        h_qk_ratio = N_q // N_k
+        k_f = np.repeat(k_f, h_qk_ratio, axis=1)
+        v_f = np.repeat(v_f, h_qk_ratio, axis=1)
+
+    scale = silu_scale if silu_scale not in (None, 0.0) else 1.0 / max_seq_len
+
     outs = []
     for b in range(len(seq_offset) - 1):
         q0, q1 = seq_offset[b], seq_offset[b + 1]
@@ -90,8 +103,12 @@ def get_golden_jagged(q, k, v, mask=None, attn_bias=None, mask_type=0, max_seq_l
         qb, kb, vb = q_f[q0:q1], k_f[k0:k1], v_f[k0:k1]
         S_q, S_k = qb.shape[0], kb.shape[0]
         qk = np.einsum("nhd,mhd->hnm", qb, kb)
-        qk = qk * (1.0 / (1.0 + np.exp(-qk))) * silu_scale  # silu
-        if mask_type == 0:
+        if attn_bias is not None:
+            qk = qk + attn_bias[b, :, :S_q, :S_k].astype(np.float32)
+        qk = qk * (1.0 / (1.0 + np.exp(-qk))) * scale  # silu
+        if mask is not None:
+            qk = qk * mask[b, :, :S_q, :S_k].astype(np.float32)
+        elif mask_type == 0:
             qk = qk * np.tril(np.ones((S_q, S_k), dtype=np.float32), k=S_k - S_q)[None, :, :]
         outs.append(np.einsum("hnm,mhd->nhd", qk, vb))
     return np.concatenate(outs, axis=0).astype(q.dtype)
@@ -108,8 +125,7 @@ def get_golden_paged(q, k, v, kv_cache, seq_offset, page_offsets, page_ids, last
       - K/V 列 = kv_cache 解页后的历史 KV（H 行，由 page_offsets/page_ids/last_page_len 索引）
         + 输入 k/v 的 target 段（T 行），共 H+T 行；输入 k/v 中的历史段不作为 KV 使用
       - mask：历史行 i 仅见历史列 [0, i]（下三角）；target 行 H+j 见全部历史列 [0, H)
-        + 自身列 H+j（eye，target 之间互不 attend；即 GenCausalMask 下三角再被
-        GenTargetMask 挖空 [H, H+j)，与 RecSDK golden 的 tril+eye 一致）
+        + 自身列 H+j（eye，target 之间互不 attend）
       - 输出 = silu(qk) * silu_scale * mask @ v_con，按 q 的 token 顺序拼接
     """
     q_f = q.astype(np.float32)
@@ -154,8 +170,12 @@ def get_tolerance(dtype):
     return 2e-2, 2e-2  # fp16/bf16 累加误差放宽
 
 
-@pytest.mark.parametrize("dtype", [torch.float16, torch.float32])
-@pytest.mark.parametrize("shape", [(1, 16, 4, 32), (2, 32, 4, 32)])
+# ────────────────── Dense 前向 (eager) ──────────────────
+# 迁移自 test_hstu_dense_forward.py / test_hstu_dense_forward_demo_v200.py，简化参数组合
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.float32, torch.bfloat16])
+@pytest.mark.parametrize("shape", [(1, 16, 4, 32), (2, 128, 4, 32)])
 def test_hstu_dense_eager(dtype, shape):
     """eager 模式：MHA，mask_type=0 内置下三角"""
     torch.npu.set_device(0)
@@ -174,10 +194,30 @@ def test_hstu_dense_eager(dtype, shape):
     np.testing.assert_allclose(y_op.cpu().numpy(), y_golden, rtol=rtol, atol=atol)
 
 
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_hstu_dense_with_bias(dtype):
+    """eager 模式：MHA + attn_bias，mask_type=0"""
+    torch.npu.set_device(0)
+    B, S, N, D = 1, 16, 4, 32
+    q = torch.randn(B, S, N, D, device="npu", dtype=dtype)
+    k = torch.randn(B, S, N, D, device="npu", dtype=dtype)
+    v = torch.randn(B, S, N, D, device="npu", dtype=dtype)
+    bias = torch.randn(B, N, S, S, device="npu", dtype=dtype)
+
+    y_golden = get_golden(q.cpu().numpy(), k.cpu().numpy(), v.cpu().numpy(),
+                          attn_bias=bias.cpu().numpy(), mask_type=0,
+                          max_seq_len=S, silu_scale=1.0 / S)
+    y_op = ops_rec.ascendc.attention.hstu_dense(q, k, v, mask=None, attn_bias=bias,
+                                                mask_type=0, max_seq_len=S, silu_scale=1.0 / S)
+
+    rtol, atol = get_tolerance(dtype)
+    np.testing.assert_allclose(y_op.cpu().numpy(), y_golden, rtol=rtol, atol=atol)
+
+
 @pytest.mark.parametrize("dtype", [torch.float16])
 @pytest.mark.parametrize("shape", [(1, 16, 4, 32)])
 def test_hstu_dense_custom_mask(dtype, shape):
-    """mask_type=3：自定义 mask（下三角 0/1）"""
+    """eager 模式：mask_type=3 自定义 mask（下三角 0/1）"""
     torch.npu.set_device(0)
     B, S, N, D = shape
     q = torch.randn(*shape, device="npu", dtype=dtype)
@@ -196,9 +236,51 @@ def test_hstu_dense_custom_mask(dtype, shape):
     np.testing.assert_allclose(y_op.cpu().numpy(), y_golden, rtol=rtol, atol=atol)
 
 
-@pytest.mark.parametrize("dtype", [torch.float16, torch.float32])
+@pytest.mark.parametrize("dtype", [torch.float16])
+def test_hstu_dense_none_mask(dtype):
+    """eager 模式：mask_type=2 无掩码"""
+    torch.npu.set_device(0)
+    B, S, N, D = 1, 16, 4, 32
+    q = torch.randn(B, S, N, D, device="npu", dtype=dtype)
+    k = torch.randn(B, S, N, D, device="npu", dtype=dtype)
+    v = torch.randn(B, S, N, D, device="npu", dtype=dtype)
+
+    y_golden = get_golden(q.cpu().numpy(), k.cpu().numpy(), v.cpu().numpy(),
+                          mask=None, attn_bias=None, mask_type=2,
+                          max_seq_len=S, silu_scale=1.0 / S)
+    y_op = ops_rec.ascendc.attention.hstu_dense(q, k, v, mask=None, attn_bias=None,
+                                                mask_type=2, max_seq_len=S, silu_scale=1.0 / S)
+
+    rtol, atol = get_tolerance(dtype)
+    np.testing.assert_allclose(y_op.cpu().numpy(), y_golden, rtol=rtol, atol=atol)
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_hstu_dense_silu_scale_zero(dtype):
+    """eager 模式：silu_scale=0 表示内部使用 1/max_seq_len"""
+    torch.npu.set_device(0)
+    B, S, N, D = 1, 16, 4, 32
+    q = torch.randn(B, S, N, D, device="npu", dtype=dtype)
+    k = torch.randn(B, S, N, D, device="npu", dtype=dtype)
+    v = torch.randn(B, S, N, D, device="npu", dtype=dtype)
+
+    y_golden = get_golden(q.cpu().numpy(), k.cpu().numpy(), v.cpu().numpy(),
+                          mask=None, attn_bias=None, mask_type=0,
+                          max_seq_len=S, silu_scale=0.0)
+    y_op = ops_rec.ascendc.attention.hstu_dense(q, k, v, mask=None, attn_bias=None,
+                                                mask_type=0, max_seq_len=S, silu_scale=0.0)
+
+    rtol, atol = get_tolerance(dtype)
+    np.testing.assert_allclose(y_op.cpu().numpy(), y_golden, rtol=rtol, atol=atol)
+
+
+# ────────────────── Jagged 前向 (eager) ──────────────────
+# 迁移自 test_hstu_jagged_forward.py / test_hstu_deltaqk_forward.py，简化参数组合
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.float32, torch.bfloat16])
 def test_hstu_jagged_equal_eager(dtype):
-    """eager 模式：jagged（equal）独立精度验证（段 [4,6]，数据构造同 test_hstu_jagged_graph）"""
+    """eager 模式：jagged（equal）独立精度验证（段 [4,6]）"""
     torch.npu.set_device(0)
     N, D = 4, 32
     seq_lens = [4, 6]
@@ -223,9 +305,64 @@ def test_hstu_jagged_equal_eager(dtype):
     np.testing.assert_allclose(y_op.cpu().numpy(), y_golden, rtol=rtol, atol=atol)
 
 
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_hstu_jagged_equal_with_bias(dtype):
+    """eager 模式：jagged（equal）+ attn_bias"""
+    torch.npu.set_device(0)
+    N, D = 4, 32
+    seq_lens = [4, 6]
+    batch = len(seq_lens)
+    total = sum(seq_lens)
+    S = max(seq_lens)
+    q = torch.randn(total, N, D, device="npu", dtype=dtype)
+    k = torch.randn(total, N, D, device="npu", dtype=dtype)
+    v = torch.randn(total, N, D, device="npu", dtype=dtype)
+    bias = torch.randn(batch, N, S, S, device="npu", dtype=dtype)
+    seq_offset = torch.tensor([0] + [sum(seq_lens[: i + 1]) for i in range(batch)],
+                              device="npu", dtype=torch.int32)
+
+    y_golden = get_golden_jagged(q.cpu().numpy(), k.cpu().numpy(), v.cpu().numpy(),
+                                 attn_bias=bias.cpu().numpy(), mask_type=0,
+                                 max_seq_len=S, silu_scale=1.0 / S,
+                                 seq_offset=seq_offset.cpu().numpy())
+    y_op = ops_rec.ascendc.attention.hstu_jagged.equal(
+        q, k, v, mask=None, attn_bias=bias, mask_type=0,
+        max_seq_len=S, silu_scale=1.0 / S, seq_offset=seq_offset)
+
+    rtol, atol = get_tolerance(dtype)
+    np.testing.assert_allclose(y_op.cpu().numpy(), y_golden, rtol=rtol, atol=atol)
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_hstu_jagged_equal_gqa(dtype):
+    """eager 模式：jagged（equal）GQA（N_q=8, N_k=4）"""
+    torch.npu.set_device(0)
+    N_q, N_k, D = 8, 4, 32
+    seq_lens = [4, 6]
+    batch = len(seq_lens)
+    total = sum(seq_lens)
+    S = max(seq_lens)
+    q = torch.randn(total, N_q, D, device="npu", dtype=dtype)
+    k = torch.randn(total, N_k, D, device="npu", dtype=dtype)
+    v = torch.randn(total, N_k, D, device="npu", dtype=dtype)
+    seq_offset = torch.tensor([0] + [sum(seq_lens[: i + 1]) for i in range(batch)],
+                              device="npu", dtype=torch.int32)
+
+    y_golden = get_golden_jagged(q.cpu().numpy(), k.cpu().numpy(), v.cpu().numpy(),
+                                 mask=None, attn_bias=None, mask_type=0,
+                                 max_seq_len=S, silu_scale=1.0 / S,
+                                 seq_offset=seq_offset.cpu().numpy())
+    y_op = ops_rec.ascendc.attention.hstu_jagged.equal(
+        q, k, v, mask=None, attn_bias=None, mask_type=0,
+        max_seq_len=S, silu_scale=1.0 / S, seq_offset=seq_offset)
+
+    rtol, atol = get_tolerance(dtype)
+    np.testing.assert_allclose(y_op.cpu().numpy(), y_golden, rtol=rtol, atol=atol)
+
+
 @pytest.mark.parametrize("dtype", [torch.float16, torch.float32])
 def test_hstu_jagged_delta_eager(dtype):
-    """eager 模式：jagged（delta）独立精度验证（q 段 [4,6] / k 段 [6,8]，数据构造同 delta_graph）"""
+    """eager 模式：jagged（delta）独立精度验证（q 段 [4,6] / k 段 [6,8]）"""
     torch.npu.set_device(0)
     N, D = 4, 32
     seq_lens_q = [4, 6]
@@ -255,6 +392,80 @@ def test_hstu_jagged_delta_eager(dtype):
 
     rtol, atol = get_tolerance(dtype)
     np.testing.assert_allclose(y_op.cpu().numpy(), y_golden, rtol=rtol, atol=atol)
+
+
+# ────────────────── Paged 前向 (eager) ──────────────────
+# 迁移自 test_hstu_paged_forward.py，简化参数组合
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.float32])
+def test_hstu_paged_eager(dtype):
+    """eager 模式：paged 独立精度验证（真实 numpy golden）
+
+    paged 语义（读 hstu_paged_forward_kernel.h / hstu_dense_causal_mask.h，并与 RecSDK
+    cust_op/test/hstu_dense/torch/test_hstu_paged_forward.py 参考 golden 交叉确认）：
+      - q 行 = 每个 batch 全部 token（历史 + target，seq_offset 段），输出 shape (total, N, D)
+      - K/V 列 = kv_cache 解页历史 KV（H 行）+ 输入 k/v 的 target 段（T 行），共 H+T 行
+      - MASK_TRIL（num_context=0, target_group_size=1）：
+          hist 行 i 仅见历史列 [0, i]；target 行 H+j 见全部历史列 [0, H) + 自身列 H+j（eye）
+    """
+    torch.npu.set_device(0)
+    N, D = 4, 32
+    page_size = 32  # tiling 约束：page_size 必须 ∈ {32, 64, 128, 256}
+    batch = 2
+    new_hist_lens = [32, 48]  # 历史 token 数（已存入 kv_cache）：恰好满页(32) 与末页不足(48 % 32 = 16)
+    num_targets = [4, 6]
+
+    seq_lens = [h + t for h, t in zip(new_hist_lens, num_targets)]
+    total = sum(seq_lens)
+    max_seq_len_q = max(seq_lens)
+    max_seq_len_k = max(seq_lens)
+
+    q = torch.randn(total, N, D, device="npu", dtype=dtype)
+    k = torch.randn(total, N, D, device="npu", dtype=dtype)
+    v = torch.randn(total, N, D, device="npu", dtype=dtype)
+
+    seq_offset = torch.tensor([0] + [sum(seq_lens[: i + 1]) for i in range(batch)],
+                              device="npu", dtype=torch.int32)
+    seq_offset_k = seq_offset.clone()
+    seq_offset_t = torch.tensor([0] + [sum(num_targets[: i + 1]) for i in range(batch)],
+                                device="npu", dtype=torch.int32)
+    num_target = torch.tensor(num_targets, device="npu", dtype=torch.int32)
+
+    num_pages_per_batch = [(h + page_size - 1) // page_size for h in new_hist_lens]
+    page_ids = list(range(sum(num_pages_per_batch)))
+    page_offsets = [0] + [sum(num_pages_per_batch[: i + 1]) for i in range(batch)]
+    last_page_len = [h % page_size if h % page_size > 0 else page_size for h in new_hist_lens]
+
+    kv_cache = torch.randn(sum(num_pages_per_batch), 2, page_size, N, D, device="npu", dtype=dtype)
+    page_offsets_t = torch.tensor(page_offsets, device="npu", dtype=torch.int32)
+    page_ids_t = torch.tensor(page_ids, device="npu", dtype=torch.int32)
+    last_page_len_t = torch.tensor(last_page_len, device="npu", dtype=torch.int32)
+
+    y_golden = get_golden_paged(q.cpu().numpy(), k.cpu().numpy(), v.cpu().numpy(),
+                                kv_cache.cpu().numpy(),
+                                seq_offset=seq_offset.cpu().numpy(),
+                                page_offsets=page_offsets_t.cpu().numpy(),
+                                page_ids=page_ids_t.cpu().numpy(),
+                                last_page_len=last_page_len_t.cpu().numpy(),
+                                num_target=num_target.cpu().numpy(),
+                                silu_scale=1.0 / max_seq_len_q)
+    y_op = ops_rec.ascendc.attention.hstu_paged(
+        q, k, v, kv_cache,
+        mask=None, attn_bias=None, mask_type=0,
+        max_seq_len=max_seq_len_q, max_seq_len_k=max_seq_len_k,
+        silu_scale=1.0 / max_seq_len_q,
+        seq_offset=seq_offset, seq_offset_k=seq_offset_k, seq_offset_t=seq_offset_t,
+        page_offsets=page_offsets_t, page_ids=page_ids_t, last_page_len=last_page_len_t,
+        num_target=num_target, target_group_size=1)
+
+    assert y_op.shape == (total, N, D)
+    rtol, atol = get_tolerance(dtype)
+    np.testing.assert_allclose(y_op.cpu().numpy(), y_golden, rtol=rtol, atol=atol)
+
+
+# ────────────────── Inductor 图模式测试 ──────────────────
+# 保留自原有 test_hstu_v1.py，验证 Meta 注册走通构图 + 实机执行
 
 
 @pytest.mark.graph
@@ -354,7 +565,6 @@ def test_hstu_paged_graph(dtype):
     N, D = 4, 32
     page_size = 32  # tiling 约束：page_size 必须 ∈ {32, 64, 128, 256}
     batch = 2
-    # 每个 batch：历史 token 数（已存入 kv_cache）与目标（新生成）token 数
     new_hist_lens = [32, 48]  # 覆盖恰好满页(32)与末页不足(48 % 32 = 16)两种情形
     num_targets = [4, 6]
 
@@ -373,8 +583,6 @@ def test_hstu_paged_graph(dtype):
                                 dtype=torch.int32)
     num_target = torch.tensor(num_targets, device="npu", dtype=torch.int32)
 
-    # kv_cache 分页：每个 batch 的历史 KV 按 page_size 分页存放（末页不足时以 last_page_len 标记）
-    # 注意：page_size 必须 ∈ {32, 64, 128, 256}（tiling 层 BLOCK_HEIGHT=256 / MIN_PAGE_SIZE=32 约束）
     num_pages_per_batch = [(h + page_size - 1) // page_size for h in new_hist_lens]
     page_ids = list(range(sum(num_pages_per_batch)))
     page_offsets = [0] + [sum(num_pages_per_batch[: i + 1]) for i in range(batch)]
@@ -385,8 +593,6 @@ def test_hstu_paged_graph(dtype):
     page_ids_t = torch.tensor(page_ids, device="npu", dtype=torch.int32)
     last_page_len_t = torch.tensor(last_page_len, device="npu", dtype=torch.int32)
 
-    # 注意：num_target 定义时 target_group_size 必须 > 0（TORCH_CHECK 约束）；
-    # kv_cache 是 schema 第 4 位置参数，其余可选参数用显式 kwargs（与 schema 顺序一致）
     y_eager = ops_rec.ascendc.attention.hstu_paged(
         q, k, v, kv_cache,
         mask=None, attn_bias=None, mask_type=0,
@@ -410,73 +616,7 @@ def test_hstu_paged_graph(dtype):
     np.testing.assert_allclose(y_op.cpu().numpy(), y_eager.cpu().numpy(), rtol=rtol, atol=atol)
 
 
-@pytest.mark.parametrize("dtype", [torch.float16, torch.float32])
-def test_hstu_paged_eager(dtype):
-    """eager 模式：paged 独立精度验证（真实 numpy golden，非 graph-vs-eager 对比）
-
-    paged 语义（读 hstu_paged_forward_kernel.h / hstu_dense_causal_mask.h，并与 RecSDK
-    cust_op/test/hstu_dense/torch/test_hstu_paged_forward.py 参考 golden 交叉确认）：
-      - q 行 = 每个 batch 全部 token（历史 + target，seq_offset 段），输出 shape (total, N, D)
-      - K/V 列 = kv_cache 解页历史 KV（H 行）+ 输入 k/v 的 target 段（T 行），共 H+T 行
-      - MASK_TRIL（num_context=0, target_group_size=1）：
-          hist 行 i 仅见历史列 [0, i]；target 行 H+j 见全部历史列 [0, H) + 自身列 H+j（eye）
-      验证逻辑见 get_golden_paged。
-    """
-    torch.npu.set_device(0)
-    N, D = 4, 32
-    page_size = 32  # tiling 约束：page_size 必须 ∈ {32, 64, 128, 256}
-    batch = 2
-    new_hist_lens = [32, 48]  # 历史 token 数（已存入 kv_cache）：恰好满页(32) 与末页不足(48 % 32 = 16)
-    num_targets = [4, 6]
-
-    seq_lens = [h + t for h, t in zip(new_hist_lens, num_targets)]
-    total = sum(seq_lens)
-    max_seq_len_q = max(seq_lens)
-    max_seq_len_k = max(seq_lens)
-
-    q = torch.randn(total, N, D, device="npu", dtype=dtype)
-    k = torch.randn(total, N, D, device="npu", dtype=dtype)
-    v = torch.randn(total, N, D, device="npu", dtype=dtype)
-
-    seq_offset = torch.tensor([0] + [sum(seq_lens[: i + 1]) for i in range(batch)],
-                              device="npu", dtype=torch.int32)
-    seq_offset_k = seq_offset.clone()
-    seq_offset_t = torch.tensor([0] + [sum(num_targets[: i + 1]) for i in range(batch)],
-                                device="npu", dtype=torch.int32)
-    num_target = torch.tensor(num_targets, device="npu", dtype=torch.int32)
-
-    # kv_cache 分页：每个 batch 的历史 KV 按 page_size 分页存放（末页不足时以 last_page_len 标记）
-    num_pages_per_batch = [(h + page_size - 1) // page_size for h in new_hist_lens]
-    page_ids = list(range(sum(num_pages_per_batch)))
-    page_offsets = [0] + [sum(num_pages_per_batch[: i + 1]) for i in range(batch)]
-    last_page_len = [h % page_size if h % page_size > 0 else page_size for h in new_hist_lens]
-
-    kv_cache = torch.randn(sum(num_pages_per_batch), 2, page_size, N, D, device="npu", dtype=dtype)
-    page_offsets_t = torch.tensor(page_offsets, device="npu", dtype=torch.int32)
-    page_ids_t = torch.tensor(page_ids, device="npu", dtype=torch.int32)
-    last_page_len_t = torch.tensor(last_page_len, device="npu", dtype=torch.int32)
-
-    y_golden = get_golden_paged(q.cpu().numpy(), k.cpu().numpy(), v.cpu().numpy(),
-                                kv_cache.cpu().numpy(),
-                                seq_offset=seq_offset.cpu().numpy(),
-                                page_offsets=page_offsets_t.cpu().numpy(),
-                                page_ids=page_ids_t.cpu().numpy(),
-                                last_page_len=last_page_len_t.cpu().numpy(),
-                                num_target=num_target.cpu().numpy(),
-                                silu_scale=1.0 / max_seq_len_q)
-    # kv_cache 是 schema 第 4 位置参数，其余可选参数用显式 kwargs（与 schema 顺序一致）
-    y_op = ops_rec.ascendc.attention.hstu_paged(
-        q, k, v, kv_cache,
-        mask=None, attn_bias=None, mask_type=0,
-        max_seq_len=max_seq_len_q, max_seq_len_k=max_seq_len_k,
-        silu_scale=1.0 / max_seq_len_q,
-        seq_offset=seq_offset, seq_offset_k=seq_offset_k, seq_offset_t=seq_offset_t,
-        page_offsets=page_offsets_t, page_ids=page_ids_t, last_page_len=last_page_len_t,
-        num_target=num_target, target_group_size=1)
-
-    assert y_op.shape == (total, N, D)
-    rtol, atol = get_tolerance(dtype)
-    np.testing.assert_allclose(y_op.cpu().numpy(), y_golden, rtol=rtol, atol=atol)
+# ────────────────── CI 冒烟测试 ──────────────────
 
 
 @pytest.mark.ci

@@ -604,7 +604,7 @@ class TestHstuJaggedDemo:
             seq_offset_q,
             seq_offset_k,
             mask,
-            bias if enable_bias else None,
+            bias,
             enable_bias,
             silu_scale,
         )
@@ -617,8 +617,8 @@ class TestHstuJaggedDemo:
             v.to(torch.float32),
             seq_offset_q,
             seq_offset_k,
-            mask.to(torch.float32) if mask is not None else None,
-            bias.to(torch.float32) if bias is not None else None,
+            mask,
+            bias.to(torch.float32),
             enable_bias,
             silu_scale,
         )

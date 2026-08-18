@@ -18,7 +18,7 @@
 
 推荐场景下，使用 HSTU 融合算子实现注意力机制。
 
-**GQA 支持**：本算子支持 Grouped Query Attention (GQA)，允许 K/V 的头数小于 Q 的头数，多个 Q 头可以共享同一个 K/V 头，从而减少 KV 缓存内存占用并提升推理性能。
+**GQA 支持（仅 jagged）**：hstu_jagged（equal/delta）布局支持 Grouped Query Attention (GQA)，允许 K/V 的头数小于 Q 的头数，多个 Q 头可以共享同一个 K/V 头，从而减少 KV 缓存内存占用并提升推理性能；hstu_dense（dense 4D 布局）不支持 GQA，其 q/k/v 头数必须一致。
 
 **dim 不等支持**：本算子支持 qk 的 head_dim 与 v_dim 不相等的场景。
 
@@ -69,7 +69,7 @@ def hstu_dense_forward(q_np, k_np, v_np, rel_attn_bias_np, invalid_attn_mask_np)
 | 名称            | 输入/输出 | 数据类型 | 说明 |
 |-----------------|-------|---------|------|
 | q               | 输入  | Tensor[float32/float16/bfloat16]，A5 另支持 fp8_e4m3fn | `[B, S, N_q, D_q]`（normal）或 `[s_b, N_q, D_q]`（jagged/paged） |
-| k               | 输入  | 同 q（GQA 时头数可小于 Q） | `[B, S, N_k, D_q]` 或 `[s_b, N_k, D_q]` |
+| k               | 输入  | 同 q（仅 jagged 时头数可小于 Q（GQA）；dense 布局不支持 GQA，头数必须与 Q 一致） | `[B, S, N_k, D_q]` 或 `[s_b, N_k, D_q]` |
 | v               | 输入  | 同 q（dim 可与 qk 不等） | `[B, S, N_k, D_v]` 或 `[s_b, N_k, D_v]` |
 | mask            | 输入  | 同 q（可选） | `[B, N, S, S]`，mask_type=3 时必传 |
 | attn_bias       | 输入  | 同 q（可选） | `[B, N, S, S]` 相对位置偏置 |
@@ -154,15 +154,21 @@ kv_cache 与分页元数据（page_offsets / page_ids / last_page_len）的完�
 
 以下每个特性均为完整可运行的最小示例（含必要的变量构造，参数名与真实 schema 一致）。
 
-### GQA（N_q=8，N_k=2）
+### GQA（仅 jagged，N_q=8，N_k=2）
 
 ```python
-B, S = 2, 128
-q = torch.randn(B, S, 8, 64, dtype=torch.float16).npu()   # N_q=8
-k = torch.randn(B, S, 2, 64, dtype=torch.float16).npu()   # N_k=2（GQA，每 4 个 Q 头共享 1 个 K/V 头）
-v = torch.randn(B, S, 2, 64, dtype=torch.float16).npu()   # N_v = N_k
-y = ops_rec.ascendc.attention.hstu_dense(q, k, v, None, None, 0, S, 1.0 / S)
-print(y.shape)  # torch.Size([2, 128, 8, 64])
+N_q, D = 8, 64
+N_k = 2                                   # 每 4 个 Q 头共享 1 个 K/V 头
+seq_lens = [4, 6]
+batch = len(seq_lens)
+total = sum(seq_lens)
+S = max(seq_lens)
+q = torch.randn(total, N_q, D, dtype=torch.float16).npu()
+k = torch.randn(total, N_k, D, dtype=torch.float16).npu()   # N_k < N_q（GQA）
+v = torch.randn(total, N_k, D, dtype=torch.float16).npu()   # N_v = N_k
+seq_offset = torch.tensor([0] + [sum(seq_lens[: i + 1]) for i in range(batch)], device="npu", dtype=torch.int32)
+y = ops_rec.ascendc.attention.hstu_jagged.equal(q, k, v, None, None, 0, S, 1.0 / S, seq_offset)
+print(y.shape)  # torch.Size([10, 8, 64])
 ```
 
 约束：`N_q % N_k == 0` 且 `N_k == N_v`。
@@ -285,7 +291,9 @@ y = ops_rec.ascendc.attention.hstu_dense(q, k, v, None, None, 0, S, 1.0 / S)
 print(y.dtype)  # torch.float16
 ```
 
-## GQA (Grouped Query Attention) 支持说明
+## GQA (Grouped Query Attention) 支持说明（仅 jagged）
+
+仅 jagged（equal/delta）布局支持 GQA（N_k < N_q）；hstu_dense（dense 4D 布局）不支持 GQA，其 q/k/v 头数必须一致。
 
 | 配置名称 | N_q | N_k | h_h_k_ratio | 说明 |
 |---------|-----|-----|-------------|------|

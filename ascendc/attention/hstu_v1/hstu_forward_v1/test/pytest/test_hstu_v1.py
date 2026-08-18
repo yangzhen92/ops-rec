@@ -44,6 +44,8 @@ def get_golden(q, k, v, mask=None, attn_bias=None, mask_type=0, max_seq_len=None
     # GQA：N_q != N_k 时，k/v 的 head 维按 N_q // N_k 扩展（repeat_interleave 语义，
     # q head i 共享 k/v head i // ratio），与 RecSDK golden（test_hstu_jagged_forward.py
     # golden_op_exec）一致；dim 维不扩展。N_q == N_k 时行为不变。
+    # 注：当前 dense 4D 布局路径不支持 GQA（N_k < N_q），该分支为与 RecSDK golden
+    # 对齐的通用参考实现，供未来用例复用。
     N_k = k.shape[2]
     if N_k != N_q:
         assert N_q % N_k == 0, f"head_nums_q ({N_q}) must be divisible by head_nums_k ({N_k})"
@@ -168,28 +170,6 @@ def test_hstu_dense_eager(dtype, shape):
     y_op = ops_rec.ascendc.attention.hstu_dense(q, k, v, mask=None, attn_bias=None,
                                                 mask_type=0, max_seq_len=S, silu_scale=1.0 / S)
 
-    rtol, atol = get_tolerance(dtype)
-    np.testing.assert_allclose(y_op.cpu().numpy(), y_golden, rtol=rtol, atol=atol)
-
-
-@pytest.mark.parametrize("dtype", [torch.float16, torch.float32])
-@pytest.mark.parametrize("shape", [(1, 16, 4, 32)])
-def test_hstu_dense_gqa_dimmismatch(dtype, shape):
-    """GQA（N_k < N_q）且 qk/v dim 不等"""
-    torch.npu.set_device(0)
-    B, S, N_q, D_qk = shape
-    N_k, D_v = 2, 64
-    q = torch.randn(B, S, N_q, D_qk, device="npu", dtype=dtype)
-    k = torch.randn(B, S, N_k, D_qk, device="npu", dtype=dtype)
-    v = torch.randn(B, S, N_k, D_v, device="npu", dtype=dtype)
-
-    y_golden = get_golden(q.cpu().numpy(), k.cpu().numpy(), v.cpu().numpy(),
-                          mask=None, attn_bias=None, mask_type=0,
-                          max_seq_len=S, silu_scale=1.0 / S)
-    y_op = ops_rec.ascendc.attention.hstu_dense(q, k, v, mask=None, attn_bias=None,
-                                                mask_type=0, max_seq_len=S, silu_scale=1.0 / S)
-
-    assert y_op.shape == (B, S, N_q, D_v)
     rtol, atol = get_tolerance(dtype)
     np.testing.assert_allclose(y_op.cpu().numpy(), y_golden, rtol=rtol, atol=atol)
 

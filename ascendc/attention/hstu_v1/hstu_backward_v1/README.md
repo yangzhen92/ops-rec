@@ -264,7 +264,6 @@ v    = torch.empty(T, head_num_k, head_dim_v, dtype=data_type).uniform_(-1, 1).n
 - `mask_type` 改为 0（TRIL），算子使用内置下三角 mask 并结合 `num_context`/`num_target`/`target_group_size` 在内部构建 HSTU 复合 mask
 
 > **复合 Mask 模式说明**：序列被划分为三个区域：
-
 > - **Context 区域**（前 num_context 个 token）：全量关注所有 context token
 > - **Causal 区域**（中间 token）：因果关注（context + 自身之前的 causal token）
 > - **Target 区域**（后 num_target 个 token）：只关注 context 和自身（不跨 target 关注）

@@ -39,7 +39,7 @@ npu_op_kernel_sources(${_KERNEL_TARGET}
     KERNEL_FILE hstu_jagged_forward.cpp
 )
 npu_op_kernel_sources(${_KERNEL_TARGET}
-    OP_TYPE HstuPagedForward
+    OP_TYPE HstuDenseForward
     KERNEL_DIR ./${_KERNEL_SRC_DIR}
     KERNEL_FILE hstu_paged_forward.cpp
 )

@@ -84,7 +84,7 @@ int CreateAclTensor(const std::vector<T>& hostData, const std::vector<int64_t>& 
 
 int main()
 {
-    int32_t deviceId = 0;
+    int32_t deviceId = 5;
     aclrtStream stream;
     auto ret = Init(deviceId, &stream);
     CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("Init acl failed. ERROR: %d\n", ret); return ret);
@@ -204,9 +204,11 @@ int main()
     aclOpExecutor* executor = nullptr;
     // num_context / num_target 为可选输入，此处均传 nullptr
     // rab 已提供，因此必须同时提供 rab_grad 输出
+    // scale 作为 kernel 的 dequant 标量直接下发，传 0 会导致所有梯度输出为 0，
+    // 这里按惯例使用 1.0 / maxSeqLenQ
     ret = aclnnHstuBackwardV2GetWorkspaceSize(grad, q, k, v, rab, seqOffsetQ, seqOffsetK, nullptr, nullptr, qShare,
-                                              maxSeqLenQ, maxSeqLenK, 0.0, 1, 1.0, -1, 0, qGrad, kGrad, vGrad, rabGrad,
-                                              &workspaceSize, &executor);
+                                              maxSeqLenQ, maxSeqLenK, 1.0 / static_cast<double>(maxSeqLenQ), 1, 1.0, -1,
+                                              0, qGrad, kGrad, vGrad, rabGrad, &workspaceSize, &executor);
     CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("aclnnHstuBackwardV2GetWorkspaceSize failed. ERROR: %d\n", ret);
               return ret);
 

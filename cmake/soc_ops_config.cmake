@@ -8,6 +8,7 @@ set(OPS_REC_OPS_ATLAS_950
     disentangle_attention
     block_sparse_func
     arbitrary_func
+    hstu_v1
     hstu_v2
 )
 

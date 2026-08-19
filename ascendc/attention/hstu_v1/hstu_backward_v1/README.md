@@ -157,7 +157,7 @@ Jagged Layout 的实现原理与 Normal Layout 类似，主要区别在于：
 
 ## 算子执行样例
 
-### 安装算子模块
+### 安装单算子
 
 ```bash
 cd ops-rec

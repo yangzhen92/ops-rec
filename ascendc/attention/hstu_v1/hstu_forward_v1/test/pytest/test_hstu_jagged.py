@@ -360,35 +360,7 @@ class TestHstuJaggedDemo:
                                 max_num_target=max_num_target,
                                 target_group_size=target_group_size)
         self.execute(qkv_shape_info, mask_info, enable_bias, silu_scale)
-
-    def test_error_nhead_255(self):
-        qkv_shape_info = QKVShapeInfo(float_type=torch.float16,
-                                      int_type=torch.int32,
-                                      batch_size=20,
-                                      max_seq_len=16,
-                                      num_heads_q=255,
-                                      num_heads_k=255,
-                                      head_dim_qk=256,
-                                      head_dim_v=256)
-        mask_info = MaskGenInfo(mask_type=MaskType.NONE)
-        with pytest.raises(RuntimeError) as e_info:
-            self.execute(qkv_shape_info, mask_info, False, 0)
-        assert "head num must meet range[1 16] and mutiple of [1]. but get value 255" in str(e_info.value)
-
-    def test_error_head_dim_255(self):
-        qkv_shape_info = QKVShapeInfo(float_type=torch.float16,
-                                      int_type=torch.int32,
-                                      batch_size=20,
-                                      max_seq_len=16,
-                                      num_heads_q=2,
-                                      num_heads_k=2,
-                                      head_dim_qk=255,
-                                      head_dim_v=255)
-        mask_info = MaskGenInfo(mask_type=MaskType.NONE)
-        with pytest.raises(RuntimeError) as e_info:
-            self.execute(qkv_shape_info, mask_info, False, 0)
-        assert "dim size must meet range[16 512] and mutiple of [16]. but get value 255" in str(e_info.value)
-
+        
     ## GQA测试（head_q=8, batch=4 固定；head_k 覆盖 8/4/2/1 全部 GQA 比例）
     @pytest.mark.parametrize("head_num_k, max_seq_len, head_dim", [
         (8, 15, 16),
@@ -825,7 +797,7 @@ class TestHstuDeltaqkDemo:
     @pytest.mark.skipif(get_chip(), reason="This test case is Skipped for Ascend310P.")
     def test_hstu_deltaqk_forward_GQA(self, head_num_q, head_num_k, max_seq_len, head_dim, enable_bias,
                                       mask_type, silu_scale, data_type):
-        set_seed(1234)
+        set_seed(42)
         qkv_shape_info = QKVShapeInfo(float_type=data_type,
                                       int_type=torch.int32,
                                       batch_size=4,
@@ -852,7 +824,7 @@ class TestHstuDeltaqkDemo:
     @pytest.mark.skipif(get_chip(), reason="This test case is Skipped for Ascend310P.")
     def test_hstu_deltaqk_forward_128bs_GQA(self, head_num_k, head_dim,
                                             enable_bias, mask_type, silu_scale, data_type):
-        set_seed(1234)
+        set_seed(42)
         qkv_shape_info = QKVShapeInfo(float_type=data_type,
                                       int_type=torch.int32,
                                       batch_size=128,

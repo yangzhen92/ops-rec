@@ -77,6 +77,8 @@ def set_seed(seed):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
+set_seed(42)
+
 
 def allclose(tensor: torch.Tensor, other: torch.Tensor, atol: float, ratio: float) -> bool:
     assert tensor.shape == other.shape

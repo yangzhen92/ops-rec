@@ -20,7 +20,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #include <torch/library.h>
 
 #include "pytorch_npu_helper.hpp"
-#include "common_utils.h"
+#include "hstu_v2_param_check.h"
 #include "c10/core/ScalarType.h"
 #include "torch/types.h"
 
@@ -37,6 +37,8 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> hstu_backward_v2_impl
     const c10::optional<int64_t>& targetGroupSize, const c10::optional<double>& alpha, const int64_t windowSizeLeft,
     const int64_t windowSizeRight)
 {
+    hstu_v2::HstuV2ParamChecker(grad, q, k, v, seqOffsetQ, seqOffsetK, maxSeqLenQ, maxSeqLenK, rab, numContext,
+                                numTarget, targetGroupSize, windowSizeLeft, windowSizeRight);
     // param check (reuse from hstu_v2 namespace)
     auto _empty = at::Tensor();
     auto acRab = rab.value_or(at::Tensor());

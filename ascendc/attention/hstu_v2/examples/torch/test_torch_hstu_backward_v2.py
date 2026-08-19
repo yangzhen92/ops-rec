@@ -34,8 +34,10 @@ def test_hstu_backward_v2_basic():
 
     seq_lens_q = torch.tensor([100, 100], dtype=torch.int32)
     seq_lens_k = torch.tensor([100, 100], dtype=torch.int32)
-    seq_offset_q = torch.cat([torch.zeros(1, dtype=torch.int32), torch.cumsum(seq_lens_q, dim=0)])
-    seq_offset_k = torch.cat([torch.zeros(1, dtype=torch.int32), torch.cumsum(seq_lens_k, dim=0)])
+    seq_offset_q = torch.concat((torch.zeros((1,), dtype=torch.int32), torch.cumsum(seq_lens_q, axis=0))).numpy()
+    seq_offset_k = torch.concat((torch.zeros((1,), dtype=torch.int32), torch.cumsum(seq_lens_k, axis=0))).numpy()
+    seq_offset_q = torch.Tensor(seq_offset_q).to("npu").to(torch.int32)
+    seq_offset_k = torch.Tensor(seq_offset_k).to("npu").to(torch.int32)
 
     rab = torch.rand(batch_size, heads, max_seqlen_q, max_seqlen_k, dtype=torch.float16).uniform_(-1, 1)
 
@@ -57,8 +59,8 @@ def test_hstu_backward_v2_basic():
         v,
         max_seqlen_q,
         max_seqlen_k,
-        seq_offset_q.to("npu"),
-        seq_offset_k.to("npu"),
+        seq_offset_q,
+        seq_offset_k,
         rab,
         num_context,
         num_target,

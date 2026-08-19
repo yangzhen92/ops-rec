@@ -180,6 +180,13 @@ public:
         
         InitCVStrategy();
 
+        ClearSyncGm(coreNum);
+    }
+
+    // 清零 syncGm 跨核 flag 区域（block 0 写零 + 全核栅栏）。
+    // 必须在任何 IBSet/IBWait 使用前完成，避免残留 flag 干扰核间同步。
+    __aicore__ inline void ClearSyncGm(uint32_t coreNum)
+    {
         if constexpr (TraitParams::deterministic) {
             SyncAll<true>();
             if (GetBlockIdx() == 0) {

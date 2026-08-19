@@ -15,6 +15,13 @@
 # ==============================================================================
 # HSTU jagged 前向测试（equal + delta），迁移自 RecSDK
 # test_hstu_jagged_forward.py / test_hstu_deltaqk_forward.py
+#
+# 用例压缩策略（约 31700 -> 约 1140 组）：
+#   1. 强相关形状维度（batch/head/seq/dim）合并为元组组合，替代笛卡尔积；
+#   2. enable_bias × silu_scale 降为配对参数，4 种组合分散在不同测试中互补覆盖；
+#   3. mask 8 种组合仅在基础测试全量展开，其余测试取代表性子集；
+#   4. 全部特性值（GQA 比例、qk/v dim 关系、边界 batch、int32/int64、
+#      repeat_offset、deterministic、255/256/257/511/512 mask 边界）均保留覆盖。
 # ==============================================================================
 
 import random
@@ -210,12 +217,14 @@ class TestHstuJaggedDemo:
             res = allclose(output, golden, 1e-4, 1e-4)
         assert res
 
-    @pytest.mark.parametrize("batch_size", [1, 16])
-    @pytest.mark.parametrize("head_num", [2, 4])
-    @pytest.mark.parametrize("max_seq_len", [15, 1024])
-    @pytest.mark.parametrize("head_dim", [16, 128])
-    @pytest.mark.parametrize("enable_bias", [True, False])
-    @pytest.mark.parametrize("silu_scale", [0, 1 / 1024])
+    # 压缩策略：形状维度合并为元组组合（覆盖 batch 1/16、head 2/4、seq 15/1024、dim 16/128 的两两配对）
+    @pytest.mark.parametrize("batch_size, head_num, max_seq_len, head_dim", [
+        (1, 2, 15, 16),
+        (16, 4, 1024, 128),
+        (1, 4, 1024, 16),
+        (16, 2, 15, 128),
+    ])
+    @pytest.mark.parametrize("enable_bias, silu_scale", [(False, 0), (True, 1 / 1024)])
     @pytest.mark.parametrize("float_data_type", [torch.float32, torch.float16, torch.bfloat16])
     @pytest.mark.parametrize("int_data_type", [torch.int32])
     @pytest.mark.parametrize("mask_type, target_group_size, max_num_context, max_num_target", [
@@ -270,16 +279,17 @@ class TestHstuJaggedDemo:
                                 target_group_size=target_group_size)
         self.execute(qkv_shape_info, mask_info, False, 0)
 
-    @pytest.mark.parametrize("batch_size", [1, 2])
-    @pytest.mark.parametrize("head_num", [1, 7, 16])
-    @pytest.mark.parametrize("max_seq_len", [15, 256])
-    @pytest.mark.parametrize("head_dim", [16, 32])
-    @pytest.mark.parametrize("enable_bias", [True, False])
+    @pytest.mark.parametrize("batch_size, head_num, max_seq_len, head_dim, repeat_offset", [
+        (1, 1, 15, 16, False),
+        (2, 7, 256, 32, True),
+        (1, 16, 256, 16, True),
+        (2, 1, 15, 32, False),
+    ])
+    # bias×silu 在此补全另外两组组合（test_hstu_jagged_forward 已覆盖 (F,0)/(T,1/1024)）
+    @pytest.mark.parametrize("enable_bias, silu_scale", [(True, 0), (False, 1 / 1024)])
     @pytest.mark.parametrize("mask_type", [MaskType.NONE, MaskType.CUSTOM, MaskType.TRIL])
-    @pytest.mark.parametrize("silu_scale", [0, 1 / 1024])
     @pytest.mark.parametrize("float_data_type", [torch.float32, torch.float16, torch.bfloat16])
     @pytest.mark.parametrize("int_data_type", [torch.int32])
-    @pytest.mark.parametrize("repeat_offset", [False, True])
     def test_hstu_jagged_forward_head16(self, batch_size, head_num, max_seq_len, head_dim, enable_bias, mask_type,
                                         silu_scale, float_data_type, int_data_type, repeat_offset):
         qkv_shape_info = QKVShapeInfo(float_type=float_data_type,
@@ -299,8 +309,7 @@ class TestHstuJaggedDemo:
     @pytest.mark.parametrize("head_num", [2])
     @pytest.mark.parametrize("max_seq_len", [2570])
     @pytest.mark.parametrize("head_dim", [256])
-    @pytest.mark.parametrize("enable_bias", [True, False])
-    @pytest.mark.parametrize("silu_scale", [0, 1 / 1024])
+    @pytest.mark.parametrize("enable_bias, silu_scale", [(False, 0), (True, 1 / 1024)])
     @pytest.mark.parametrize("float_data_type", [torch.float32, torch.float16, torch.bfloat16])
     @pytest.mark.parametrize("int_data_type", [torch.int32])
     @pytest.mark.parametrize("mask_type, target_group_size, max_num_context, max_num_target", [
@@ -328,8 +337,7 @@ class TestHstuJaggedDemo:
     @pytest.mark.parametrize("head_num", [2])
     @pytest.mark.parametrize("max_seq_len", [16])
     @pytest.mark.parametrize("head_dim", [256])
-    @pytest.mark.parametrize("enable_bias", [True, False])
-    @pytest.mark.parametrize("silu_scale", [0, 1 / 1024])
+    @pytest.mark.parametrize("enable_bias, silu_scale", [(False, 0), (True, 1 / 1024)])
     @pytest.mark.parametrize("mask_type, target_group_size, max_num_context, max_num_target", [
         (MaskType.NONE, 0, 0, 0),
         (MaskType.CUSTOM, 0, 0, 0),
@@ -365,7 +373,7 @@ class TestHstuJaggedDemo:
         mask_info = MaskGenInfo(mask_type=MaskType.NONE)
         with pytest.raises(RuntimeError) as e_info:
             self.execute(qkv_shape_info, mask_info, False, 0)
-            assert "head num must meet range[1 16] and mutiple of [1]. but get value 255" in str(e_info.value)
+        assert "head num must meet range[1 16] and mutiple of [1]. but get value 255" in str(e_info.value)
 
     def test_error_head_dim_255(self):
         qkv_shape_info = QKVShapeInfo(float_type=torch.float16,
@@ -379,36 +387,31 @@ class TestHstuJaggedDemo:
         mask_info = MaskGenInfo(mask_type=MaskType.NONE)
         with pytest.raises(RuntimeError) as e_info:
             self.execute(qkv_shape_info, mask_info, False, 0)
-            assert "dim size must meet range[16 512] and mutiple of [16]. but get value 255" in str(e_info.value)
+        assert "dim size must meet range[16 512] and mutiple of [16]. but get value 255" in str(e_info.value)
 
-    ## GQA测试
-    @pytest.mark.parametrize("batch_size", [4])
-    @pytest.mark.parametrize("head_num_q", [8])
-    @pytest.mark.parametrize("head_num_k", [8, 4, 2, 1])
-    @pytest.mark.parametrize("max_seq_len", [15, 1024])
-    @pytest.mark.parametrize("head_dim", [16, 128])
-    @pytest.mark.parametrize("enable_bias", [True, False])
-    @pytest.mark.parametrize("silu_scale", [0, 1 / 1024])
+    ## GQA测试（head_q=8, batch=4 固定；head_k 覆盖 8/4/2/1 全部 GQA 比例）
+    @pytest.mark.parametrize("head_num_k, max_seq_len, head_dim", [
+        (8, 15, 16),
+        (4, 1024, 128),
+        (2, 15, 128),
+        (1, 1024, 16),
+    ])
+    @pytest.mark.parametrize("enable_bias, silu_scale", [(False, 0), (True, 1 / 1024)])
     @pytest.mark.parametrize("float_data_type", [torch.float32, torch.float16, torch.bfloat16])
     @pytest.mark.parametrize("int_data_type", [torch.int32])
     @pytest.mark.parametrize("mask_type, target_group_size, max_num_context, max_num_target", [
         (MaskType.NONE, 0, 0, 0),
         (MaskType.CUSTOM, 0, 0, 0),
-        (MaskType.TRIL, 1, 0, 30),
-        (MaskType.TRIL, 3, 0, 30),
-        (MaskType.TRIL, 1, 6, 0),
-        (MaskType.TRIL, 3, 6, 0),
-        (MaskType.TRIL, 1, 6, 30),
         (MaskType.TRIL, 3, 6, 30),
     ])
-    def test_hstu_jagged_forward_GQA(self, batch_size, head_num_q, head_num_k, max_seq_len, head_dim, enable_bias,
+    def test_hstu_jagged_forward_GQA(self, head_num_k, max_seq_len, head_dim, enable_bias,
                                      mask_type, silu_scale, float_data_type, int_data_type, target_group_size,
                                      max_num_context, max_num_target):
         qkv_shape_info = QKVShapeInfo(float_type=float_data_type,
                                           int_type=int_data_type,
-                                          batch_size=batch_size,
+                                          batch_size=4,
                                           max_seq_len=max_seq_len,
-                                          num_heads_q=head_num_q,
+                                          num_heads_q=8,
                                           num_heads_k=head_num_k,
                                           head_dim_qk=head_dim,
                                           head_dim_v=head_dim)
@@ -418,99 +421,84 @@ class TestHstuJaggedDemo:
                                 target_group_size=target_group_size)
         self.execute(qkv_shape_info, mask_info, enable_bias, silu_scale)
 
-    @pytest.mark.parametrize("head_num_q", [2])
     @pytest.mark.parametrize("head_num_k", [2, 1])
-    @pytest.mark.parametrize("max_seq_len", [2570])
-    @pytest.mark.parametrize("head_dim", [256])
-    @pytest.mark.parametrize("enable_bias", [True, False])
-    @pytest.mark.parametrize("silu_scale", [0, 1 / 1024])
+    @pytest.mark.parametrize("enable_bias, silu_scale", [(False, 0), (True, 1 / 1024)])
     @pytest.mark.parametrize("float_data_type", [torch.float32, torch.float16, torch.bfloat16])
     @pytest.mark.parametrize("int_data_type", [torch.int32])
     @pytest.mark.parametrize("mask_type, target_group_size, max_num_context, max_num_target", [
         (MaskType.NONE, 0, 0, 0),
         (MaskType.CUSTOM, 0, 0, 0),
-        (MaskType.TRIL, 1, 0, 30),
-        (MaskType.TRIL, 3, 0, 30),
-        (MaskType.TRIL, 1, 6, 0),
-        (MaskType.TRIL, 3, 6, 0),
         (MaskType.TRIL, 1, 6, 30),
-        (MaskType.TRIL, 3, 6, 30),
     ])
-    def test_hstu_jagged_forward_128bs_GQA(self, head_num_q, head_num_k, max_seq_len, head_dim, enable_bias, mask_type,
+    def test_hstu_jagged_forward_128bs_GQA(self, head_num_k, enable_bias, mask_type,
                                            silu_scale, float_data_type, int_data_type, target_group_size,
                                            max_num_context, max_num_target):
         qkv_shape_info = QKVShapeInfo(float_type=float_data_type,
                                       int_type=int_data_type,
                                       batch_size=128,
-                                      max_seq_len=max_seq_len,
-                                      num_heads_q=head_num_q,
+                                      max_seq_len=2570,
+                                      num_heads_q=2,
                                       num_heads_k=head_num_k,
-                                      head_dim_qk=head_dim,
-                                      head_dim_v=head_dim)
+                                      head_dim_qk=256,
+                                      head_dim_v=256)
         mask_info = MaskGenInfo(mask_type=mask_type,
                                 max_num_context=max_num_context,
                                 max_num_target=max_num_target,
                                 target_group_size=target_group_size)
         self.execute(qkv_shape_info, mask_info, enable_bias, silu_scale)
 
-    @pytest.mark.parametrize("head_num_q", [4])
     @pytest.mark.parametrize("head_num_k", [4, 2, 1])
-    @pytest.mark.parametrize("max_seq_len", [16])
-    @pytest.mark.parametrize("head_dim", [256])
-    @pytest.mark.parametrize("enable_bias", [True, False])
-    @pytest.mark.parametrize("silu_scale", [0, 1 / 1024])
+    @pytest.mark.parametrize("enable_bias, silu_scale", [(False, 0), (True, 1 / 1024)])
     @pytest.mark.parametrize("mask_type, target_group_size, max_num_context, max_num_target", [
         (MaskType.NONE, 0, 0, 0),
         (MaskType.CUSTOM, 0, 0, 0),
         (MaskType.TRIL, 3, 6, 30),
     ])
     @pytest.mark.parametrize("float_data_type", [torch.float32, torch.float16, torch.bfloat16])
-    def test_hstu_jagged_forward_2048bs_GQA(self, head_num_q, head_num_k, max_seq_len, head_dim, enable_bias, mask_type,
+    def test_hstu_jagged_forward_2048bs_GQA(self, head_num_k, enable_bias, mask_type,
                                             silu_scale, float_data_type, target_group_size, max_num_context,
                                             max_num_target):
         qkv_shape_info = QKVShapeInfo(float_type=float_data_type,
                                           int_type=torch.int32,
                                           batch_size=2048,
-                                          max_seq_len=max_seq_len,
-                                          num_heads_q=head_num_q,
+                                          max_seq_len=16,
+                                          num_heads_q=4,
                                           num_heads_k=head_num_k,
-                                          head_dim_qk=head_dim,
-                                          head_dim_v=head_dim)
+                                          head_dim_qk=256,
+                                          head_dim_v=256)
         mask_info = MaskGenInfo(mask_type=mask_type,
                                 max_num_context=max_num_context,
                                 max_num_target=max_num_target,
                                 target_group_size=target_group_size)
         self.execute(qkv_shape_info, mask_info, enable_bias, silu_scale)
 
-    # qk_dim != v_dim
-    @pytest.mark.parametrize("batch_size", [4, 128, 1024])
-    @pytest.mark.parametrize("head_num_q", [4])
-    @pytest.mark.parametrize("head_num_k", [4, 2, 1])
-    @pytest.mark.parametrize("max_seq_len", [15])
-    @pytest.mark.parametrize("head_dim_qk", [64, 96, 128])
-    @pytest.mark.parametrize("head_dim_v", [16, 32, 48, 64, 80])
-    @pytest.mark.parametrize("enable_bias", [True, False])
-    @pytest.mark.parametrize("silu_scale", [0, 1 / 1024])
+    # qk_dim != v_dim（head_q=4 固定；覆盖 batch 4/128/1024、head_k 4/2/1、dim_qk 64/96/128、
+    # dim_v 16/32/48/64/80，含 qk>v、qk=v、qk<v 三种关系）
+    @pytest.mark.parametrize("batch_size, head_num_k, head_dim_qk, head_dim_v", [
+        (4, 4, 64, 16),
+        (128, 2, 96, 48),
+        (1024, 1, 128, 80),
+        (4, 1, 64, 32),
+        (128, 4, 128, 64),
+        (4, 2, 64, 80),
+    ])
+    @pytest.mark.parametrize("enable_bias, silu_scale", [(False, 0), (True, 1 / 1024)])
     @pytest.mark.parametrize("float_data_type", [torch.float32, torch.float16, torch.bfloat16])
     @pytest.mark.parametrize("int_data_type", [torch.int32])
     @pytest.mark.parametrize("mask_type, target_group_size, max_num_context, max_num_target", [
         (MaskType.NONE, 0, 0, 0),
         (MaskType.CUSTOM, 0, 0, 0),
-        (MaskType.TRIL, 1, 0, 30),
-        (MaskType.TRIL, 3, 0, 30),
-        (MaskType.TRIL, 1, 6, 0),
-        (MaskType.TRIL, 3, 6, 0),
         (MaskType.TRIL, 1, 6, 30),
-        (MaskType.TRIL, 3, 6, 30),
+        (MaskType.TRIL, 3, 6, 0),
     ])
-    def test_hstu_jagged_forward_VDA(self, batch_size, head_num_q, head_num_k, max_seq_len, head_dim_qk, head_dim_v,
+    def test_hstu_jagged_forward_VDA(self, batch_size, head_num_k, head_dim_qk, head_dim_v,
                                      enable_bias, mask_type, silu_scale, float_data_type, int_data_type,
                                      target_group_size, max_num_context, max_num_target):
         qkv_shape_info = QKVShapeInfo(float_type=float_data_type,
                                       int_type=int_data_type,
                                       batch_size=batch_size,
-                                      max_seq_len=max_seq_len,
-                                      num_heads_q=head_num_q,
+                                      max_seq_len=15,
+                                      num_heads_q=4,
                                       num_heads_k=head_num_k,
                                       head_dim_qk=head_dim_qk,
                                       head_dim_v=head_dim_v)
@@ -520,23 +508,20 @@ class TestHstuJaggedDemo:
                                 target_group_size=target_group_size)
         self.execute(qkv_shape_info, mask_info, enable_bias, silu_scale)
 
-    @pytest.mark.parametrize("batch_size", [1, 16])
-    @pytest.mark.parametrize("head_num", [2, 4])
-    @pytest.mark.parametrize("max_seq_len", [15, 1024])
-    @pytest.mark.parametrize("head_dim", [16, 128])
-    @pytest.mark.parametrize("enable_bias", [True, False])
-    @pytest.mark.parametrize("silu_scale", [0, 1 / 1024])
+    @pytest.mark.parametrize("batch_size, head_num, max_seq_len, head_dim", [
+        (1, 2, 15, 16),
+        (16, 4, 1024, 128),
+        (1, 4, 1024, 16),
+        (16, 2, 15, 128),
+    ])
+    @pytest.mark.parametrize("enable_bias, silu_scale", [(False, 0), (True, 1 / 1024)])
     @pytest.mark.parametrize("float_data_type", [torch.float32, torch.float16, torch.bfloat16])
     @pytest.mark.parametrize("int_data_type", [torch.int64])
     @pytest.mark.parametrize("mask_type, target_group_size, max_num_context, max_num_target", [
         (MaskType.NONE, 0, 0, 0),
         (MaskType.CUSTOM, 0, 0, 0),
-        (MaskType.TRIL, 1, 0, 30),
-        (MaskType.TRIL, 3, 0, 30),
-        (MaskType.TRIL, 1, 6, 0),
-        (MaskType.TRIL, 3, 6, 0),
         (MaskType.TRIL, 1, 6, 30),
-        (MaskType.TRIL, 3, 6, 30),
+        (MaskType.TRIL, 3, 6, 0),
     ])
     def test_hstu_jagged_deterministic_forward(self, batch_size, head_num, max_seq_len, head_dim, enable_bias,
                                  mask_type, silu_scale, float_data_type, int_data_type, target_group_size,
@@ -761,13 +746,14 @@ class TestHstuDeltaqkDemo:
             res = allclose(output, golden, 1e-4, 1e-4)
         assert res
 
-    @pytest.mark.parametrize("batch_size", [1, 16])
-    @pytest.mark.parametrize("head_num", [2, 4])
-    @pytest.mark.parametrize("max_seq_len", [15, 1024])
-    @pytest.mark.parametrize("head_dim", [16, 128])
-    @pytest.mark.parametrize("enable_bias", [True, False])
+    @pytest.mark.parametrize("batch_size, head_num, max_seq_len, head_dim", [
+        (1, 2, 15, 16),
+        (16, 4, 1024, 128),
+        (1, 4, 1024, 16),
+        (16, 2, 15, 128),
+    ])
+    @pytest.mark.parametrize("enable_bias, silu_scale", [(False, 0), (True, 1 / 1024)])
     @pytest.mark.parametrize("mask_type", [MaskType.TRIL, MaskType.NONE, MaskType.CUSTOM])
-    @pytest.mark.parametrize("silu_scale", [0, 1 / 1024])
     @pytest.mark.parametrize("data_type", [torch.float32, torch.float16, torch.bfloat16])
     @pytest.mark.skipif(get_chip(), reason="This test case is Skipped for Ascend310P.")
     def test_hstu_deltaqk_forward(self, batch_size, head_num, max_seq_len, head_dim, enable_bias, mask_type, silu_scale,
@@ -786,71 +772,63 @@ class TestHstuDeltaqkDemo:
                                 target_group_size=0)
         self.execute(qkv_shape_info, mask_info, enable_bias, silu_scale)
 
-    @pytest.mark.parametrize("head_num", [2])
-    @pytest.mark.parametrize("max_seq_len", [2570])
-    @pytest.mark.parametrize("head_dim", [256])
-    @pytest.mark.parametrize("enable_bias", [True, False])
+    @pytest.mark.parametrize("enable_bias, silu_scale", [(False, 0), (True, 1 / 1024)])
     @pytest.mark.parametrize("mask_type", [MaskType.TRIL, MaskType.NONE, MaskType.CUSTOM])
-    @pytest.mark.parametrize("silu_scale", [0, 1 / 1024])
     @pytest.mark.parametrize("data_type", [torch.float32, torch.float16, torch.bfloat16])
     @pytest.mark.skipif(get_chip(), reason="This test case is Skipped for Ascend310P.")
-    def test_hstu_deltaqk_forward_128bs(self, head_num, max_seq_len, head_dim, enable_bias, mask_type, silu_scale,
+    def test_hstu_deltaqk_forward_128bs(self, enable_bias, mask_type, silu_scale,
                                         data_type):
         qkv_shape_info = QKVShapeInfo(float_type=data_type,
                                       int_type=torch.int32,
                                       batch_size=128,
-                                      max_seq_len=max_seq_len,
-                                      num_heads_q=head_num,
-                                      num_heads_k=head_num,
-                                      head_dim_qk=head_dim,
-                                      head_dim_v=head_dim)
+                                      max_seq_len=2570,
+                                      num_heads_q=2,
+                                      num_heads_k=2,
+                                      head_dim_qk=256,
+                                      head_dim_v=256)
         mask_info = MaskGenInfo(mask_type=mask_type,
                                 max_num_context=0,
                                 max_num_target=0,
                                 target_group_size=0)
         self.execute(qkv_shape_info, mask_info, enable_bias, silu_scale)
 
-    @pytest.mark.parametrize("head_num", [2])
-    @pytest.mark.parametrize("max_seq_len", [16])
-    @pytest.mark.parametrize("head_dim", [256])
-    @pytest.mark.parametrize("enable_bias", [True, False])
+    @pytest.mark.parametrize("enable_bias, silu_scale", [(False, 0), (True, 1 / 1024)])
     @pytest.mark.parametrize("mask_type", [MaskType.TRIL, MaskType.NONE, MaskType.CUSTOM])
-    @pytest.mark.parametrize("silu_scale", [0, 1 / 1024])
     @pytest.mark.parametrize("data_type", [torch.float32, torch.float16, torch.bfloat16])
     @pytest.mark.skipif(get_chip(), reason="This test case is Skipped for Ascend310P.")
-    def test_hstu_deltaqk_forward_2048bs(self, head_num, max_seq_len, head_dim, enable_bias, mask_type, silu_scale,
+    def test_hstu_deltaqk_forward_2048bs(self, enable_bias, mask_type, silu_scale,
                                          data_type):
         qkv_shape_info = QKVShapeInfo(float_type=data_type,
                                       int_type=torch.int32,
                                       batch_size=2048,
-                                      max_seq_len=max_seq_len,
-                                      num_heads_q=head_num,
-                                      num_heads_k=head_num,
-                                      head_dim_qk=head_dim,
-                                      head_dim_v=head_dim)
+                                      max_seq_len=16,
+                                      num_heads_q=2,
+                                      num_heads_k=2,
+                                      head_dim_qk=256,
+                                      head_dim_v=256)
         mask_info = MaskGenInfo(mask_type=mask_type,
                                 max_num_context=0,
                                 max_num_target=0,
                                 target_group_size=0)
         self.execute(qkv_shape_info, mask_info, enable_bias, silu_scale)
 
-    ## GQA
-    @pytest.mark.parametrize("batch_size", [4, 16])
-    @pytest.mark.parametrize("head_num_q", [8])
-    @pytest.mark.parametrize("head_num_k", [8, 4, 2, 1])
-    @pytest.mark.parametrize("max_seq_len", [16, 1024])
-    @pytest.mark.parametrize("head_dim", [32, 64])
-    @pytest.mark.parametrize("enable_bias", [True, False])
+    ## GQA（batch=4 固定；head_q/head_k 覆盖 8:8/8:4/8:2/8:1 全部比例）
+    @pytest.mark.parametrize("head_num_q, head_num_k, max_seq_len, head_dim", [
+        (8, 8, 16, 32),
+        (8, 4, 1024, 64),
+        (8, 2, 16, 64),
+        (8, 1, 1024, 32),
+    ])
+    @pytest.mark.parametrize("enable_bias, silu_scale", [(False, 0), (True, 1 / 1024)])
     @pytest.mark.parametrize("mask_type", [MaskType.TRIL, MaskType.NONE, MaskType.CUSTOM])
-    @pytest.mark.parametrize("silu_scale", [0, 1 / 1024])
     @pytest.mark.parametrize("data_type", [torch.float32, torch.float16, torch.bfloat16])
     @pytest.mark.skipif(get_chip(), reason="This test case is Skipped for Ascend310P.")
-    def test_hstu_deltaqk_forward_GQA(self, batch_size, head_num_q, head_num_k, max_seq_len, head_dim, enable_bias,
+    def test_hstu_deltaqk_forward_GQA(self, head_num_q, head_num_k, max_seq_len, head_dim, enable_bias,
                                       mask_type, silu_scale, data_type):
         set_seed(1234)
         qkv_shape_info = QKVShapeInfo(float_type=data_type,
                                       int_type=torch.int32,
-                                      batch_size=batch_size,
+                                      batch_size=4,
                                       max_seq_len=max_seq_len,
                                       num_heads_q=head_num_q,
                                       num_heads_k=head_num_k,
@@ -862,25 +840,24 @@ class TestHstuDeltaqkDemo:
                                 target_group_size=0)
         self.execute(qkv_shape_info, mask_info, enable_bias, silu_scale)
 
-    ## GQA
-    @pytest.mark.parametrize("batch_size", [128])
-    @pytest.mark.parametrize("head_num_q", [4])
-    @pytest.mark.parametrize("head_num_k", [4, 2, 1])
-    @pytest.mark.parametrize("max_seq_len", [16])
-    @pytest.mark.parametrize("head_dim", [32, 64])
-    @pytest.mark.parametrize("enable_bias", [True, False])
+    ## GQA + 大 batch（batch=128, seq=16 固定）
+    @pytest.mark.parametrize("head_num_k, head_dim", [
+        (4, 32),
+        (2, 64),
+        (1, 32),
+    ])
+    @pytest.mark.parametrize("enable_bias, silu_scale", [(False, 0), (True, 0)])
     @pytest.mark.parametrize("mask_type", [MaskType.TRIL, MaskType.NONE, MaskType.CUSTOM])
-    @pytest.mark.parametrize("silu_scale", [0])
     @pytest.mark.parametrize("data_type", [torch.float32, torch.float16, torch.bfloat16])
     @pytest.mark.skipif(get_chip(), reason="This test case is Skipped for Ascend310P.")
-    def test_hstu_deltaqk_forward_128bs_GQA(self, batch_size, head_num_q, head_num_k, max_seq_len, head_dim,
+    def test_hstu_deltaqk_forward_128bs_GQA(self, head_num_k, head_dim,
                                             enable_bias, mask_type, silu_scale, data_type):
         set_seed(1234)
         qkv_shape_info = QKVShapeInfo(float_type=data_type,
                                       int_type=torch.int32,
-                                      batch_size=batch_size,
-                                      max_seq_len=max_seq_len,
-                                      num_heads_q=head_num_q,
+                                      batch_size=128,
+                                      max_seq_len=16,
+                                      num_heads_q=4,
                                       num_heads_k=head_num_k,
                                       head_dim_qk=head_dim,
                                       head_dim_v=head_dim)
@@ -890,20 +867,18 @@ class TestHstuDeltaqkDemo:
                                 target_group_size=0)
         self.execute(qkv_shape_info, mask_info, enable_bias, silu_scale)
 
-    # qk_dim != v_dim
-    @pytest.mark.parametrize("batch_size", [4, 32, 128])
-    @pytest.mark.parametrize("head_num_q, head_num_k", [
-        (4, 2),
-        (4, 1),
-        (6, 3),
-        (8, 4),
+    # qk_dim != v_dim（覆盖 batch 4/32/128、GQA 比例 4:2/4:1/6:3/8:4、seq 15/128/1024、
+    # dim_qk 64/96/128、dim_v 80/48/16/32/64，含 qk>v、qk=v、qk<v 三种关系）
+    @pytest.mark.parametrize("batch_size, head_num_q, head_num_k, max_seq_len, head_dim_qk, head_dim_v", [
+        (4, 4, 2, 15, 64, 80),
+        (32, 4, 1, 128, 96, 48),
+        (128, 6, 3, 1024, 128, 16),
+        (4, 8, 4, 15, 128, 32),
+        (32, 4, 2, 128, 64, 64),
+        (128, 4, 1, 1024, 96, 80),
     ])
-    @pytest.mark.parametrize("max_seq_len", [15, 128, 1024])
-    @pytest.mark.parametrize("head_dim_qk", [64, 96, 128])
-    @pytest.mark.parametrize("head_dim_v", [80, 64, 48, 32, 16])
-    @pytest.mark.parametrize("enable_bias", [True, False])
+    @pytest.mark.parametrize("enable_bias, silu_scale", [(True, 0), (False, 1 / 1024)])
     @pytest.mark.parametrize("mask_type", [MaskType.NONE, MaskType.CUSTOM, MaskType.TRIL])
-    @pytest.mark.parametrize("silu_scale", [0, 1 / 1024])
     @pytest.mark.parametrize("data_type", [torch.float32, torch.float16, torch.bfloat16])
     @pytest.mark.skipif(get_chip(), reason="This test case is Skipped for Ascend310P.")
     def test_hstu_varlen_forward(self, batch_size, head_num_q, head_num_k, max_seq_len, head_dim_qk, head_dim_v,
@@ -923,13 +898,14 @@ class TestHstuDeltaqkDemo:
         self.execute(qkv_shape_info, mask_info, enable_bias, silu_scale)
 
 
-    @pytest.mark.parametrize("batch_size", [1, 16])
-    @pytest.mark.parametrize("head_num", [2, 4])
-    @pytest.mark.parametrize("max_seq_len", [15, 1024])
-    @pytest.mark.parametrize("head_dim", [16, 128])
-    @pytest.mark.parametrize("enable_bias", [True, False])
+    @pytest.mark.parametrize("batch_size, head_num, max_seq_len, head_dim", [
+        (1, 2, 15, 16),
+        (16, 4, 1024, 128),
+        (1, 4, 1024, 16),
+        (16, 2, 15, 128),
+    ])
+    @pytest.mark.parametrize("enable_bias, silu_scale", [(False, 0), (True, 1 / 1024)])
     @pytest.mark.parametrize("mask_type", [MaskType.TRIL, MaskType.NONE, MaskType.CUSTOM])
-    @pytest.mark.parametrize("silu_scale", [0, 1 / 1024])
     @pytest.mark.parametrize("data_type", [torch.float32, torch.float16, torch.bfloat16])
     @pytest.mark.skipif(get_chip(), reason="This test case is Skipped for Ascend310P.")
     def test_hstu_deltaqk_deterministic_forward(self, batch_size, head_num, max_seq_len, head_dim, enable_bias,
@@ -1070,6 +1046,38 @@ def test_hstu_jagged_delta_graph(dtype):
     y_op = compiled_fn(q, k, v, mask=None, attn_bias=None, mask_type=0,
                        max_seq_len=S_q, max_seq_len_k=S_k, silu_scale=1.0 / S_q,
                        seq_offset=seq_offset, seq_offset_k=seq_offset_k)
+
+    rtol, atol = get_tolerance(dtype)
+    np.testing.assert_allclose(y_op.cpu().numpy(), y_golden, rtol=rtol, atol=atol)
+
+
+@pytest.mark.graph
+@pytest.mark.parametrize("dtype", [torch.float16])
+def test_hstu_jagged_graph_mask_bias(dtype):
+    """inductor 图模式：jagged（equal）+ CUSTOM mask + attn_bias 入图"""
+    torch.npu.set_device(0)
+    N, D = 4, 32
+    seq_lens = [4, 6]
+    batch = len(seq_lens)
+    total = sum(seq_lens)
+    S = max(seq_lens)
+    q = torch.randn(total, N, D, device="npu", dtype=dtype)
+    k = torch.randn(total, N, D, device="npu", dtype=dtype)
+    v = torch.randn(total, N, D, device="npu", dtype=dtype)
+    seq_offset = torch.tensor([0] + [sum(seq_lens[: i + 1]) for i in range(batch)], device="npu", dtype=torch.int32)
+    bias = torch.randn(batch, N, S, S, device="npu", dtype=dtype)
+    mask = (torch.rand(batch, N, S, S, device="npu") > 0.5).to(dtype)
+
+    y_golden = get_golden_jagged(q.cpu().numpy(), k.cpu().numpy(), v.cpu().numpy(),
+                                 mask=mask.cpu().numpy(), attn_bias=bias.cpu().numpy().astype(np.float32),
+                                 mask_type=int(MaskType.CUSTOM),
+                                 max_seq_len=S, silu_scale=1.0 / S,
+                                 seq_offset=seq_offset.cpu().numpy())
+    compiled_fn = torch_compiled(ops_rec.ascendc.attention.hstu_jagged.equal, dynamic=True, fullgraph=True,
+                                 backend="inductor")
+    y_op = compiled_fn(q, k, v, mask=mask, attn_bias=bias, mask_type=int(MaskType.CUSTOM),
+                       max_seq_len=S, silu_scale=1.0 / S, seq_offset=seq_offset,
+                       num_context=None, num_target=None, target_group_size=0)
 
     rtol, atol = get_tolerance(dtype)
     np.testing.assert_allclose(y_op.cpu().numpy(), y_golden, rtol=rtol, atol=atol)

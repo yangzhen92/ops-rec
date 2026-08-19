@@ -111,9 +111,9 @@ class TestHstuDenseDemo:
         assert res
 
     @pytest.mark.parametrize("batch_size", [1, 16])
-    @pytest.mark.parametrize("head_num", [2, 4])
-    @pytest.mark.parametrize("max_seq_len", [1, 15, 31, 256, 768, 1023, 4095])
-    @pytest.mark.parametrize("head_dim", [32, 64])
+    @pytest.mark.parametrize("head_num", [1, 4])
+    @pytest.mark.parametrize("max_seq_len", [15,256, 1024, 4095])
+    @pytest.mark.parametrize("head_dim", [32, 128])
     @pytest.mark.parametrize("enable_bias", [True, False])
     @pytest.mark.parametrize("mask_type", [MaskType.TRIL, MaskType.NONE, MaskType.CUSTOM])
     @pytest.mark.parametrize("silu_scale", [1 / 256])

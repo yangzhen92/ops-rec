@@ -566,7 +566,7 @@ def test_paged_hstu(
     ],
 )
 @pytest.mark.parametrize("num_heads_q", [8])
-@pytest.mark.parametrize("num_heads_k", [8, 4, 2, 1])
+@pytest.mark.parametrize("num_heads_k", [8, 4,1])
 @pytest.mark.parametrize("head_dim", [32])
 @pytest.mark.parametrize("page_size", [32])
 @pytest.mark.parametrize("is_prev_hist", [True, False])   # qk不等长

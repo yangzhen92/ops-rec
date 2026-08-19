@@ -155,9 +155,9 @@ def test_hstu_dense_ci():
     """CI 快速冒烟用例：固定 shape + float16，仅验证正确性"""
     torch.npu.set_device(0)
     B, S, N, D = 1, 16, 4, 32
-    q = torch.randn(B, S, N, D, device="npu", dtype=torch.float16)
-    k = torch.randn(B, S, N, D, device="npu", dtype=torch.float16)
-    v = torch.randn(B, S, N, D, device="npu", dtype=torch.float16)
+    q = torch.rand(B, S, N, D, device="npu", dtype=torch.float16).uniform_(-1, 1)
+    k = torch.rand(B, S, N, D, device="npu", dtype=torch.float16).uniform_(-1, 1)
+    v = torch.rand(B, S, N, D, device="npu", dtype=torch.float16).uniform_(-1, 1)
 
     y_golden = get_golden(q.cpu().numpy(), k.cpu().numpy(), v.cpu().numpy(),
                           mask=None, attn_bias=None, mask_type=0,

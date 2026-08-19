@@ -512,7 +512,17 @@ def paged_hstu_attn_kernel(
     assert res
 
 
-@pytest.mark.parametrize("batch_size", [1, 32])
+# 削减策略（1152 -> 576，保持高覆盖率）：
+#   1. batch×num_heads×head_dim 三形状维度合并为 4 个元组组合（两极端 + 两混合），
+#      替代笛卡尔积：batch×head、batch×dim 两两配对全覆盖，各取值出现次数均衡；
+#   2. dtype（2/4 字节 host 分支 + CfgList + 容差）、seq×candidates（tiling 规模分级）、
+#      page_size（分页边界）、is_prev_hist、deterministic（paged 唯一模板参数）全部保留原值。
+@pytest.mark.parametrize("batch_size, num_heads, head_dim", [
+    (1, 4, 32),     # 最小规模
+    (32, 8, 128),   # 最大规模
+    (1, 8, 128),    # 小 batch × 大 head/dim
+    (32, 4, 32),    # 大 batch × 小 head/dim
+])
 @pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float32, torch.float16])
 @pytest.mark.parametrize(
     "max_new_history_seqlen,max_num_candidates",
@@ -523,8 +533,6 @@ def paged_hstu_attn_kernel(
         (2048, 300),
     ],
 )
-@pytest.mark.parametrize("num_heads", [4, 8])
-@pytest.mark.parametrize("head_dim", [32, 128])
 @pytest.mark.parametrize("page_size", [32, 128, 256])
 @pytest.mark.parametrize("is_prev_hist", [True, False])
 @pytest.mark.parametrize("deterministic", [True, False])

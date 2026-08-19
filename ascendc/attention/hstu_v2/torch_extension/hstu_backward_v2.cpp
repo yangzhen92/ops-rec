@@ -12,6 +12,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
         limitations under the License.
 ============================================================================== */
+#define OPS_REC_CUST_VENDORS "hstu_v2"
 #include <cstdint>
 #include <string>
 #include <algorithm>

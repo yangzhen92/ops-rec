@@ -9,9 +9,9 @@ You may obtain a copy of the License at
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
+        See the License for the specific language governing permissions and
         limitations under the License.
-============================================================================== */
+==============================================================================*/
 #define OPS_REC_CUST_VENDORS "hstu_v2"
 #include <cstdint>
 #include <string>
@@ -20,7 +20,7 @@ See the License for the specific language governing permissions and
 #include <torch/library.h>
 
 #include "pytorch_npu_helper.hpp"
-#include "hstu_v2_param_check.h"
+#include "common_utils.h"
 #include "c10/core/ScalarType.h"
 #include "torch/types.h"
 
@@ -37,9 +37,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> hstu_backward_v2_impl
     const c10::optional<int64_t>& targetGroupSize, const c10::optional<double>& alpha, const int64_t windowSizeLeft,
     const int64_t windowSizeRight)
 {
-    hstu_v2::HstuV2ParamChecker(grad, q, k, v, seqOffsetQ, seqOffsetK, maxSeqLenQ, maxSeqLenK, rab, numContext,
-                                numTarget, targetGroupSize, windowSizeLeft, windowSizeRight);
-
+    // param check (reuse from hstu_v2 namespace)
     auto _empty = at::Tensor();
     auto acRab = rab.value_or(at::Tensor());
     auto acNumContext =
@@ -47,7 +45,6 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> hstu_backward_v2_impl
     auto acNumTarget =
         CheckOptionalTensorIsNotNone(numTarget) ? numTarget.value().to(seqOffsetQ.scalar_type()) : _empty;
 
-    // op input
     auto inGrad = grad.contiguous();
     auto inQ = q.contiguous();
     auto inK = k.contiguous();
@@ -57,28 +54,25 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> hstu_backward_v2_impl
     auto inNumTarget = acNumTarget.contiguous();
     auto inqShare = at::zeros_like(inQ, at::TensorOptions().dtype(at::kFloat));
 
-    // op attr
     auto attrTargetGroupSize = targetGroupSize.value_or(1);
     double attrScale = scale.value_or(1.0f / maxSeqLenQ);
     double attrAlpha = alpha.value_or(1.0);
     int64_t attrWinLeft = windowSizeLeft;
     int64_t attrWinRight = windowSizeRight;
 
-    // op output
     auto outQGrad = at::empty_like(inQ);
     auto outKGrad = at::empty_like(inK);
     auto outVGrad = at::empty_like(inV);
     auto outRabGrad = inRab.defined() ? at::zeros_like(inRab) : at::Tensor();
 
-    // op exec
     EXEC_NPU_CMD(aclnnHstuBackwardV2, inGrad, inQ, inK, inV, inRab, seqOffsetQ, seqOffsetK, inNumContext, inNumTarget,
                  inqShare, maxSeqLenQ, maxSeqLenK, attrScale, attrTargetGroupSize, attrAlpha, attrWinLeft, attrWinRight,
                  outQGrad, outKGrad, outVGrad, outRabGrad);
-    // op return
+
     return std::make_tuple(outQGrad, outKGrad, outVGrad, outRabGrad);
 }
 
-TORCH_LIBRARY_FRAGMENT(mxrec, m)
+TORCH_LIBRARY_FRAGMENT(ops_rec, m)
 {
     m.def("hstu_backward_v2(Tensor grad, "
           "                   Tensor q, "
@@ -98,7 +92,7 @@ TORCH_LIBRARY_FRAGMENT(mxrec, m)
           "                   int window_size_right=-1) -> (Tensor, Tensor, Tensor, Tensor)");
 }
 
-TORCH_LIBRARY_IMPL(mxrec, PrivateUse1, m)
+TORCH_LIBRARY_IMPL(ops_rec, PrivateUse1, m)
 {
     m.impl("hstu_backward_v2", TORCH_FN(hstu_backward_v2_impl_npu));
 }

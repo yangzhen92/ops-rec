@@ -1,9 +1,11 @@
 # ============================================================================
-# hstu_v1 子组转发层 CMakeLists
+
+# hstu_backward_v1 算子聚合 CMakeLists
 # ----------------------------------------------------------------------------
-# 作为 ascendc/attention/ 下的子组目录，转发到内部多个 vendor：
-#   - hstu_forward_v1/   （forward 多算子 vendor）
-# 根 CMake 按 OPS_REC_VENDORS 白名单匹配本目录名（hstu_v1）后 add_subdirectory。
+# 设置 vendor 名，使用 npu_op_package + INSTALL_PATH 将产物
+# 定向到 opp/<variant>/vendors/<op_name>/ 目录。
 # ============================================================================
 
+add_subdirectory(hstu_backward_v1)
 add_subdirectory(hstu_forward_v1)
+

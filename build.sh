@@ -171,6 +171,7 @@ init_common_cmake_args() {
     cmake_prefix=$(dirname "$(python3 -c "import torch; print(torch.__file__)")")
     abi=$(python3 -c "import torch; print(int(torch._C._GLIBCXX_USE_CXX11_ABI))")
     CMAKEOP_COMMON=(
+        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
         "-DCMAKE_CXX_FLAGS=-fstack-protector-strong"
         "-DCMAKE_EXE_LINKER_FLAGS=-Wl,-z,relro -Wl,-z,now -Wl,-s"
         "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,relro -Wl,-z,now -Wl,-s"

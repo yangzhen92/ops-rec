@@ -119,8 +119,8 @@ int main()
     uint64_t workspaceSize = 0;
     aclOpExecutor* executor = nullptr;
     ret = aclnnReverseSequenceCustGetWorkspaceSize(input, seqLengths, out, &workspaceSize, &executor);
-    CHECK_RET(ret == ACL_SUCCESS,
-              LOG_PRINT("aclnnReverseSequenceCustGetWorkspaceSize failed. ERROR: %d\n", ret); return ret);
+    CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("aclnnReverseSequenceCustGetWorkspaceSize failed. ERROR: %d\n", ret);
+              return ret);
 
     void* workspaceAddr = nullptr;
     if (workspaceSize != 0) {

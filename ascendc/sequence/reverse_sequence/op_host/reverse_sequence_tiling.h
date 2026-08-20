@@ -20,21 +20,21 @@ See the License for the specific language governing permissions and
 #include "tiling/tiling_api.h"
 
 namespace optiling {
-    BEGIN_TILING_DATA_DEF(ReverseSequenceTilling)
+BEGIN_TILING_DATA_DEF(ReverseSequenceTilling)
 
-    TILING_DATA_FIELD_DEF(int64_t, batchSize);
-    TILING_DATA_FIELD_DEF(int64_t, maxSeqLen);
-    TILING_DATA_FIELD_DEF(int64_t, dataDim);
-    TILING_DATA_FIELD_DEF(int64_t, left);
-    TILING_DATA_FIELD_DEF(int64_t, handleTotalCount);
-    // 单条data数据bytes数为： unAlignBytes + alignBytes
-    TILING_DATA_FIELD_DEF(uint32_t, alignBytes);  // 单条data数据对齐32bytes部分的字节
-    TILING_DATA_FIELD_DEF(uint32_t, unAlignBytes);  // 单条data数据非对齐32bytes部分的字节
-    TILING_DATA_FIELD_DEF(uint32_t, alignNumberCount);  // 单条data数据对齐32bytes部分有多少个数值
-    TILING_DATA_FIELD_DEF(uint32_t, overAlignNumberCount);  // 单条data数据对齐32bytes向上取整后的数值个数
+TILING_DATA_FIELD_DEF(int64_t, batchSize);
+TILING_DATA_FIELD_DEF(int64_t, maxSeqLen);
+TILING_DATA_FIELD_DEF(int64_t, dataDim);
+TILING_DATA_FIELD_DEF(int64_t, left);
+TILING_DATA_FIELD_DEF(int64_t, handleTotalCount);
+// 单条data数据bytes数为： unAlignBytes + alignBytes
+TILING_DATA_FIELD_DEF(uint32_t, alignBytes);            // 单条data数据对齐32bytes部分的字节
+TILING_DATA_FIELD_DEF(uint32_t, unAlignBytes);          // 单条data数据非对齐32bytes部分的字节
+TILING_DATA_FIELD_DEF(uint32_t, alignNumberCount);      // 单条data数据对齐32bytes部分有多少个数值
+TILING_DATA_FIELD_DEF(uint32_t, overAlignNumberCount);  // 单条data数据对齐32bytes向上取整后的数值个数
 
-    END_TILING_DATA_DEF;
+END_TILING_DATA_DEF;
 
-    REGISTER_TILING_DATA_CLASS(ReverseSequenceCust, ReverseSequenceTilling)
+REGISTER_TILING_DATA_CLASS(ReverseSequenceCust, ReverseSequenceTilling)
 }  // namespace optiling
 #endif

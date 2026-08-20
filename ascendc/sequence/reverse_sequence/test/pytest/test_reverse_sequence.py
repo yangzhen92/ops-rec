@@ -20,7 +20,6 @@ import sys
 
 import pytest
 import numpy as np
-import torch_npu
 import torch
 
 import ops_rec
@@ -132,8 +131,9 @@ def get_result(device, input_data, seq_lengths, types):
 
 
 def compare_results(golden_result, npu_result, tolerance):
-    assert golden_result.shape == npu_result.shape, \
+    assert golden_result.shape == npu_result.shape, (
         f"Shape mismatch: golden {golden_result.shape} vs npu {npu_result.shape}"
+    )
 
     if golden_result.numel() > 0:
         result_forward = torch.abs(golden_result - npu_result) < tolerance
@@ -194,16 +194,12 @@ def test_reverse_sequence(dims, types):
     # 比较前向结果（搬到 CPU 比较，避免比对算子在 NPU 同步点阻塞）
     compare_results(fused_op_ret.cpu(), pytorch_ret.cpu(), _PRECISION_ERROR_RANGE[types[0]])
 
-    if is_int64:
-        # torch.int64只支持前向
-        return
-    # 比较融合算子和pytorch实现的反向
-    assert torch.allclose(
-        npu_op_grad,
-        npu_torch_grad,
-        atol=_PRECISION_ERROR_RANGE[types[0]],
-        rtol=_PRECISION_ERROR_RANGE[types[0]]
-    ), f"golden and npu fused op result is not closed. CASE INFO - dims:{dims}, types:{types}"
+    if not is_int64:
+        # torch.int64 只支持前向，其余类型比较融合算子和 pytorch 实现的反向
+        # （npu_op_grad / npu_torch_grad 与定义保持在同一分支，满足 pylint E0606）
+        assert torch.allclose(
+            npu_op_grad, npu_torch_grad, atol=_PRECISION_ERROR_RANGE[types[0]], rtol=_PRECISION_ERROR_RANGE[types[0]]
+        ), f"golden and npu fused op result is not closed. CASE INFO - dims:{dims}, types:{types}"
 
 
 @pytest.mark.graph

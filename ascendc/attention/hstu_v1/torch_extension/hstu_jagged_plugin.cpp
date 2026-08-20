@@ -366,7 +366,7 @@ at::Tensor hstu_jagged_equal_meta(const at::Tensor& q, const at::Tensor& k, cons
                                   const bool deterministic)
 {
     TORCH_CHECK(q.dim() == 3, "The q should be 3D in jagged layout");
-    return at::empty_like(q, q.options());
+    return at::empty_like(q);
 }
 
 std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> hstu_jagged_backward_equal_meta(
@@ -399,7 +399,7 @@ at::Tensor hstu_jagged_delta_meta(const at::Tensor& q, const at::Tensor& k, cons
                                   const bool deterministic)
 {
     TORCH_CHECK(q.dim() == 3, "The q should be 3D in jagged layout");
-    return at::empty_like(q, q.options());
+    return at::empty_like(q);
 }
 
 std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> hstu_jagged_backward_delta_meta(

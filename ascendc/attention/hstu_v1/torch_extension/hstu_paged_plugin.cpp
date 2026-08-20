@@ -114,7 +114,7 @@ at::Tensor hstu_paged_meta(const at::Tensor& q, const at::Tensor& k, const at::T
                            const c10::optional<double>& alpha, const bool deterministic)
 {
     TORCH_CHECK(q.dim() == CONST_3, "The q should be 3D in jagged layout");
-    return at::empty_like(q, q.options());
+    return at::empty_like(q);
 }
 
 TORCH_LIBRARY_IMPL(ops_rec, Meta, m)

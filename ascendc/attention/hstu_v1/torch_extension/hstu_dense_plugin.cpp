@@ -252,7 +252,7 @@ at::Tensor hstu_dense_meta(const at::Tensor& q, const at::Tensor& k, const at::T
                            const int64_t maskType, const int64_t maxSeqLen, const double siluScale)
 {
     TORCH_CHECK(q.dim() == 4, "The q should be 4D in dense layout");
-    return at::empty_like(q, q.options());
+    return at::empty_like(q);
 }
 
 // std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> hstu_dense_backward_meta(

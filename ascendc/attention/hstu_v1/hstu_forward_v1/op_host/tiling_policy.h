@@ -13,7 +13,6 @@ See the License for the specific language governing permissions and
         limitations under the License.
 ==============================================================================*/
 
-
 #ifndef TILING_POLICY_H
 #define TILING_POLICY_H
 
@@ -22,7 +21,6 @@ See the License for the specific language governing permissions and
 namespace HstuForward {
 
 bool QKVShapeCheck(gert::TilingContext* context, int qkvDim);
-
 
 struct TilingKeyParam {
     bool enableBias;
@@ -36,10 +34,10 @@ struct TilingKeyParam {
 
 class ShapeRange {
 public:
-    int64_t lbound {0}; // shape下限
-    int64_t ubound {0}; // shape上限
-    int64_t multiple {0}; // 倍数
-    const char* name {nullptr};
+    int64_t lbound{0};    // shape下限
+    int64_t ubound{0};    // shape上限
+    int64_t multiple{0};  // 倍数
+    const char* name{nullptr};
     ShapeRange(int64_t lbound, int64_t ubound, int64_t multiple, const char* name);
     bool Check(int64_t val) const;
 };
@@ -53,12 +51,12 @@ public:
     virtual ge::graphStatus TilingProcess(gert::TilingContext* context);
 
     virtual bool GeneralShapeCheck(int64_t batchSize, int64_t seqLen, int64_t headNum, int64_t dim,
-        bool dimAlign = false);
+                                   bool dimAlign = false);
 
     virtual bool TilingWorkSpace(gert::TilingContext* context);
 
     virtual bool TilingKeySetImpl(gert::TilingContext* context, const TilingKeyParam& tilingKeyParam,
-        uint32_t typeTilingKey);
+                                  uint32_t typeTilingKey);
 
     virtual bool TilingCore(gert::TilingContext* context);
 };
@@ -66,6 +64,6 @@ public:
 // 架构相关额外 workspace 大小（各架构 tiling_policy_arch.cpp 实现，A5 平台含 FP8 workspace）
 int64_t GetArchWorkspaceExtraSize(size_t coreNum);
 
-}
+}  // namespace HstuForward
 
 #endif

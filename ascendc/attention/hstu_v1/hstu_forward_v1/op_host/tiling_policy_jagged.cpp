@@ -13,7 +13,6 @@ See the License for the specific language governing permissions and
         limitations under the License.
 ==============================================================================*/
 
-
 #include <cstdint>
 #include <vector>
 #include <cmath>
@@ -54,36 +53,35 @@ ge::graphStatus TilingPolicyJagged::TilingProcess(gert::TilingContext* context)
               return ge::GRAPH_FAILED);
 
     // step6: set workspace
-    OPS_CHECK(!TilingWorkSpace(context), OPS_LOG_E("", "Set workspace size is failed.\n"),
-    return ge::GRAPH_FAILED);
+    OPS_CHECK(!TilingWorkSpace(context), OPS_LOG_E("", "Set workspace size is failed.\n"), return ge::GRAPH_FAILED);
 
     return ge::GRAPH_SUCCESS;
 }
 
 bool TilingPolicyJagged::TilingAttribute(gert::TilingContext* context, optiling::HstuJaggedForwardTilingData& tiling)
 {
-    const gert::RuntimeAttrs *attrs = context->GetAttrs();
+    const gert::RuntimeAttrs* attrs = context->GetAttrs();
     OPS_CHECK_PTR_NULL(attrs, return false);
 
-    const uint32_t *maskType = attrs->GetAttrPointer<uint32_t>(JAGGED_ATTR_INDEX_T::MASKTYPE_INDEX);
+    const uint32_t* maskType = attrs->GetAttrPointer<uint32_t>(JAGGED_ATTR_INDEX_T::MASKTYPE_INDEX);
     OPS_CHECK_PTR_NULL(maskType, return false);
 
-    const uint32_t *maxSeqLen = attrs->GetAttrPointer<uint32_t>(JAGGED_ATTR_INDEX_T::MAX_SEQ_Q_INDEX);
+    const uint32_t* maxSeqLen = attrs->GetAttrPointer<uint32_t>(JAGGED_ATTR_INDEX_T::MAX_SEQ_Q_INDEX);
     OPS_CHECK_PTR_NULL(maxSeqLen, return false);
 
-    const uint32_t *maxSeqLenk = attrs->GetAttrPointer<uint32_t>(JAGGED_ATTR_INDEX_T::MAX_SEQ_K_INDEX);
+    const uint32_t* maxSeqLenk = attrs->GetAttrPointer<uint32_t>(JAGGED_ATTR_INDEX_T::MAX_SEQ_K_INDEX);
     OPS_CHECK_PTR_NULL(maxSeqLenk, return false);
 
-    const float *siluScale = attrs->GetAttrPointer<float>(JAGGED_ATTR_INDEX_T::SILU_SCALE_INDEX);
+    const float* siluScale = attrs->GetAttrPointer<float>(JAGGED_ATTR_INDEX_T::SILU_SCALE_INDEX);
     OPS_CHECK_PTR_NULL(siluScale, return false);
 
-    const uint32_t *targetGroupSize = attrs->GetAttrPointer<uint32_t>(JAGGED_ATTR_INDEX_T::TARGET_GROUP_SIZE_INDEX);
+    const uint32_t* targetGroupSize = attrs->GetAttrPointer<uint32_t>(JAGGED_ATTR_INDEX_T::TARGET_GROUP_SIZE_INDEX);
     OPS_CHECK_PTR_NULL(targetGroupSize, return false);
 
-    const float *alpha = attrs->GetAttrPointer<float>(JAGGED_ATTR_INDEX_T::ALPHA_INDEX);
+    const float* alpha = attrs->GetAttrPointer<float>(JAGGED_ATTR_INDEX_T::ALPHA_INDEX);
     OPS_CHECK_PTR_NULL(alpha, return false);
 
-    const bool *deterministic = attrs->GetAttrPointer<bool>(JAGGED_ATTR_INDEX_T::DETERMINISTIC_INDEX);
+    const bool* deterministic = attrs->GetAttrPointer<bool>(JAGGED_ATTR_INDEX_T::DETERMINISTIC_INDEX);
     OPS_CHECK_PTR_NULL(deterministic, return false);
 
     auto biasTensor = context->GetOptionalInputTensor(JAGGED_INPUT_INDEX_T::ATTN_BIAS_INDEX);
@@ -207,15 +205,13 @@ bool TilingPolicyJagged::TilingShape(gert::TilingContext* context, optiling::Hst
 bool TilingPolicyJagged::TilingKeySet(gert::TilingContext* context, optiling::HstuJaggedForwardTilingData& tiling)
 {
     uint32_t typeTilingKey = JAGGED_TILING_KEY & 0x3;
-    TilingKeyParam param {
-        .enableBias = tiling.get_enableBias(),
-        .deterministic = tiling.get_deterministic(),
-        .maskType = tiling.get_maskType(),
-        .dimQ = tiling.get_dim(),
-        .dimV = tiling.get_vDim(),
-        .maxSeqLenQ = tiling.get_maxSeqLenq(),
-        .maxSeqLenK = tiling.get_maxSeqLenk()
-    };
+    TilingKeyParam param{.enableBias = tiling.get_enableBias(),
+                         .deterministic = tiling.get_deterministic(),
+                         .maskType = tiling.get_maskType(),
+                         .dimQ = tiling.get_dim(),
+                         .dimV = tiling.get_vDim(),
+                         .maxSeqLenQ = tiling.get_maxSeqLenq(),
+                         .maxSeqLenK = tiling.get_maxSeqLenk()};
     return TilingKeySetImpl(context, param, typeTilingKey);
 }
 
@@ -226,4 +222,4 @@ bool TilingPolicyJagged::TilingSaveToBuffer(gert::TilingContext* context, optili
     context->GetRawTilingData()->SetDataSize(tiling.GetDataSize());
     return true;
 }
-}  // namespace HstuDenseForward
+}  // namespace HstuJaggedForward

@@ -18,9 +18,9 @@ See the License for the specific language governing permissions and
 
 #include "kernel_operator.h"
 
-template<typename T>
-__aicore__ inline void SiluComputeVF(__ubuf__ T* dst, __ubuf__ T* src,
-    float alpha, uint32_t count, const uint16_t repeatTimes)
+template <typename T>
+__aicore__ inline void SiluComputeVF(__ubuf__ T* dst, __ubuf__ T* src, float alpha, uint32_t count,
+                                     const uint16_t repeatTimes)
 {
     constexpr uint32_t oneRepElm = static_cast<uint32_t>(GetVecLen() / sizeof(T));
     MicroAPI::RegTensor<T> srcVreg;
@@ -30,18 +30,18 @@ __aicore__ inline void SiluComputeVF(__ubuf__ T* dst, __ubuf__ T* src,
     for (uint16_t i = 0; i < repeatTimes; ++i) {
         mask = MicroAPI::UpdateMask<T>(count);
         MicroAPI::DataCopy(srcVreg, src + i * oneRepElm);
-        MicroAPI::Muls(srcVreg, srcVreg, alpha, mask); // x = x * alpha
-        MicroAPI::Muls(tmpReg0, srcVreg, -1.0f, mask); // tmpReg0 = -x * alpha
-        MicroAPI::Exp(tmpReg0, tmpReg0, mask);  // tmpReg0 = e^(-x * alpha)
-        MicroAPI::Adds(tmpReg0, tmpReg0, 1.0f, mask); // tmpReg0 = 1 + e^(-x * alpha)
-        MicroAPI::Div(dstVreg, srcVreg, tmpReg0, mask); // tmpReg0 = x * alpha / (1 + e^(-x * alpha))
+        MicroAPI::Muls(srcVreg, srcVreg, alpha, mask);   // x = x * alpha
+        MicroAPI::Muls(tmpReg0, srcVreg, -1.0f, mask);   // tmpReg0 = -x * alpha
+        MicroAPI::Exp(tmpReg0, tmpReg0, mask);           // tmpReg0 = e^(-x * alpha)
+        MicroAPI::Adds(tmpReg0, tmpReg0, 1.0f, mask);    // tmpReg0 = 1 + e^(-x * alpha)
+        MicroAPI::Div(dstVreg, srcVreg, tmpReg0, mask);  // tmpReg0 = x * alpha / (1 + e^(-x * alpha))
         MicroAPI::DataCopy(dst + i * oneRepElm, dstVreg, mask);
     }
 }
 
-template<typename T>
+template <typename T>
 __aicore__ inline void SiluCompute(const LocalTensor<T>& dstLocal, const LocalTensor<T>& srcLocal, float alpha,
-    const uint32_t count)
+                                   const uint32_t count)
 {
     if ASCEND_IS_AIC {
         return;
@@ -51,8 +51,8 @@ __aicore__ inline void SiluCompute(const LocalTensor<T>& dstLocal, const LocalTe
     constexpr uint32_t oneRepElm = static_cast<uint32_t>(GetVecLen() / sizeof(T));
     uint16_t repeatTimes = static_cast<uint16_t>(CeilDivision(count, oneRepElm));
 
-    VF_CALL<SiluComputeVF<T>>(
-        (__ubuf__ T*)dstLocal.GetPhyAddr(), (__ubuf__ T*)srcLocal.GetPhyAddr(), alpha, count, repeatTimes);
+    VF_CALL<SiluComputeVF<T>>((__ubuf__ T*)dstLocal.GetPhyAddr(), (__ubuf__ T*)srcLocal.GetPhyAddr(), alpha, count,
+                              repeatTimes);
 }
 
 #endif

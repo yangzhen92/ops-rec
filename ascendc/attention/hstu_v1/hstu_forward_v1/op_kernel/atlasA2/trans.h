@@ -41,13 +41,13 @@ public:
         const uint32_t inputUbLen = vecOnceDataNum_ * sizeof(fromType);
         const uint32_t outputUbLen = vecOnceDataNum_ * sizeof(toType);
 
-        inputLt_ = { TPosition::VECIN, 0, vecOnceDataNum_ };
-        outputLt_ = { TPosition::VECOUT, inputUbLen, vecOnceDataNum_ };
+        inputLt_ = {TPosition::VECIN, 0, vecOnceDataNum_};
+        outputLt_ = {TPosition::VECOUT, inputUbLen, vecOnceDataNum_};
     }
 
     template <bool needAtomic = false>
-    __aicore__ inline void TransResult(GlobalTensor<fromType>& fromGt, GlobalTensor<toType>& toGt,
-        int64_t fromOffset, int64_t toOffset, int64_t total)
+    __aicore__ inline void TransResult(GlobalTensor<fromType>& fromGt, GlobalTensor<toType>& toGt, int64_t fromOffset,
+                                       int64_t toOffset, int64_t total)
     {
         int64_t remain = total;
 
@@ -118,4 +118,4 @@ private:
     TPipe* pipe_ = nullptr;
 };
 
-#endif // TRANS_H
+#endif  // TRANS_H

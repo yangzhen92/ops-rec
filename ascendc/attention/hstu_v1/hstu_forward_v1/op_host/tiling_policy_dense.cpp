@@ -13,7 +13,6 @@ See the License for the specific language governing permissions and
         limitations under the License.
 ==============================================================================*/
 
-
 #include <cstdint>
 
 #include "register/op_def_registry.h"
@@ -54,16 +53,16 @@ ge::graphStatus TilingPolicyDense::TilingProcess(gert::TilingContext* context)
 
 bool TilingPolicyDense::TilingAttribute(gert::TilingContext* context, optiling::HstuDenseForwardTilingData& tiling)
 {
-    const gert::RuntimeAttrs *attrs = context->GetAttrs();
+    const gert::RuntimeAttrs* attrs = context->GetAttrs();
     OPS_CHECK_PTR_NULL(attrs, return false);
 
-    const uint32_t *maskType = attrs->GetAttrPointer<uint32_t>(DENSE_ATTR_INDEX_T::MASKTYPE_INDEX);
+    const uint32_t* maskType = attrs->GetAttrPointer<uint32_t>(DENSE_ATTR_INDEX_T::MASKTYPE_INDEX);
     OPS_CHECK_PTR_NULL(maskType, return false);
 
-    const uint32_t *maxSeqLen = attrs->GetAttrPointer<uint32_t>(DENSE_ATTR_INDEX_T::MAX_SEQ_INDEX);
+    const uint32_t* maxSeqLen = attrs->GetAttrPointer<uint32_t>(DENSE_ATTR_INDEX_T::MAX_SEQ_INDEX);
     OPS_CHECK_PTR_NULL(maxSeqLen, return false);
 
-    const float *siluScale = attrs->GetAttrPointer<float>(DENSE_ATTR_INDEX_T::SILU_SCALE_INDEX);
+    const float* siluScale = attrs->GetAttrPointer<float>(DENSE_ATTR_INDEX_T::SILU_SCALE_INDEX);
     OPS_CHECK_PTR_NULL(siluScale, return false);
 
     auto biasTensor = context->GetOptionalInputTensor(DENSE_INPUT_INDEX_T::ATTN_BIAS_INDEX);
@@ -86,7 +85,7 @@ bool TilingPolicyDense::TilingShape(gert::TilingContext* context, optiling::Hstu
     OPS_CHECK(qShape.GetDimNum() != NORMAL_DIM_NUM,
               OPS_LOG_E("", "Normal QKV should have 4 dimensions, but get %d", qShape.GetDimNum()), return false);
     OPS_CHECK(!(qShape == kShape && kShape == vShape), OPS_LOG_E("", "Q, K, V shape mismatch"), return false);
-    
+
     // Q: [b, s, n, d]
     int64_t batchSize = qShape.GetDim(0);
     tiling.set_batchSize(batchSize);
@@ -101,8 +100,8 @@ bool TilingPolicyDense::TilingShape(gert::TilingContext* context, optiling::Hstu
     tiling.set_dim(dim);
     tiling.set_vDim(dim);
 
-    OPS_CHECK(!DenseGeneralShapeCheck(batchSize, seqLen, headNum, dim),
-        OPS_LOG_E("", "QK Shape Check failed"), return false);
+    OPS_CHECK(!DenseGeneralShapeCheck(batchSize, seqLen, headNum, dim), OPS_LOG_E("", "QK Shape Check failed"),
+              return false);
     return true;
 }
 
@@ -140,15 +139,13 @@ bool TilingPolicyDense::TilingHeighLevelApi(gert::TilingContext* context, optili
 bool TilingPolicyDense::TilingKeySet(gert::TilingContext* context, optiling::HstuDenseForwardTilingData& tiling)
 {
     uint32_t typeTilingKey = NORMAL_TILING_KEY & 0x3;
-    TilingKeyParam param {
-        .enableBias = tiling.get_enableBias(),
-        .deterministic = false,
-        .maskType = tiling.get_maskType(),
-        .dimQ = tiling.get_dim(),
-        .dimV = tiling.get_dim(),
-        .maxSeqLenQ = tiling.get_maxSeqLen(),
-        .maxSeqLenK = tiling.get_maxSeqLen()
-    };
+    TilingKeyParam param{.enableBias = tiling.get_enableBias(),
+                         .deterministic = false,
+                         .maskType = tiling.get_maskType(),
+                         .dimQ = tiling.get_dim(),
+                         .dimV = tiling.get_dim(),
+                         .maxSeqLenQ = tiling.get_maxSeqLen(),
+                         .maxSeqLenK = tiling.get_maxSeqLen()};
     return TilingKeySetImpl(context, param, typeTilingKey);
 }
 

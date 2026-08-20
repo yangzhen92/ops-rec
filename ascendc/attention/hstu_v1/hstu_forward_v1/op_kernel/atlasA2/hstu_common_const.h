@@ -13,7 +13,6 @@ See the License for the specific language governing permissions and
         limitations under the License.
 ==============================================================================*/
 
-
 #ifndef MXREC_HSTU_COMMON_CONST_H
 #define MXREC_HSTU_COMMON_CONST_H
 
@@ -28,7 +27,7 @@ enum class CausalMaskT {
     MASK_TRIL = 0,  // 下三角
     MASK_TRIU,      // 上三角
     MASK_NONE,      // 不使能mask
-    MASK_CUSTOM,   // 用户自定义mask
+    MASK_CUSTOM,    // 用户自定义mask
 };
 
 constexpr uint32_t MAX_BATCH_SIZE = 2048;
@@ -184,4 +183,3 @@ struct JaggedTaskArgs {
 }  // namespace HstuForward
 
 #endif  // MXREC_HSTU_COMMON_CONST_H
-

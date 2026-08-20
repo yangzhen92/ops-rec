@@ -13,7 +13,6 @@ See the License for the specific language governing permissions and
         limitations under the License.
 ==============================================================================*/
 
-
 #include "hstu_dense_forward_kernel.h"
 
 template <typename T>
@@ -24,7 +23,7 @@ __aicore__ inline void InvokeHstuOpImpl(const HstuDenseForward::DenseArgs& args)
     GET_TILING_DATA(tilingData, args.tiling);
     const HstuDenseForwardTilingData* __restrict tilingDataPtr = &tilingData;
     REGIST_MATMUL_OBJ(&tPipe, GetSysWorkSpacePtr(), op.qkMatmul, (TCubeTiling*)nullptr, op.svMatmul,
-        (TCubeTiling*)nullptr);
+                      (TCubeTiling*)nullptr);
     uint64_t tilingPtr = reinterpret_cast<uint64_t>(args.tiling);
     op.qkMatmul.SetUserDefInfo(tilingPtr);
     op.svMatmul.SetUserDefInfo(tilingPtr);
@@ -35,22 +34,16 @@ __aicore__ inline void InvokeHstuOpImpl(const HstuDenseForward::DenseArgs& args)
 #include "kernel_operator.h"
 #include "hstu_kernel_tiling_key.h"
 
-template<int maskedType, bool enableBias, int typeTilingKey, bool deterministic,
-         int blockM, int blockN, int blockK>
-__global__ __aicore__ void hstu_dense_forward(GM_ADDR q,
-                                              GM_ADDR k,
-                                              GM_ADDR v,
-                                              GM_ADDR mask,
-                                              GM_ADDR attnBias,
-                                              GM_ADDR attnOutput,
-                                              GM_ADDR workspace,
-                                              GM_ADDR tiling)
+template <int maskedType, bool enableBias, int typeTilingKey, bool deterministic, int blockM, int blockN, int blockK>
+__global__ __aicore__ void hstu_dense_forward(GM_ADDR q, GM_ADDR k, GM_ADDR v, GM_ADDR mask, GM_ADDR attnBias,
+                                              GM_ADDR attnOutput, GM_ADDR workspace, GM_ADDR tiling)
 {
     GET_TILING_DATA(tiling_data, tiling);
     HstuDenseForward::DenseArgs args{q, k, v, mask, attnBias, attnOutput, workspace, tiling};
 
-    using FastConfig = HstuForward::TraitParams<DTYPE_Q, DTYPE_Q, enableBias,
-        deterministic, static_cast<HstuForward::CausalMaskT>(maskedType), blockM, blockN, blockK>;
+    using FastConfig =
+        HstuForward::TraitParams<DTYPE_Q, DTYPE_Q, enableBias, deterministic,
+                                 static_cast<HstuForward::CausalMaskT>(maskedType), blockM, blockN, blockK>;
 
     InvokeHstuOpImpl<HstuDenseForward::HstuDenseForwardKernel<FastConfig, HstuDenseForwardTilingData>>(args);
 }

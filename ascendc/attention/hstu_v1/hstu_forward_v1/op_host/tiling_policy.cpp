@@ -42,10 +42,10 @@ bool ShapeRange::Check(int64_t val) const
 
 ge::graphStatus TilingPolicy::InferShape(gert::InferShapeContext* context)
 {
-    const gert::Shape *queryShape = context->GetInputShape(INDEX_T::INDEX_0);
+    const gert::Shape* queryShape = context->GetInputShape(INDEX_T::INDEX_0);
     OPS_CHECK_PTR_NULL(queryShape, return ge::GRAPH_FAILED);
 
-    gert::Shape *attenOutputShape = context->GetOutputShape(INDEX_T::INDEX_0);
+    gert::Shape* attenOutputShape = context->GetOutputShape(INDEX_T::INDEX_0);
     OPS_CHECK_PTR_NULL(attenOutputShape, return ge::GRAPH_FAILED);
     *attenOutputShape = *queryShape;
 
@@ -67,10 +67,10 @@ ge::graphStatus TilingPolicy::TilingProcess(gert::TilingContext* context)
 
 bool TilingPolicy::GeneralShapeCheck(int64_t batchSize, int64_t seqLen, int64_t headNum, int64_t dim, bool dimAlign)
 {
-    auto dimStep = dimAlign ? 16 : 1; // 16 means align to C0_size 1 means not align
+    auto dimStep = dimAlign ? 16 : 1;  // 16 means align to C0_size 1 means not align
     const ShapeRange SEQ_RANGE(1, 20480, 1, "seq size");
     const ShapeRange BATCH_RANGE(1, MAX_BATCH_SIZE, 1, "batch size");
-    const ShapeRange DIM_RANGE(dimStep, 512, dimStep, "dim size"); // 非对齐情况下dim范围[1,512]
+    const ShapeRange DIM_RANGE(dimStep, 512, dimStep, "dim size");  // 非对齐情况下dim范围[1,512]
     const ShapeRange HEAD_RANGE(1, 16, 1, "head num");
 
     if (!SEQ_RANGE.Check(seqLen)) {
@@ -95,7 +95,7 @@ bool TilingPolicy::GeneralShapeCheck(int64_t batchSize, int64_t seqLen, int64_t 
 bool TilingPolicy::TilingWorkSpace(gert::TilingContext* context)
 {
     auto ascendPlatform = platform_ascendc::PlatformAscendC(context->GetPlatformInfo());
-    size_t *currentWorkspace = context->GetWorkspaceSizes(1);
+    size_t* currentWorkspace = context->GetWorkspaceSizes(1);
     OPS_LOG_E_IF_NULL("currentWorkspace", currentWorkspace, return false);
 
     size_t systemWorkspacesSize = ascendPlatform.GetLibApiWorkSpaceSize();
@@ -126,4 +126,4 @@ bool TilingPolicy::TilingCore(gert::TilingContext* context)
     return true;
 }
 
-}
+}  // namespace HstuForward

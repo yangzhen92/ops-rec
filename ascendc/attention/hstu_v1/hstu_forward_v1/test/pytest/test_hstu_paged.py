@@ -29,15 +29,10 @@ from common import allclose, MaskType, get_tolerance, torch_compiled
 def pad_input(unpadded_input, cu_seqlen, batch, seqlen):
     indices = []
     for i in range(batch):
-        indices.append(
-            torch.arange(seqlen * i, seqlen * i + cu_seqlen[i + 1] - cu_seqlen[i])
-        )
+        indices.append(torch.arange(seqlen * i, seqlen * i + cu_seqlen[i + 1] - cu_seqlen[i]))
     indices = torch.cat(indices)
     output = torch.zeros(
-        (batch * seqlen),
-        *unpadded_input.shape[1:],
-        device=unpadded_input.device,
-        dtype=unpadded_input.dtype
+        (batch * seqlen), *unpadded_input.shape[1:], device=unpadded_input.device, dtype=unpadded_input.dtype
     )
     output[indices] = unpadded_input
     return rearrange(output, "(b s) ... -> b s ...", b=batch)
@@ -48,17 +43,10 @@ def pad_input_delta_q(unpadded_input, cu_seqlen_q, cu_seqlen_k, batch, seqlen):
     for i in range(batch):
         act_seqlen_q = (cu_seqlen_q[i + 1] - cu_seqlen_q[i]).item()
         act_seqlen_k = (cu_seqlen_k[i + 1] - cu_seqlen_k[i]).item()
-        indices.append(
-            torch.arange(
-                seqlen * i + act_seqlen_k - act_seqlen_q, seqlen * i + act_seqlen_k
-            )
-        )
+        indices.append(torch.arange(seqlen * i + act_seqlen_k - act_seqlen_q, seqlen * i + act_seqlen_k))
     indices = torch.cat(indices)
     output = torch.zeros(
-        (batch * seqlen),
-        *unpadded_input.shape[1:],
-        device=unpadded_input.device,
-        dtype=unpadded_input.dtype
+        (batch * seqlen), *unpadded_input.shape[1:], device=unpadded_input.device, dtype=unpadded_input.dtype
     )
     output[indices] = unpadded_input
     return rearrange(output, "(b s) ... -> b s ...", b=batch)
@@ -78,12 +66,22 @@ def unpad_input_delta_q(padded_input, cu_seqlen_q, cu_seqlen_k, batch, seqlen):
     for i in range(batch):
         act_seqlen_q = (cu_seqlen_q[i + 1] - cu_seqlen_q[i]).item()
         act_seqlen_k = (cu_seqlen_k[i + 1] - cu_seqlen_k[i]).item()
-        output.append(padded_input[i, act_seqlen_k - act_seqlen_q: act_seqlen_k, :])
+        output.append(padded_input[i, act_seqlen_k - act_seqlen_q : act_seqlen_k, :])
     return torch.cat(output, dim=0)
 
 
-def generate_attn_mask(batch_size, num_heads, max_seq_len, max_seq_len_k, dtype,
-                       seqlen, kv_raw_metadata, kvcache_page_size, num_candidates, mask_type):
+def generate_attn_mask(
+    batch_size,
+    num_heads,
+    max_seq_len,
+    max_seq_len_k,
+    dtype,
+    seqlen,
+    kv_raw_metadata,
+    kvcache_page_size,
+    num_candidates,
+    mask_type,
+):
     if mask_type == MaskType.NONE:
         return None
     mask = torch.zeros(
@@ -93,8 +91,9 @@ def generate_attn_mask(batch_size, num_heads, max_seq_len, max_seq_len_k, dtype,
     )
     for seq_idx in range(batch_size):
         qlen = seqlen[seq_idx].item()
-        cachelen = ((kv_raw_metadata[1][seq_idx + 1] - kv_raw_metadata[1][seq_idx] - 1) * kvcache_page_size +
-                    kv_raw_metadata[2][seq_idx]) # (pageNum - 1) * pageSize + lastPageLen
+        cachelen = (
+            kv_raw_metadata[1][seq_idx + 1] - kv_raw_metadata[1][seq_idx] - 1
+        ) * kvcache_page_size + kv_raw_metadata[2][seq_idx]  # (pageNum - 1) * pageSize + lastPageLen
         num_cand = num_candidates[seq_idx].item()
         if mask_type == MaskType.TRIL:
             seq_mask = torch.cat(
@@ -150,8 +149,9 @@ def _hstu_attention_maybe_from_cache(
     padded_v = padded_v.view(B, seqlen_k, num_heads_k, linear_dim)
 
     if num_heads_q != num_heads_k:
-        assert num_heads_q % num_heads_k == 0, (f"head_num_q ({num_heads_q}) must be divisible by "
-                                                f"head_num_k({num_heads_k}) ")
+        assert num_heads_q % num_heads_k == 0, (
+            f"head_num_q ({num_heads_q}) must be divisible by head_num_k({num_heads_k}) "
+        )
     h_qk_ratio = num_heads_q // num_heads_k
     padded_k = padded_k.repeat_interleave(h_qk_ratio, dim=2)
     padded_v = padded_v.repeat_interleave(h_qk_ratio, dim=2)
@@ -191,9 +191,7 @@ def _hstu_attention_maybe_from_cache(
         ext_invalid_attn_mask = torch.zeros_like(masked_qk_attn)
         d0, d1, d2, d3 = invalid_attn_mask.shape
         d1 = masked_qk_attn.shape[1]
-        ext_invalid_attn_mask[:d0, :d1, :d2, :d3].copy_(
-            invalid_attn_mask.type(masked_qk_attn.dtype)[:, :, :, :]
-        )
+        ext_invalid_attn_mask[:d0, :d1, :d2, :d3].copy_(invalid_attn_mask.type(masked_qk_attn.dtype)[:, :, :, :])
         masked_qk_attn = masked_qk_attn * ext_invalid_attn_mask[:, :, :, :]
 
     attn_output = torch.einsum(
@@ -204,9 +202,7 @@ def _hstu_attention_maybe_from_cache(
 
     attn_output = attn_output.reshape(B, seqlen_q, num_heads_q * linear_dim)
     if is_delta_q:
-        attn_output = unpad_input_delta_q(
-            attn_output, q_offsets, k_offsets, B, seqlen_k
-        )
+        attn_output = unpad_input_delta_q(attn_output, q_offsets, k_offsets, B, seqlen_k)
     else:
         attn_output = unpad_input(attn_output, q_offsets)
     attn_output = attn_output.reshape(-1, num_heads_q * linear_dim)
@@ -242,36 +238,24 @@ def _hstu_paged_kv_attention(
         page_num = page_offsets[i + 1] - page_offsets[i]
         new_history_len = q_offsets[i + 1] - q_offsets[i] - num_targets[i]
         for j in range(page_num - 1):
-            k_con = torch.cat(
-                (k_con, kv_cache[page_ids[page_offsets[i] + j], 0, :, :, :]), dim=0
-            )
-            v_con = torch.cat(
-                (v_con, kv_cache[page_ids[page_offsets[i] + j], 1, :, :, :]), dim=0
-            )
+            k_con = torch.cat((k_con, kv_cache[page_ids[page_offsets[i] + j], 0, :, :, :]), dim=0)
+            v_con = torch.cat((v_con, kv_cache[page_ids[page_offsets[i] + j], 1, :, :, :]), dim=0)
         k_con = torch.cat(
             (
                 k_con,
-                kv_cache[
-                    page_ids[page_offsets[i + 1] - 1], 0, : last_page_len, :, :
-                ],
+                kv_cache[page_ids[page_offsets[i + 1] - 1], 0, :last_page_len, :, :],
             ),
             dim=0,
         )
-        k_con = torch.cat(
-            (k_con, k[(q_offsets[i] + new_history_len): q_offsets[i + 1], :, :]), dim=0
-        )
+        k_con = torch.cat((k_con, k[(q_offsets[i] + new_history_len) : q_offsets[i + 1], :, :]), dim=0)
         v_con = torch.cat(
             (
                 v_con,
-                kv_cache[
-                    page_ids[page_offsets[i + 1] - 1], 1, : last_page_len, :, :
-                ],
+                kv_cache[page_ids[page_offsets[i + 1] - 1], 1, :last_page_len, :, :],
             ),
             dim=0,
         )
-        v_con = torch.cat(
-            (v_con, v[(q_offsets[i] + new_history_len): q_offsets[i + 1], :, :]), dim=0
-        )
+        v_con = torch.cat((v_con, v[(q_offsets[i] + new_history_len) : q_offsets[i + 1], :, :]), dim=0)
 
     return _hstu_attention_maybe_from_cache(
         num_heads_q=num_heads_q,
@@ -294,9 +278,7 @@ def _hstu_paged_kv_attention(
 
 
 def get_offsets_from_lengths(lengths):
-    offsets = torch.zeros(
-        (lengths.shape[0] + 1,), dtype=lengths.dtype, device=lengths.device
-    )
+    offsets = torch.zeros((lengths.shape[0] + 1,), dtype=lengths.dtype, device=lengths.device)
     torch.cumsum(lengths, 0, out=offsets[1:])
     return offsets
 
@@ -305,12 +287,8 @@ def generate_kvdata_testcase(
     max_seq_len: int, batch_size: int, num_heads_q: int, num_heads_k: int, head_dim: int, is_prev_hist: bool = False
 ):
     min_seq_len = min(1, max_seq_len // 2)
-    new_hist_lens = torch.randint(
-        min_seq_len, max_seq_len + 1, (batch_size,), dtype=torch.int32
-    )
-    prev_lengths = torch.randint(
-        1, max_seq_len + 1, (batch_size,), dtype=torch.int32
-    ) * int(is_prev_hist)
+    new_hist_lens = torch.randint(min_seq_len, max_seq_len + 1, (batch_size,), dtype=torch.int32)
+    prev_lengths = torch.randint(1, max_seq_len + 1, (batch_size,), dtype=torch.int32) * int(is_prev_hist)
 
     lengths = new_hist_lens + prev_lengths
     num_tokens = torch.sum(lengths).item()
@@ -335,9 +313,9 @@ def setup_kvcache_testcase(
 
     new_history_kv_length_offsets = get_offsets_from_lengths(new_history_kv_lengths)
 
-    kv_page_indices = list()
-    kv_page_indptr = list([0])
-    kv_last_page_len = list()
+    kv_page_indices = []
+    kv_page_indptr = [0]
+    kv_last_page_len = []
     total_page_size = new_history_kv_lengths.sum() // page_size + batch_size
     if kvcache_table is None:
         kvcache_table = torch.zeros(
@@ -351,12 +329,10 @@ def setup_kvcache_testcase(
         new_history_length = new_history_kv_lengths[seq_idx].item()
 
         user_kv_data = new_history_kv_data[
-                       :,
-                       new_history_kv_length_offsets[seq_idx]: new_history_kv_length_offsets[
-                           seq_idx + 1
-                           ],
-                       ...,
-                       ]
+            :,
+            new_history_kv_length_offsets[seq_idx] : new_history_kv_length_offsets[seq_idx + 1],
+            ...,
+        ]
 
         # Allocation
         num_pages = (new_history_length + page_size - 1) // page_size
@@ -369,9 +345,7 @@ def setup_kvcache_testcase(
             page_id = page_ids[page_idx]
             token_begin = page_idx * page_size
             token_end = (page_idx + 1) * page_size
-            kvcache_table[page_id, ...].copy_(
-                user_kv_data[:, token_begin:token_end, ...], non_blocking=True
-            )
+            kvcache_table[page_id, ...].copy_(user_kv_data[:, token_begin:token_end, ...], non_blocking=True)
         if last_page_size > 0:
             page_idx = (new_history_length - last_page_size) // page_size
             page_id = page_ids[page_idx]
@@ -392,21 +366,20 @@ def setup_kvcache_testcase(
 
 
 def paged_hstu_attn_kernel(
-        batch_size,
-        dtype,
-        max_new_history_seqlen,
-        max_num_candidates,
-        num_heads_q,
-        num_heads_k,
-        head_dim,
-        page_size,
-        is_prev_hist,
-        mask_type,
-        deterministic=False
+    batch_size,
+    dtype,
+    max_new_history_seqlen,
+    max_num_candidates,
+    num_heads_q,
+    num_heads_k,
+    head_dim,
+    page_size,
+    is_prev_hist,
+    mask_type,
+    deterministic=False,
 ):
     device = torch.npu.current_device()
 
-    max_seq_len = max_new_history_seqlen + max_num_candidates
     max_kvcache_history_seqlen = max_new_history_seqlen
 
     # (values, new_hist_lens, lengths)
@@ -420,9 +393,7 @@ def paged_hstu_attn_kernel(
     )
 
     if max_num_candidates > 0:
-        num_candidates = torch.randint(
-            1, max_num_candidates + 1, (batch_size,), dtype=torch.int32
-        )
+        num_candidates = torch.randint(1, max_num_candidates + 1, (batch_size,), dtype=torch.int32)
     else:
         num_candidates = torch.zeros((batch_size,), dtype=torch.int32)
     num_candidates_offsets = get_offsets_from_lengths(num_candidates)
@@ -431,26 +402,28 @@ def paged_hstu_attn_kernel(
     seqlen_offsets = get_offsets_from_lengths(seqlen)
     num_tokens = seqlen_offsets[-1].item()
 
-    query = torch.randn(
-        (num_tokens, num_heads_q, head_dim), dtype=dtype, device=device
-    ).uniform_(-1, 1)
-    key = torch.randn(
-        (num_tokens, num_heads_k, head_dim), dtype=dtype, device=device
-    ).uniform_(-1, 1)
-    value = torch.randn(
-        (num_tokens, num_heads_k, head_dim), dtype=dtype, device=device
-    ).uniform_(-1, 1)
+    query = torch.randn((num_tokens, num_heads_q, head_dim), dtype=dtype, device=device).uniform_(-1, 1)
+    key = torch.randn((num_tokens, num_heads_k, head_dim), dtype=dtype, device=device).uniform_(-1, 1)
+    value = torch.randn((num_tokens, num_heads_k, head_dim), dtype=dtype, device=device).uniform_(-1, 1)
 
-    max_kvdata_len = kvdata_seqlen.max().item()
-    max_target_len = num_candidates.max().item()
     torch.npu.synchronize()
     seqlen_k = num_candidates.npu() + kvdata_seqlen.npu()
     seqlen_offsets_k = get_offsets_from_lengths(seqlen_k)
     max_seq_len_q = seqlen.max()
     max_seq_len_k = seqlen_k.max()
     # generate attn mask
-    mask = generate_attn_mask(batch_size, num_heads_q, max_seq_len_q, max_seq_len_k, dtype,
-                              seqlen, kv_raw_metadata, page_size, num_candidates, mask_type)
+    mask = generate_attn_mask(
+        batch_size,
+        num_heads_q,
+        max_seq_len_q,
+        max_seq_len_k,
+        dtype,
+        seqlen,
+        kv_raw_metadata,
+        page_size,
+        num_candidates,
+        mask_type,
+    )
     if mask is not None:
         mask = mask.npu()
     attn_out_golden = _hstu_paged_kv_attention(
@@ -469,37 +442,35 @@ def paged_hstu_attn_kernel(
         invalid_attn_mask=mask,
         upcast=False,
         kv_cache=kvcache_table,
-        page_offsets=torch.tensor(
-            kv_raw_metadata[1], dtype=torch.int32, device=device
-        ),
+        page_offsets=torch.tensor(kv_raw_metadata[1], dtype=torch.int32, device=device),
         page_ids=torch.tensor(kv_raw_metadata[0], dtype=torch.int32, device=device),
-        last_page_lens=torch.tensor(
-            kv_raw_metadata[2], dtype=torch.int32, device=device
-        ),
-        alpha=1.0 / (head_dim ** 0.5),
+        last_page_lens=torch.tensor(kv_raw_metadata[2], dtype=torch.int32, device=device),
+        alpha=1.0 / (head_dim**0.5),
     )
     torch.npu.synchronize()
     attn_out_golden = attn_out_golden.view(-1, num_heads_q, head_dim)
-    attn_out_custom = ops_rec.ascendc.attention.hstu_paged(query,
-                                                 key,
-                                                 value,
-                                                 kvcache_table.npu(),
-                                                 mask=mask,
-                                                 attn_bias=None,
-                                                 mask_type=mask_type,
-                                                 max_seq_len=max_seq_len_q,
-                                                 max_seq_len_k=max_seq_len_k,
-                                                 silu_scale=1.0 / max_seq_len_q,
-                                                 alpha=1.0 / (head_dim ** 0.5),
-                                                 target_group_size=1,
-                                                 seq_offset=seqlen_offsets.npu().to(torch.int32),
-                                                 seq_offset_k=seqlen_offsets_k.npu().to(torch.int32),
-                                                 seq_offset_t=num_candidates_offsets.npu().to(torch.int32),
-                                                 page_offsets=torch.tensor(kv_raw_metadata[1]).npu().to(torch.int32),
-                                                 page_ids=torch.tensor(kv_raw_metadata[0]).npu().to(torch.int32),
-                                                 last_page_len=torch.tensor(kv_raw_metadata[2]).npu().to(torch.int32),
-                                                 num_target=num_candidates.npu().to(torch.int32),
-                                                 deterministic=deterministic)
+    attn_out_custom = ops_rec.ascendc.attention.hstu_paged(
+        query,
+        key,
+        value,
+        kvcache_table.npu(),
+        mask=mask,
+        attn_bias=None,
+        mask_type=mask_type,
+        max_seq_len=max_seq_len_q,
+        max_seq_len_k=max_seq_len_k,
+        silu_scale=1.0 / max_seq_len_q,
+        alpha=1.0 / (head_dim**0.5),
+        target_group_size=1,
+        seq_offset=seqlen_offsets.npu().to(torch.int32),
+        seq_offset_k=seqlen_offsets_k.npu().to(torch.int32),
+        seq_offset_t=num_candidates_offsets.npu().to(torch.int32),
+        page_offsets=torch.tensor(kv_raw_metadata[1]).npu().to(torch.int32),
+        page_ids=torch.tensor(kv_raw_metadata[0]).npu().to(torch.int32),
+        last_page_len=torch.tensor(kv_raw_metadata[2]).npu().to(torch.int32),
+        num_target=num_candidates.npu().to(torch.int32),
+        deterministic=deterministic,
+    )
     torch.npu.synchronize()
     output = attn_out_custom.cpu()
     golden = attn_out_golden.cpu()
@@ -512,12 +483,15 @@ def paged_hstu_attn_kernel(
     assert res
 
 
-@pytest.mark.parametrize("batch_size, num_heads, head_dim", [
-    (1, 4, 32),     # 最小规模
-    (32, 8, 128),   # 最大规模
-    (1, 8, 128),    # 小 batch × 大 head/dim
-    (32, 4, 32),    # 大 batch × 小 head/dim
-])
+@pytest.mark.parametrize(
+    "batch_size, num_heads, head_dim",
+    [
+        (1, 4, 32),  # 最小规模
+        (32, 8, 128),  # 最大规模
+        (1, 8, 128),  # 小 batch × 大 head/dim
+        (32, 4, 32),  # 大 batch × 小 head/dim
+    ],
+)
 @pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float32, torch.float16])
 @pytest.mark.parametrize(
     "max_new_history_seqlen,max_num_candidates",
@@ -532,15 +506,15 @@ def paged_hstu_attn_kernel(
 @pytest.mark.parametrize("is_prev_hist", [True, False])
 @pytest.mark.parametrize("deterministic", [True, False])
 def test_paged_hstu(
-        batch_size,
-        dtype,
-        max_new_history_seqlen,
-        max_num_candidates,
-        num_heads,
-        head_dim,
-        page_size,
-        is_prev_hist,
-        deterministic
+    batch_size,
+    dtype,
+    max_new_history_seqlen,
+    max_num_candidates,
+    num_heads,
+    head_dim,
+    page_size,
+    is_prev_hist,
+    deterministic,
 ):
     paged_hstu_attn_kernel(
         batch_size,
@@ -553,7 +527,7 @@ def test_paged_hstu(
         page_size,
         is_prev_hist,
         MaskType.CUSTOM,
-        deterministic
+        deterministic,
     )
 
 
@@ -569,24 +543,24 @@ def test_paged_hstu(
     ],
 )
 @pytest.mark.parametrize("num_heads_q", [8])
-@pytest.mark.parametrize("num_heads_k", [8, 4,1])
+@pytest.mark.parametrize("num_heads_k", [8, 4, 1])
 @pytest.mark.parametrize("head_dim", [32])
 @pytest.mark.parametrize("page_size", [32])
-@pytest.mark.parametrize("is_prev_hist", [True, False])   # qk不等长
+@pytest.mark.parametrize("is_prev_hist", [True, False])  # qk不等长
 @pytest.mark.parametrize("mask_type", [MaskType.TRIL, MaskType.NONE, MaskType.CUSTOM])
 @pytest.mark.parametrize("deterministic", [True, False])
 def test_paged_hstu_gqa(
-        batch_size,
-        dtype,
-        max_new_history_seqlen,
-        max_num_candidates,
-        num_heads_q,
-        num_heads_k,
-        head_dim,
-        page_size,
-        is_prev_hist,
-        mask_type,
-        deterministic
+    batch_size,
+    dtype,
+    max_new_history_seqlen,
+    max_num_candidates,
+    num_heads_q,
+    num_heads_k,
+    head_dim,
+    page_size,
+    is_prev_hist,
+    mask_type,
+    deterministic,
 ):
     paged_hstu_attn_kernel(
         batch_size,
@@ -599,7 +573,7 @@ def test_paged_hstu_gqa(
         page_size,
         is_prev_hist,
         mask_type,
-        deterministic
+        deterministic,
     )
 
 
@@ -632,8 +606,9 @@ def test_hstu_paged_graph(dtype):
 
     seq_offset = torch.tensor([0] + [sum(seq_lens[: i + 1]) for i in range(batch)], device="npu", dtype=torch.int32)
     seq_offset_k = seq_offset.clone()
-    seq_offset_t = torch.tensor([0] + [sum(num_targets[: i + 1]) for i in range(batch)], device="npu",
-                                dtype=torch.int32)
+    seq_offset_t = torch.tensor(
+        [0] + [sum(num_targets[: i + 1]) for i in range(batch)], device="npu", dtype=torch.int32
+    )
     num_target = torch.tensor(num_targets, device="npu", dtype=torch.int32)
 
     num_pages_per_batch = [(h + page_size - 1) // page_size for h in new_hist_lens]
@@ -647,23 +622,46 @@ def test_hstu_paged_graph(dtype):
     last_page_len_t = torch.tensor(last_page_len, device="npu", dtype=torch.int32)
 
     y_eager = ops_rec.ascendc.attention.hstu_paged(
-        q, k, v, kv_cache,
-        mask=None, attn_bias=None, mask_type=0,
-        max_seq_len=max_seq_len_q, max_seq_len_k=max_seq_len_k,
+        q,
+        k,
+        v,
+        kv_cache,
+        mask=None,
+        attn_bias=None,
+        mask_type=0,
+        max_seq_len=max_seq_len_q,
+        max_seq_len_k=max_seq_len_k,
         silu_scale=1.0 / max_seq_len_q,
-        seq_offset=seq_offset, seq_offset_k=seq_offset_k, seq_offset_t=seq_offset_t,
-        page_offsets=page_offsets_t, page_ids=page_ids_t, last_page_len=last_page_len_t,
-        num_target=num_target, target_group_size=1)
-    compiled_fn = torch_compiled(ops_rec.ascendc.attention.hstu_paged, dynamic=True, fullgraph=True,
-                                 backend="inductor")
+        seq_offset=seq_offset,
+        seq_offset_k=seq_offset_k,
+        seq_offset_t=seq_offset_t,
+        page_offsets=page_offsets_t,
+        page_ids=page_ids_t,
+        last_page_len=last_page_len_t,
+        num_target=num_target,
+        target_group_size=1,
+    )
+    compiled_fn = torch_compiled(ops_rec.ascendc.attention.hstu_paged, dynamic=True, fullgraph=True, backend="inductor")
     y_op = compiled_fn(
-        q, k, v, kv_cache,
-        mask=None, attn_bias=None, mask_type=0,
-        max_seq_len=max_seq_len_q, max_seq_len_k=max_seq_len_k,
+        q,
+        k,
+        v,
+        kv_cache,
+        mask=None,
+        attn_bias=None,
+        mask_type=0,
+        max_seq_len=max_seq_len_q,
+        max_seq_len_k=max_seq_len_k,
         silu_scale=1.0 / max_seq_len_q,
-        seq_offset=seq_offset, seq_offset_k=seq_offset_k, seq_offset_t=seq_offset_t,
-        page_offsets=page_offsets_t, page_ids=page_ids_t, last_page_len=last_page_len_t,
-        num_target=num_target, target_group_size=1)
+        seq_offset=seq_offset,
+        seq_offset_k=seq_offset_k,
+        seq_offset_t=seq_offset_t,
+        page_offsets=page_offsets_t,
+        page_ids=page_ids_t,
+        last_page_len=last_page_len_t,
+        num_target=num_target,
+        target_group_size=1,
+    )
 
     rtol, atol = get_tolerance(dtype)
     np.testing.assert_allclose(y_op.cpu().numpy(), y_eager.cpu().numpy(), rtol=rtol, atol=atol)

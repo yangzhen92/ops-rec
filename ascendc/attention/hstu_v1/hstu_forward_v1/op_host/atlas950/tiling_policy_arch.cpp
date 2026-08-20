@@ -34,7 +34,7 @@ int64_t GetArchWorkspaceExtraSize(size_t coreNum)
     return static_cast<int64_t>(coreNum) * VCORE_NUM_IN_ONE_AIC * BLOCK_HEIGHT * BLOCK_HEIGHT * COMPUTE_PIPE_NUM;
 }
 
-void Find4BytesShape(const TilingKeyParam& tilingKeyParam, uint32_t &tilingM, uint32_t &tilingN)
+void Find4BytesShape(const TilingKeyParam& tilingKeyParam, uint32_t& tilingM, uint32_t& tilingN)
 {
     constexpr uint32_t tileMList[] = {32, 64, 64, 128, 128, 256, 128};
     constexpr uint32_t tileNList[] = {32, 64, 1024, 128, 512, 256, 256};
@@ -43,9 +43,7 @@ void Find4BytesShape(const TilingKeyParam& tilingKeyParam, uint32_t &tilingM, ui
     auto maxSeqLenQ = tilingKeyParam.maxSeqLenQ;
     auto maxSeqLenK = tilingKeyParam.maxSeqLenK;
     if (maxSeqLenQ > maxSeqLenK) {
-        idx = (maxSeqLenK >= TILING_1024) ? 5 :
-        (maxSeqLenK >= TILING_64)   ? 3 :
-        (maxSeqLenK >= TILING_32)   ? 1 : 0;
+        idx = (maxSeqLenK >= TILING_1024) ? 5 : (maxSeqLenK >= TILING_64) ? 3 : (maxSeqLenK >= TILING_32) ? 1 : 0;
         tilingM = tileMList[idx];
         tilingN = tileNList[idx];
         return;
@@ -82,8 +80,7 @@ void Find4BytesShape(const TilingKeyParam& tilingKeyParam, uint32_t &tilingM, ui
     return;
 }
 
-
-void Find2BytesShape(const TilingKeyParam& tilingKeyParam, uint32_t &tilingM, uint32_t &tilingN)
+void Find2BytesShape(const TilingKeyParam& tilingKeyParam, uint32_t& tilingM, uint32_t& tilingN)
 {
     constexpr uint32_t tileMList[] = {32, 64, 64, 128, 128, 256, 128};
     constexpr uint32_t tileNList[] = {32, 64, 1024, 128, 512, 256, 256};
@@ -170,8 +167,8 @@ void Find2BytesShape(const TilingKeyParam& tilingKeyParam, uint32_t &tilingM, ui
     return;
 }
 
-void FindMatchShape(const TilingKeyParam& tilingKeyParam,
-    gert::TilingContext* context, uint32_t &tilingM, uint32_t &tilingN, uint32_t &tilingDim)
+void FindMatchShape(const TilingKeyParam& tilingKeyParam, gert::TilingContext* context, uint32_t& tilingM,
+                    uint32_t& tilingN, uint32_t& tilingDim)
 {
     constexpr uint32_t tileKList[] = {64, 128, 256, 512};
 
@@ -188,7 +185,7 @@ void FindMatchShape(const TilingKeyParam& tilingKeyParam,
 }
 
 bool TilingPolicy::TilingKeySetImpl(gert::TilingContext* context, const TilingKeyParam& tilingKeyParam,
-    uint32_t typeTilingKey)
+                                    uint32_t typeTilingKey)
 {
     bool enableBias = tilingKeyParam.enableBias;
     bool enableDeteministic = tilingKeyParam.deterministic;
@@ -207,9 +204,8 @@ bool TilingPolicy::TilingKeySetImpl(gert::TilingContext* context, const TilingKe
         FindMatchShape(tilingKeyParam, context, tilingM, tilingN, tilingDim);
     }
 
-    const uint64_t tilingKey = GET_TPL_TILING_KEY(maskedType, enableBias, typeTilingKey,
-                                                  enableDeteministic, tilingM,
-                                                  tilingN, tilingDim);
+    const uint64_t tilingKey =
+        GET_TPL_TILING_KEY(maskedType, enableBias, typeTilingKey, enableDeteministic, tilingM, tilingN, tilingDim);
     context->SetTilingKey(tilingKey);
     return true;
 }

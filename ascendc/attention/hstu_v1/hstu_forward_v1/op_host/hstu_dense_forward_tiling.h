@@ -13,7 +13,6 @@ See the License for the specific language governing permissions and
         limitations under the License.
 ==============================================================================*/
 
-
 #ifndef HSTU_DENSE_FORWARD_TILING_H
 #define HSTU_DENSE_FORWARD_TILING_H
 

@@ -36,11 +36,13 @@ def generate_tensor(batch_size, max_seq_len, num_heads, attention_dim, data_type
         invalid_attn_mask = 1 - torch.triu(torch.ones(batch_size, num_heads, max_seq_len, max_seq_len), diagonal=1)
     else:
         invalid_attn_mask = torch.randint(0, 2, size=(batch_size, num_heads, max_seq_len, max_seq_len))
-    return (q.to(data_type).to("npu"),
-            k.to(data_type).to("npu"),
-            v.to(data_type).to("npu"),
-            rel_attn_bias.to(data_type).to("npu"),
-            invalid_attn_mask.to(data_type).to("npu"))
+    return (
+        q.to(data_type).to("npu"),
+        k.to(data_type).to("npu"),
+        v.to(data_type).to("npu"),
+        rel_attn_bias.to(data_type).to("npu"),
+        invalid_attn_mask.to(data_type).to("npu"),
+    )
 
 
 class TestHstuDenseDemo:
@@ -78,13 +80,11 @@ class TestHstuDenseDemo:
     def custom_op_exec(q, k, v, bias, mask, mask_type, max_seq_len, silu_scale, enable_bias, data_type):
         if enable_bias:
             output = ops_rec.ascendc.attention.hstu_dense(
-                q, k, v, mask=mask, attn_bias=bias, mask_type=mask_type,
-                max_seq_len=max_seq_len, silu_scale=silu_scale
+                q, k, v, mask=mask, attn_bias=bias, mask_type=mask_type, max_seq_len=max_seq_len, silu_scale=silu_scale
             )
         else:
             output = ops_rec.ascendc.attention.hstu_dense(
-                q, k, v, mask=mask, attn_bias=None, mask_type=mask_type,
-                max_seq_len=max_seq_len, silu_scale=silu_scale
+                q, k, v, mask=mask, attn_bias=None, mask_type=mask_type, max_seq_len=max_seq_len, silu_scale=silu_scale
             )
 
         torch.npu.synchronize()
@@ -110,18 +110,20 @@ class TestHstuDenseDemo:
 
     @pytest.mark.parametrize("batch_size", [1, 16])
     @pytest.mark.parametrize("head_num", [1, 4])
-    @pytest.mark.parametrize("max_seq_len", [15,256, 1024, 4095])
+    @pytest.mark.parametrize("max_seq_len", [15, 256, 1024, 4095])
     @pytest.mark.parametrize("head_dim", [32, 128])
     @pytest.mark.parametrize("enable_bias", [True, False])
     @pytest.mark.parametrize("mask_type", [MaskType.TRIL, MaskType.NONE, MaskType.CUSTOM])
     @pytest.mark.parametrize("silu_scale", [1 / 256])
     @pytest.mark.parametrize("data_type", [torch.float16, torch.float32, torch.bfloat16])
-    def test_hstu_dense_forward(self, batch_size, head_num, max_seq_len, head_dim, enable_bias, mask_type, silu_scale,
-                                data_type):
+    def test_hstu_dense_forward(
+        self, batch_size, head_num, max_seq_len, head_dim, enable_bias, mask_type, silu_scale, data_type
+    ):
         self.execute(batch_size, max_seq_len, head_num, head_dim, enable_bias, mask_type, silu_scale, data_type)
 
 
 # ────────────────── Inductor 图模式 ──────────────────
+
 
 @pytest.mark.graph
 @pytest.mark.parametrize("dtype", [torch.float16])
@@ -134,19 +136,25 @@ def test_hstu_dense_graph(dtype, shape):
     k = torch.randn(*shape, device="npu", dtype=dtype)
     v = torch.randn(*shape, device="npu", dtype=dtype)
 
-    y_golden = get_golden(q.cpu().numpy(), k.cpu().numpy(), v.cpu().numpy(),
-                          mask=None, attn_bias=None, mask_type=0,
-                          max_seq_len=S, silu_scale=1.0 / S)
-    compiled_fn = torch_compiled(ops_rec.ascendc.attention.hstu_dense, dynamic=True, fullgraph=True,
-                                 backend="inductor")
-    y_op = compiled_fn(q=q, k=k, v=v, mask=None, attn_bias=None,
-                       mask_type=0, max_seq_len=S, silu_scale=1.0 / S)
+    y_golden = get_golden(
+        q.cpu().numpy(),
+        k.cpu().numpy(),
+        v.cpu().numpy(),
+        mask=None,
+        attn_bias=None,
+        mask_type=0,
+        max_seq_len=S,
+        silu_scale=1.0 / S,
+    )
+    compiled_fn = torch_compiled(ops_rec.ascendc.attention.hstu_dense, dynamic=True, fullgraph=True, backend="inductor")
+    y_op = compiled_fn(q=q, k=k, v=v, mask=None, attn_bias=None, mask_type=0, max_seq_len=S, silu_scale=1.0 / S)
 
     rtol, atol = get_tolerance(dtype)
     np.testing.assert_allclose(y_op.cpu().numpy(), y_golden, rtol=rtol, atol=atol)
 
 
 # ────────────────── CI 冒烟测试 ──────────────────
+
 
 @pytest.mark.ci
 def test_hstu_dense_ci():
@@ -157,11 +165,19 @@ def test_hstu_dense_ci():
     k = torch.rand(B, S, N, D, device="npu", dtype=torch.float16).uniform_(-1, 1)
     v = torch.rand(B, S, N, D, device="npu", dtype=torch.float16).uniform_(-1, 1)
 
-    y_golden = get_golden(q.cpu().numpy(), k.cpu().numpy(), v.cpu().numpy(),
-                          mask=None, attn_bias=None, mask_type=0,
-                          max_seq_len=S, silu_scale=1.0 / S)
-    y_op = ops_rec.ascendc.attention.hstu_dense(q, k, v, mask=None, attn_bias=None,
-                                                mask_type=0, max_seq_len=S, silu_scale=1.0 / S)
+    y_golden = get_golden(
+        q.cpu().numpy(),
+        k.cpu().numpy(),
+        v.cpu().numpy(),
+        mask=None,
+        attn_bias=None,
+        mask_type=0,
+        max_seq_len=S,
+        silu_scale=1.0 / S,
+    )
+    y_op = ops_rec.ascendc.attention.hstu_dense(
+        q, k, v, mask=None, attn_bias=None, mask_type=0, max_seq_len=S, silu_scale=1.0 / S
+    )
 
     np.testing.assert_allclose(y_op.cpu().numpy(), y_golden, rtol=2e-2, atol=2e-2)
 

@@ -32,9 +32,9 @@ See the License for the specific language governing permissions and
 int TestHstuDense(aclrtStream stream)
 {
     constexpr int64_t B = 1;
-    constexpr int64_t S = 16;   // seq_len（max_seq_len 需覆盖 S）
-    constexpr int64_t N = 2;    // head_num
-    constexpr int64_t D = 32;   // head_dim（16 的倍数）
+    constexpr int64_t S = 16;  // seq_len（max_seq_len 需覆盖 S）
+    constexpr int64_t N = 2;   // head_num
+    constexpr int64_t D = 32;  // head_dim（16 的倍数）
     constexpr int64_t MaxSeqLen = 16;
     constexpr int64_t MaskType = 0;  // 内置下三角 mask
 
@@ -51,7 +51,7 @@ int TestHstuDense(aclrtStream stream)
     }
 
     void *qDeviceAddr = nullptr, *kDeviceAddr = nullptr, *vDeviceAddr = nullptr;
-    void *outDeviceAddr = nullptr;
+    void* outDeviceAddr = nullptr;
     aclTensor *q = nullptr, *k = nullptr, *v = nullptr, *out = nullptr;
     auto ret = CreateAclTensor(qHostData, qkvShape, &qDeviceAddr, aclDataType::ACL_FLOAT, &q);
     CHECK_RET(ret == ACL_SUCCESS, return ret);
@@ -64,8 +64,8 @@ int TestHstuDense(aclrtStream stream)
 
     uint64_t workspaceSize = 0;
     aclOpExecutor* executor = nullptr;
-    ret = aclnnHstuDenseForwardGetWorkspaceSize(q, k, v, nullptr, nullptr, MaskType, MaxSeqLen, 1.0 / MaxSeqLen,
-                                                out, &workspaceSize, &executor);
+    ret = aclnnHstuDenseForwardGetWorkspaceSize(q, k, v, nullptr, nullptr, MaskType, MaxSeqLen, 1.0 / MaxSeqLen, out,
+                                                &workspaceSize, &executor);
     CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("aclnnHstuDenseForwardGetWorkspaceSize failed. ERROR: %d\n", ret);
               return ret);
 

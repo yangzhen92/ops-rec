@@ -21,32 +21,32 @@ See the License for the specific language governing permissions and
 template <typename qType, typename TilingDataType>
 class MatmulMgmt {
 public:
-    static constexpr MatmulConfig qkMMConfig = std::is_same<qType, float>::value ?
-        mmStaticConfigQKFp32 : mmStaticConfigQKFp16;
-    static constexpr MatmulConfig svMMConfig = std::is_same<qType, float>::value ?
-        mmStaticConfigSVFp32 : mmStaticConfigSVFp16;
+    static constexpr MatmulConfig qkMMConfig =
+        std::is_same<qType, float>::value ? mmStaticConfigQKFp32 : mmStaticConfigQKFp16;
+    static constexpr MatmulConfig svMMConfig =
+        std::is_same<qType, float>::value ? mmStaticConfigSVFp32 : mmStaticConfigSVFp16;
 
     __aicore__ inline MatmulMgmt() {}
-    
-    template<bool isFirst = true>
+
+    template <bool isFirst = true>
     __aicore__ inline void DoQKMatmul(const MatmulArgs& args, const GlobalTensor<qType>& leftGt,
-        const GlobalTensor<qType>& rightGt, GlobalTensor<qType>& outGt)
+                                      const GlobalTensor<qType>& rightGt, GlobalTensor<qType>& outGt)
     {
         qkMatmul_.SetTensorA(leftGt[args.leftOffset]);
         qkMatmul_.SetTensorB(rightGt[args.rightOffset], true);
         qkMatmul_.SetTail(args.m, args.n, args.k);
-        qkMatmul_.SetSelfDefineData(args.headNum); // 设置CopyQK的自定义headNum数据
+        qkMatmul_.SetSelfDefineData(args.headNum);  // 设置CopyQK的自定义headNum数据
 
         qkMatmul_.template IterateAll<false>(outGt[args.outOffset], 0, false, true);
     }
 
     __aicore__ inline void DoSVMatmul(const MatmulArgs& args, const GlobalTensor<qType>& leftGt,
-        const GlobalTensor<qType>& rightGt, GlobalTensor<float>& outGt)
+                                      const GlobalTensor<qType>& rightGt, GlobalTensor<float>& outGt)
     {
         svMatmul_.SetTensorA(leftGt[args.leftOffset]);
         svMatmul_.SetTensorB(rightGt[args.rightOffset]);
         svMatmul_.SetTail(args.m, args.n, args.k);
-        svMatmul_.SetSelfDefineData(args.headNum); // 设置CopyQK的自定义headNum数据
+        svMatmul_.SetSelfDefineData(args.headNum);  // 设置CopyQK的自定义headNum数据
 
         svMatmul_.template IterateAll<false>(outGt[args.outOffset], args.isAtomicAdd, false, true);
     }
@@ -65,24 +65,24 @@ public:
 
     using CopyFun = MatmulCopyFun<qType, TilingDataType>;
 
-    using QK_MM_A_T = matmul::MatmulType<TPosition::GM, CubeFormat::ND, qType, false, LayoutMode::NONE, false,
-                                         TPosition::VECOUT>;
+    using QK_MM_A_T =
+        matmul::MatmulType<TPosition::GM, CubeFormat::ND, qType, false, LayoutMode::NONE, false, TPosition::VECOUT>;
     using QK_MM_CB_T = matmul::MatmulCallBackFunc<nullptr, CopyFun::CopyQKA1, CopyFun::CopyQKB1>;
     using QK_MM_B_T = matmul::MatmulType<TPosition::GM, CubeFormat::ND, qType, true>;
     using QK_MM_C_T = matmul::MatmulType<TPosition::GM, CubeFormat::ND, qType, false>;
     using QK_MM_BIAS_T = matmul::MatmulType<TPosition::GM, CubeFormat::ND, qType>;
-    static constexpr auto staticQkTilingCfg = GetMatmulApiTiling<QK_MM_A_T, QK_MM_B_T, QK_MM_C_T, QK_MM_BIAS_T>(
-        qkMMConfig, MATMUL_L1_SIZE);
+    static constexpr auto staticQkTilingCfg =
+        GetMatmulApiTiling<QK_MM_A_T, QK_MM_B_T, QK_MM_C_T, QK_MM_BIAS_T>(qkMMConfig, MATMUL_L1_SIZE);
     matmul::Matmul<QK_MM_A_T, QK_MM_B_T, QK_MM_C_T, QK_MM_BIAS_T, staticQkTilingCfg, QK_MM_CB_T> qkMatmul_;
-    
-    using SV_MM_A_T = matmul::MatmulType<TPosition::GM, CubeFormat::ND, qType, false, LayoutMode::NONE, false,
-                                        TPosition::VECOUT>;
+
+    using SV_MM_A_T =
+        matmul::MatmulType<TPosition::GM, CubeFormat::ND, qType, false, LayoutMode::NONE, false, TPosition::VECOUT>;
     using SV_MM_B_T = matmul::MatmulType<TPosition::GM, CubeFormat::ND, qType, false>;
     using SV_MM_C_T = matmul::MatmulType<TPosition::GM, CubeFormat::ND, float, false>;
     using SV_MM_BIAS_T = matmul::MatmulType<TPosition::GM, CubeFormat::ND, qType>;
     using SV_MM_CB_T = matmul::MatmulCallBackFunc<nullptr, nullptr, CopyFun::CopySVB1>;
-    static constexpr auto staticSvTilingCfg = GetMatmulApiTiling<SV_MM_A_T, SV_MM_B_T, SV_MM_C_T, SV_MM_BIAS_T>(
-        svMMConfig, MATMUL_L1_SIZE);
+    static constexpr auto staticSvTilingCfg =
+        GetMatmulApiTiling<SV_MM_A_T, SV_MM_B_T, SV_MM_C_T, SV_MM_BIAS_T>(svMMConfig, MATMUL_L1_SIZE);
     matmul::Matmul<SV_MM_A_T, SV_MM_B_T, SV_MM_C_T, SV_MM_BIAS_T, staticSvTilingCfg, SV_MM_CB_T> svMatmul_;
 };
 

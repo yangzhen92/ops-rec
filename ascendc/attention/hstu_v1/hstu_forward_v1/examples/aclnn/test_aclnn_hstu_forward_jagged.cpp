@@ -32,14 +32,14 @@ See the License for the specific language governing permissions and
 int TestHstuJagged(aclrtStream stream)
 {
     // delta 数据构造：q 段长 [4, 6]，k/v 段长 [6, 8]（与 pytest test_hstu_jagged_delta_graph 一致）
-    constexpr int64_t Batch = 2;        // 序列段数（seq_offset 段数，num_context/num_target 长度）
-    constexpr int64_t N = 4;            // head_num
-    constexpr int64_t D = 32;           // head_dim（16 的倍数）
-    constexpr int64_t TotalQ = 10;      // sum([4, 6])
-    constexpr int64_t TotalK = 14;      // sum([6, 8])
-    constexpr int64_t MaxSeqLenQ = 6;   // max(q 段长)
-    constexpr int64_t MaxSeqLenK = 8;   // max(k 段长)
-    constexpr int64_t MaskType = 0;     // 内置下三角 mask
+    constexpr int64_t Batch = 2;       // 序列段数（seq_offset 段数，num_context/num_target 长度）
+    constexpr int64_t N = 4;           // head_num
+    constexpr int64_t D = 32;          // head_dim（16 的倍数）
+    constexpr int64_t TotalQ = 10;     // sum([4, 6])
+    constexpr int64_t TotalK = 14;     // sum([6, 8])
+    constexpr int64_t MaxSeqLenQ = 6;  // max(q 段长)
+    constexpr int64_t MaxSeqLenK = 8;  // max(k 段长)
+    constexpr int64_t MaskType = 0;    // 内置下三角 mask
 
     std::vector<int64_t> qShape = {TotalQ, N, D};
     std::vector<int64_t> kvShape = {TotalK, N, D};
@@ -94,12 +94,10 @@ int TestHstuJagged(aclrtStream stream)
     aclOpExecutor* executor = nullptr;
     // mask / attn_bias 为可选入参，不使用传 nullptr（kernel 编译期裁剪，不读 GM）；
     // num_context / num_target 必须传有效张量（kernel 无条件解引用，见上注释），本用例传全零
-    ret = aclnnHstuJaggedForwardGetWorkspaceSize(
-        q, k, v, nullptr /*mask*/, nullptr /*attn_bias*/,
-        seqOffsetQ, seqOffsetK, numContext, numTarget,
-        MaskType, MaxSeqLenQ, MaxSeqLenK, 1.0 / MaxSeqLenQ,
-        0 /*target_group_size*/, 1.0 /*alpha*/, false /*deterministic*/,
-        out, &workspaceSize, &executor);
+    ret = aclnnHstuJaggedForwardGetWorkspaceSize(q, k, v, nullptr /*mask*/, nullptr /*attn_bias*/, seqOffsetQ,
+                                                 seqOffsetK, numContext, numTarget, MaskType, MaxSeqLenQ, MaxSeqLenK,
+                                                 1.0 / MaxSeqLenQ, 0 /*target_group_size*/, 1.0 /*alpha*/,
+                                                 false /*deterministic*/, out, &workspaceSize, &executor);
     CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("aclnnHstuJaggedForwardGetWorkspaceSize failed. ERROR: %d\n", ret);
               return ret);
 

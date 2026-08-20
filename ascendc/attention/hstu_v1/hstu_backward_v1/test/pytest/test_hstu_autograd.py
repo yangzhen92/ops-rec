@@ -48,6 +48,7 @@ def torch_compiled(model, **kwargs):
 # Python 侧自动微分包装（与 examples/torch/test_torch_hstu_backward_v1_autograd.py 中一致）
 # ---------------------------------------------------------------------------
 
+
 class HstuDenseAutograd(torch.autograd.Function):
     """dense 布局 hstu_dense 的自动微分包装。"""
 
@@ -58,16 +59,29 @@ class HstuDenseAutograd(torch.autograd.Function):
         ctx.max_seq_len = max_seq_len
         ctx.silu_scale = silu_scale
         return ops_rec.ascendc.attention.hstu_dense(
-            q, k, v, mask=mask, attn_bias=attn_bias,
-            mask_type=mask_type, max_seq_len=max_seq_len, silu_scale=silu_scale,
+            q,
+            k,
+            v,
+            mask=mask,
+            attn_bias=attn_bias,
+            mask_type=mask_type,
+            max_seq_len=max_seq_len,
+            silu_scale=silu_scale,
         )
 
     @staticmethod
     def backward(ctx, grad_output):
         q, k, v, mask, attn_bias = ctx.saved_tensors
         q_grad, k_grad, v_grad, attn_bias_grad = ops_rec.ascendc.attention.hstu_dense_backward(
-            grad_output, q, k, v, mask, attn_bias,
-            ctx.mask_type, ctx.max_seq_len, ctx.silu_scale,
+            grad_output,
+            q,
+            k,
+            v,
+            mask,
+            attn_bias,
+            ctx.mask_type,
+            ctx.max_seq_len,
+            ctx.silu_scale,
         )
         return (
             q_grad,
@@ -108,20 +122,41 @@ class HstuJaggedAutograd(torch.autograd.Function):
         ctx.target_group_size = target_group_size
         ctx.alpha = alpha
         return ops_rec.ascendc.attention.hstu_jagged.equal(
-            q, k, v, mask=mask, attn_bias=attn_bias, mask_type=mask_type,
-            max_seq_len=max_seq_len, silu_scale=silu_scale, seq_offset=seq_offset,
-            num_context=num_context, num_target=num_target,
-            target_group_size=target_group_size, alpha=alpha,
+            q,
+            k,
+            v,
+            mask=mask,
+            attn_bias=attn_bias,
+            mask_type=mask_type,
+            max_seq_len=max_seq_len,
+            silu_scale=silu_scale,
+            seq_offset=seq_offset,
+            num_context=num_context,
+            num_target=num_target,
+            target_group_size=target_group_size,
+            alpha=alpha,
         )
 
     @staticmethod
     def backward(ctx, grad_output):
         q, k, v, mask, attn_bias, seq_offset, num_context, num_target = ctx.saved_tensors
         q_grad, k_grad, v_grad, attn_bias_grad = ops_rec.ascendc.attention.hstu_jagged_backward(
-            grad_output, q, k, v, mask, attn_bias, ctx.mask_type,
-            ctx.max_seq_len, ctx.max_seq_len, ctx.silu_scale,
-            seq_offset, seq_offset, num_context, num_target,
-            ctx.target_group_size, ctx.alpha,
+            grad_output,
+            q,
+            k,
+            v,
+            mask,
+            attn_bias,
+            ctx.mask_type,
+            ctx.max_seq_len,
+            ctx.max_seq_len,
+            ctx.silu_scale,
+            seq_offset,
+            seq_offset,
+            num_context,
+            num_target,
+            ctx.target_group_size,
+            ctx.alpha,
         )
         return (
             q_grad,
@@ -143,6 +178,7 @@ class HstuJaggedAutograd(torch.autograd.Function):
 # ---------------------------------------------------------------------------
 # 工具函数
 # ---------------------------------------------------------------------------
+
 
 def generate_dense_tensor(batch_size, max_seq_len, num_heads, attention_dim, mask_type, data_type):
     grad = torch.empty(batch_size, max_seq_len, num_heads, attention_dim, dtype=data_type).uniform_(-1, 1)
@@ -201,8 +237,7 @@ def check_grads(grads, grads_ref, label, loss):
 class TestHstuAutograd:
     # ────────────────── dense ──────────────────
 
-    def execute_dense(self, batch_size, max_seq_len, head_num, head_dim, mask_type, silu_scale,
-                      enable_bias, data_type):
+    def execute_dense(self, batch_size, max_seq_len, head_num, head_dim, mask_type, silu_scale, enable_bias, data_type):
         grad, q, k, v, bias, mask = generate_dense_tensor(
             batch_size, max_seq_len, head_num, head_dim, mask_type, data_type
         )
@@ -242,11 +277,11 @@ class TestHstuAutograd:
     @pytest.mark.parametrize("silu_scale", [1.0 / 256])
     @pytest.mark.parametrize("enable_bias", [True, False])
     @pytest.mark.parametrize("data_type", [torch.float32, torch.float16])
-    def test_dense_autograd(self, batch_size, max_seq_len, head_num, head_dim, mask_type,
-                            silu_scale, enable_bias, data_type):
+    def test_dense_autograd(
+        self, batch_size, max_seq_len, head_num, head_dim, mask_type, silu_scale, enable_bias, data_type
+    ):
         """eager：y.backward() 梯度与直接调用 hstu_dense_backward 一致。"""
-        self.execute_dense(batch_size, max_seq_len, head_num, head_dim, mask_type,
-                           silu_scale, enable_bias, data_type)
+        self.execute_dense(batch_size, max_seq_len, head_num, head_dim, mask_type, silu_scale, enable_bias, data_type)
 
     @pytest.mark.graph
     def test_dense_autograd_graph(self):
@@ -276,16 +311,19 @@ class TestHstuAutograd:
         y_compiled, qg_compiled, kg_compiled, vg_compiled = run(compiled_fn)
         torch.npu.synchronize()
 
-        for name, eager, compiled in (("y", y_eager, y_compiled),
-                                      ("q_grad", qg_eager, qg_compiled),
-                                      ("k_grad", kg_eager, kg_compiled),
-                                      ("v_grad", vg_eager, vg_compiled)):
+        for name, eager, compiled in (
+            ("y", y_eager, y_compiled),
+            ("q_grad", qg_eager, qg_compiled),
+            ("k_grad", kg_eager, kg_compiled),
+            ("v_grad", vg_eager, vg_compiled),
+        ):
             assert allclose(eager, compiled, 5e-3, 1e-4), f"dense autograd graph: {name} 不一致"
 
     # ────────────────── jagged（equal）──────────────────
 
-    def execute_jagged(self, batch_size, max_seq_len, head_num, head_dim_qk, head_dim_v,
-                       mask_type, silu_scale, enable_bias, data_type):
+    def execute_jagged(
+        self, batch_size, max_seq_len, head_num, head_dim_qk, head_dim_v, mask_type, silu_scale, enable_bias, data_type
+    ):
         grad, q, k, v, bias, mask, seq_offset_q, seq_offset_k = generate_jagged_tensor(
             batch_size, max_seq_len, head_num, head_dim_qk, head_dim_v, mask_type, data_type
         )
@@ -299,9 +337,22 @@ class TestHstuAutograd:
 
         # 参照：直接调用 backward 算子（equal 语义：q/k 等长，两个 offset 相同）
         grads_ref = ops_rec.ascendc.attention.hstu_jagged_backward(
-            grad_npu, q_npu, k_npu, v_npu, mask_npu, bias_npu, mask_type,
-            max_seq_len, max_seq_len, silu_scale, seq_offset_q, seq_offset_q,
-            None, None, None, 1.0,
+            grad_npu,
+            q_npu,
+            k_npu,
+            v_npu,
+            mask_npu,
+            bias_npu,
+            mask_type,
+            max_seq_len,
+            max_seq_len,
+            silu_scale,
+            seq_offset_q,
+            seq_offset_q,
+            None,
+            None,
+            None,
+            1.0,
         )
         if not enable_bias:
             grads_ref = grads_ref[:3] + (None,)
@@ -312,8 +363,19 @@ class TestHstuAutograd:
         b_ = bias_npu.detach().clone().requires_grad_(True) if enable_bias else None
 
         y = HstuJaggedAutograd.apply(
-            q_, k_, v_, mask_npu, b_, mask_type, max_seq_len, silu_scale,
-            seq_offset_q, None, None, None, 1.0,
+            q_,
+            k_,
+            v_,
+            mask_npu,
+            b_,
+            mask_type,
+            max_seq_len,
+            silu_scale,
+            seq_offset_q,
+            None,
+            None,
+            None,
+            1.0,
         )
         (y * grad_npu).sum().backward()
         torch.npu.synchronize()
@@ -331,11 +393,13 @@ class TestHstuAutograd:
     @pytest.mark.parametrize("silu_scale", [1.0 / 256])
     @pytest.mark.parametrize("enable_bias", [True, False])
     @pytest.mark.parametrize("data_type", [torch.float32, torch.float16])
-    def test_jagged_autograd(self, batch_size, max_seq_len, head_num, head_dim_qk, head_dim_v,
-                             mask_type, silu_scale, enable_bias, data_type):
+    def test_jagged_autograd(
+        self, batch_size, max_seq_len, head_num, head_dim_qk, head_dim_v, mask_type, silu_scale, enable_bias, data_type
+    ):
         """eager：y.backward() 梯度与直接调用 hstu_jagged_backward 一致。"""
-        self.execute_jagged(batch_size, max_seq_len, head_num, head_dim_qk, head_dim_v,
-                            mask_type, silu_scale, enable_bias, data_type)
+        self.execute_jagged(
+            batch_size, max_seq_len, head_num, head_dim_qk, head_dim_v, mask_type, silu_scale, enable_bias, data_type
+        )
 
     @pytest.mark.graph
     def test_jagged_autograd_graph(self):
@@ -362,24 +426,48 @@ class TestHstuAutograd:
 
         compiled_fn = torch_compiled(
             lambda q_, k_, v_: HstuJaggedAutograd.apply(
-                q_, k_, v_, mask_npu, None, MaskType.TRIL, max_seq_len, 1.0 / max_seq_len,
-                seq_offset_q, None, None, None, 1.0,
+                q_,
+                k_,
+                v_,
+                mask_npu,
+                None,
+                MaskType.TRIL,
+                max_seq_len,
+                1.0 / max_seq_len,
+                seq_offset_q,
+                None,
+                None,
+                None,
+                1.0,
             ),
             dynamic=True,
         )
         y_eager, qg_eager, kg_eager, vg_eager = run(
             lambda q_, k_, v_: HstuJaggedAutograd.apply(
-                q_, k_, v_, mask_npu, None, MaskType.TRIL, max_seq_len, 1.0 / max_seq_len,
-                seq_offset_q, None, None, None, 1.0,
+                q_,
+                k_,
+                v_,
+                mask_npu,
+                None,
+                MaskType.TRIL,
+                max_seq_len,
+                1.0 / max_seq_len,
+                seq_offset_q,
+                None,
+                None,
+                None,
+                1.0,
             )
         )
         y_compiled, qg_compiled, kg_compiled, vg_compiled = run(compiled_fn)
         torch.npu.synchronize()
 
-        for name, eager, compiled in (("y", y_eager, y_compiled),
-                                      ("q_grad", qg_eager, qg_compiled),
-                                      ("k_grad", kg_eager, kg_compiled),
-                                      ("v_grad", vg_eager, vg_compiled)):
+        for name, eager, compiled in (
+            ("y", y_eager, y_compiled),
+            ("q_grad", qg_eager, qg_compiled),
+            ("k_grad", kg_eager, kg_compiled),
+            ("v_grad", vg_eager, vg_compiled),
+        ):
             assert allclose(eager, compiled, 5e-3, 1e-4), f"jagged autograd graph: {name} 不一致"
 
 

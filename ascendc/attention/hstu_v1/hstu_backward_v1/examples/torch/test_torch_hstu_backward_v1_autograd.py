@@ -58,6 +58,7 @@ def set_seed(seed):
 # Python 侧自动微分包装（训练场景核心用法，可直接复制到训练代码中）
 # ---------------------------------------------------------------------------
 
+
 class HstuDenseAutograd(torch.autograd.Function):
     """dense 布局 hstu_dense 的自动微分包装。
 
@@ -72,16 +73,29 @@ class HstuDenseAutograd(torch.autograd.Function):
         ctx.max_seq_len = max_seq_len
         ctx.silu_scale = silu_scale
         return ops_rec.ascendc.attention.hstu_dense(
-            q, k, v, mask=mask, attn_bias=attn_bias,
-            mask_type=mask_type, max_seq_len=max_seq_len, silu_scale=silu_scale,
+            q,
+            k,
+            v,
+            mask=mask,
+            attn_bias=attn_bias,
+            mask_type=mask_type,
+            max_seq_len=max_seq_len,
+            silu_scale=silu_scale,
         )
 
     @staticmethod
     def backward(ctx, grad_output):
         q, k, v, mask, attn_bias = ctx.saved_tensors
         q_grad, k_grad, v_grad, attn_bias_grad = ops_rec.ascendc.attention.hstu_dense_backward(
-            grad_output, q, k, v, mask, attn_bias,
-            ctx.mask_type, ctx.max_seq_len, ctx.silu_scale,
+            grad_output,
+            q,
+            k,
+            v,
+            mask,
+            attn_bias,
+            ctx.mask_type,
+            ctx.max_seq_len,
+            ctx.silu_scale,
         )
         # 返回值顺序与 forward 入参一一对应：q, k, v, mask, attn_bias, mask_type, max_seq_len, silu_scale
         return (
@@ -186,6 +200,7 @@ class HstuJaggedAutograd(torch.autograd.Function):
 # 校验：y.backward() 梯度 vs 直接调用 backward 算子
 # ---------------------------------------------------------------------------
 
+
 def _check_grads(label, grads, grads_ref):
     """逐个对比 autograd 梯度与直接调用 backward 算子的输出。"""
     assert len(grads) == len(grads_ref)
@@ -272,15 +287,27 @@ def check_jagged_autograd(mask_type, enable_bias, silu_scale=0.0):
     if enable_bias:
         bias = torch.empty(batch_size, head_num, max_seq_len, max_seq_len, dtype=dtype).uniform_(-1, 1).npu()
 
-    q, k, v, seq_offset, _ = _generate_jagged_qkv(
-        batch_size, max_seq_len, head_num, head_dim_qk, head_dim_v, dtype
-    )
+    q, k, v, seq_offset, _ = _generate_jagged_qkv(batch_size, max_seq_len, head_num, head_dim_qk, head_dim_v, dtype)
     grad = torch.rand(q.shape[0], head_num, head_dim_v, dtype=dtype).uniform_(-1, 1).npu()
 
     # 参照：直接调用 backward 算子（equal 语义：max_seq_len_k = max_seq_len，seq_offset_k = seq_offset）
     grads_ref = ops_rec.ascendc.attention.hstu_jagged_backward(
-        grad, q, k, v, mask, bias, mask_type, max_seq_len, max_seq_len, silu_scale,
-        seq_offset, seq_offset, None, None, None, alpha,
+        grad,
+        q,
+        k,
+        v,
+        mask,
+        bias,
+        mask_type,
+        max_seq_len,
+        max_seq_len,
+        silu_scale,
+        seq_offset,
+        seq_offset,
+        None,
+        None,
+        None,
+        alpha,
     )
     if bias is None:
         grads_ref = grads_ref[:3] + (None,)
@@ -292,8 +319,19 @@ def check_jagged_autograd(mask_type, enable_bias, silu_scale=0.0):
     b_ = bias.detach().clone().requires_grad_(True) if bias is not None else None
 
     y = HstuJaggedAutograd.apply(
-        q_, k_, v_, mask, b_, mask_type, max_seq_len, silu_scale,
-        seq_offset, None, None, None, alpha,
+        q_,
+        k_,
+        v_,
+        mask,
+        b_,
+        mask_type,
+        max_seq_len,
+        silu_scale,
+        seq_offset,
+        None,
+        None,
+        None,
+        alpha,
     )
     loss = (y * grad).sum()
     loss.backward()

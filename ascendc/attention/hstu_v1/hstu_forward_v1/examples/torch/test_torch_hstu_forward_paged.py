@@ -25,7 +25,6 @@ hstu_forward_v1 算子 PyTorch 接口使用样例 — paged 格式
 """
 
 import torch
-import torch.nn.functional as F
 import ops_rec
 
 # 与 pytest 保持一致：关闭内部格式，保证输入按 ND 布局送入算子
@@ -56,8 +55,9 @@ def test_hstu_paged():
 
     seq_offset = torch.tensor([0] + [sum(seq_lens[: i + 1]) for i in range(batch)], device="npu", dtype=torch.int32)
     seq_offset_k = seq_offset.clone()
-    seq_offset_t = torch.tensor([0] + [sum(num_targets[: i + 1]) for i in range(batch)], device="npu",
-                                dtype=torch.int32)
+    seq_offset_t = torch.tensor(
+        [0] + [sum(num_targets[: i + 1]) for i in range(batch)], device="npu", dtype=torch.int32
+    )
     num_target = torch.tensor(num_targets, device="npu", dtype=torch.int32)
 
     # kv_cache 分页：每个 batch 的历史 KV 按 page_size 分页存放（末页不足时以 last_page_len 标记）
@@ -74,12 +74,25 @@ def test_hstu_paged():
 
     # 注意：num_target 定义时 target_group_size 必须 > 0（torch 扩展层约束）
     y = ops_rec.ascendc.attention.hstu_paged(
-        q, k, v, kv_cache,
-        mask=None, attn_bias=None, mask_type=0,
-        max_seq_len=max_seq_len, max_seq_len_k=max_seq_len, silu_scale=1.0 / max_seq_len,
-        seq_offset=seq_offset, seq_offset_k=seq_offset_k, seq_offset_t=seq_offset_t,
-        page_offsets=page_offsets, page_ids=page_ids, last_page_len=last_page_len,
-        num_target=num_target, target_group_size=1)
+        q,
+        k,
+        v,
+        kv_cache,
+        mask=None,
+        attn_bias=None,
+        mask_type=0,
+        max_seq_len=max_seq_len,
+        max_seq_len_k=max_seq_len,
+        silu_scale=1.0 / max_seq_len,
+        seq_offset=seq_offset,
+        seq_offset_k=seq_offset_k,
+        seq_offset_t=seq_offset_t,
+        page_offsets=page_offsets,
+        page_ids=page_ids,
+        last_page_len=last_page_len,
+        num_target=num_target,
+        target_group_size=1,
+    )
 
     assert y.shape == (total, N, D), f"unexpected output shape {tuple(y.shape)}"
     assert torch.isfinite(y).all(), "output contains non-finite values"

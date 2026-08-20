@@ -34,7 +34,7 @@ int64_t GetArchWorkspaceExtraSize(size_t coreNum)
 }
 
 bool TilingPolicy::TilingKeySetImpl(gert::TilingContext* context, const TilingKeyParam& tilingKeyParam,
-    uint32_t typeTilingKey)
+                                    uint32_t typeTilingKey)
 {
     bool enableBias = tilingKeyParam.enableBias;
     bool enableDeteministic = tilingKeyParam.deterministic;
@@ -42,9 +42,8 @@ bool TilingPolicy::TilingKeySetImpl(gert::TilingContext* context, const TilingKe
     uint32_t maskedType = maskType & 0x3;
     // 组合tiling key：
 
-    const uint64_t tilingKey = GET_TPL_TILING_KEY(maskedType, enableBias,
-                                                  typeTilingKey, enableDeteministic, MAX_TILING_DIM,
-                                                  MAX_TILING_DIM, MAX_DIM);
+    const uint64_t tilingKey = GET_TPL_TILING_KEY(maskedType, enableBias, typeTilingKey, enableDeteministic,
+                                                  MAX_TILING_DIM, MAX_TILING_DIM, MAX_DIM);
     context->SetTilingKey(tilingKey);
 
     return true;

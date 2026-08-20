@@ -24,7 +24,6 @@ from enum import Enum
 import numpy as np
 import torch
 
-import ops_rec
 
 torch.npu.config.allow_internal_format = False
 
@@ -33,10 +32,10 @@ torch.npu.config.allow_internal_format = False
 
 
 class MaskType(int, Enum):
-    TRIL = 0   # 下三角掩码
-    TRIU = 1   # 上三角掩码
-    NONE = 2   # 无掩码
-    CUSTOM = 3 # 自定义掩码
+    TRIL = 0  # 下三角掩码
+    TRIU = 1  # 上三角掩码
+    NONE = 2  # 无掩码
+    CUSTOM = 3  # 自定义掩码
 
 
 @dataclasses.dataclass
@@ -76,12 +75,13 @@ def set_seed(seed):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
+
 set_seed(42)
 
 
 def allclose(tensor: torch.Tensor, other: torch.Tensor, atol: float, ratio: float) -> bool:
     assert tensor.shape == other.shape
-    diff = (torch.abs(tensor - other) > atol)
+    diff = torch.abs(tensor - other) > atol
     diff_count = torch.sum(diff).tolist()
     return (diff_count / tensor.numel()) < ratio
 
@@ -90,7 +90,7 @@ def jagged_to_dense(jagged_tensor, seq_lens, head_nums, attn_dim):
     need_pad_seq = []
     offset = 0
     for seq_len in seq_lens:
-        src_tensor = jagged_tensor[offset: offset + seq_len, :, :].reshape(seq_len, head_nums, attn_dim)
+        src_tensor = jagged_tensor[offset : offset + seq_len, :, :].reshape(seq_len, head_nums, attn_dim)
         need_pad_seq.append(src_tensor)
         offset = offset + seq_len
     dense_tensor = torch.nn.utils.rnn.pad_sequence(need_pad_seq, batch_first=True)
@@ -102,7 +102,7 @@ def dense_to_jagged(q, dense_tensor, seq_lens):
     tensor = torch.zeros(q.shape[0], q.shape[1], dense_dim).cpu()
     offset = 0
     for batch_id, seq_len in enumerate(seq_lens):
-        tensor[offset: offset + seq_len, :, :] = dense_tensor[batch_id, 0: seq_len, :, :]
+        tensor[offset : offset + seq_len, :, :] = dense_tensor[batch_id, 0:seq_len, :, :]
         offset = offset + seq_len
     return tensor
 
@@ -131,7 +131,7 @@ def create_causal_mask(seqlen_q, seqlen_k=None, num_context=None, num_target=Non
     mask = torch.tril(torch.ones(seqlen_q, seqlen_k), diagonal=(seqlen_k - seqlen_q))
     if _check_int_valid(num_context):
         num_target = 0 if num_target is None else num_target
-        mask[:num_context, :seqlen_k - num_target] = 1
+        mask[:num_context, : seqlen_k - num_target] = 1
     if _check_int_valid(target_group_size) and _check_int_valid(num_target):
         mask[-num_target:, -num_target:] = create_target_mask(num_target, target_group_size)
     return mask
@@ -186,9 +186,21 @@ def get_golden(q, k, v, mask=None, attn_bias=None, mask_type=0, max_seq_len=None
     return out.astype(q.dtype)
 
 
-def get_golden_jagged(q, k, v, mask=None, attn_bias=None, mask_type=0, max_seq_len=None,
-                      silu_scale=None, seq_offset=None, seq_offset_k=None,
-                      num_context=None, num_target=None, target_group_size=None):
+def get_golden_jagged(
+    q,
+    k,
+    v,
+    mask=None,
+    attn_bias=None,
+    mask_type=0,
+    max_seq_len=None,
+    silu_scale=None,
+    seq_offset=None,
+    seq_offset_k=None,
+    num_context=None,
+    num_target=None,
+    target_group_size=None,
+):
     """numpy 实现 HSTU jagged 前向：按 batch 拆分 q 段与 k 段后每段做 silu(qk^T)*scale @ v
 
     参数顺序与算子接口 hstu_jagged.equal/delta 的公共部分对齐。
@@ -240,8 +252,7 @@ def get_golden_jagged(q, k, v, mask=None, attn_bias=None, mask_type=0, max_seq_l
     return np.concatenate(outs, axis=0).astype(q.dtype)
 
 
-def get_golden_paged(q, k, v, kv_cache, seq_offset, page_offsets, page_ids, last_page_len,
-                     num_target, silu_scale):
+def get_golden_paged(q, k, v, kv_cache, seq_offset, page_offsets, page_ids, last_page_len, num_target, silu_scale):
     """numpy 实现 HSTU paged 前向 golden（fp32），针对 MASK_TRIL（mask_type=0）。
 
     语义依据 op_kernel/atlas950/hstu_paged_forward_kernel.h（FetchKvMayFromCache 的
@@ -260,31 +271,30 @@ def get_golden_paged(q, k, v, kv_cache, seq_offset, page_offsets, page_ids, last
     outs = []
     for b in range(len(seq_offset) - 1):
         q0, q1 = seq_offset[b], seq_offset[b + 1]
-        S = int(q1 - q0)                       # 该 batch 全部 q 行（历史 + target）
+        S = int(q1 - q0)  # 该 batch 全部 q 行（历史 + target）
         T = int(num_target[b])
-        H = S - T                              # 历史行/列数 == kv_cache 覆盖长度
+        H = S - T  # 历史行/列数 == kv_cache 覆盖长度
         # 1) 解页 kv_cache：每 batch 的 page 依序拼接，末页只取 last_page_len 行
         cache_k, cache_v = [], []
         for p in range(int(page_offsets[b]), int(page_offsets[b + 1])):
             pid = int(page_ids[p])
-            is_last = (p == int(page_offsets[b + 1]) - 1)
+            is_last = p == int(page_offsets[b + 1]) - 1
             n = int(last_page_len[b]) if is_last else kv_cache.shape[2]
             cache_k.append(kv_cache[pid, 0, :n])
             cache_v.append(kv_cache[pid, 1, :n])
-        cache_k = np.concatenate(cache_k, axis=0)   # (H, N, D)
+        cache_k = np.concatenate(cache_k, axis=0)  # (H, N, D)
         cache_v = np.concatenate(cache_v, axis=0)
-        assert len(cache_k) == H, \
-            f"batch {b}: cache len {len(cache_k)} != H={H} (seq_offset 与 page 元数据不一致)"
+        assert len(cache_k) == H, f"batch {b}: cache len {len(cache_k)} != H={H} (seq_offset 与 page 元数据不一致)"
         # 2) K/V 全序列 = cache 历史 + 输入 k/v 的 target 段（第 H..S 行）
-        k_con = np.concatenate([cache_k, k_f[q0 + H:q1]], axis=0)   # (H+T, N, D)
-        v_con = np.concatenate([cache_v, v_f[q0 + H:q1]], axis=0)
+        k_con = np.concatenate([cache_k, k_f[q0 + H : q1]], axis=0)  # (H+T, N, D)
+        v_con = np.concatenate([cache_v, v_f[q0 + H : q1]], axis=0)
         # 3) 注意力 + 掩码
         qb = q_f[q0:q1]
         qk = np.einsum("nhd,mhd->hnm", qb, k_con)
         qk = qk * (1.0 / (1.0 + np.exp(-qk))) * silu_scale
         mask = np.zeros((S, S), dtype=np.float32)
         mask[:, :H] = np.tril(np.ones((S, H), dtype=np.float32), k=H + T - S)  # 历史列：下三角
-        mask[H:, H:] = np.eye(T, dtype=np.float32)                            # target 列：自身
+        mask[H:, H:] = np.eye(T, dtype=np.float32)  # target 列：自身
         qk = qk * mask[None, :, :]
         outs.append(np.einsum("hnm,mhd->nhd", qk, v_con))
     return np.concatenate(outs, axis=0).astype(q.dtype)

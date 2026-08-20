@@ -25,7 +25,7 @@ __aicore__ inline void InvokeHstuOpImpl(const HstuDenseForward::Args& args)
     GET_TILING_DATA(tilingData, args.tiling);
     const HstuJaggedForwardTilingData* __restrict tilingDataPtr = &tilingData;
     REGIST_MATMUL_OBJ(&tPipe, GetSysWorkSpacePtr(), op.qkMatmul, (TCubeTiling*)nullptr, op.svMatmul,
-        (TCubeTiling*)nullptr);
+                      (TCubeTiling*)nullptr);
     uint64_t tilingPtr = reinterpret_cast<uint64_t>(args.tiling);
     op.qkMatmul.SetUserDefInfo(tilingPtr);
     op.svMatmul.SetUserDefInfo(tilingPtr);
@@ -33,19 +33,10 @@ __aicore__ inline void InvokeHstuOpImpl(const HstuDenseForward::Args& args)
     op.Compute();
 }
 
-template<int maskedType, bool enableBias, int typeTilingKey, bool deterministic,
-         int blockM, int blockN, int blockK>
-__global__ __aicore__ void hstu_jagged_forward(GM_ADDR q,
-                                               GM_ADDR k,
-                                               GM_ADDR v,
-                                               GM_ADDR mask,
-                                               GM_ADDR attnBias,
-                                               GM_ADDR seq_offset_q,
-                                               GM_ADDR seq_offset_k,
-                                               GM_ADDR num_context,
-                                               GM_ADDR num_target,
-                                               GM_ADDR attnOutput,
-                                               GM_ADDR workspace,
+template <int maskedType, bool enableBias, int typeTilingKey, bool deterministic, int blockM, int blockN, int blockK>
+__global__ __aicore__ void hstu_jagged_forward(GM_ADDR q, GM_ADDR k, GM_ADDR v, GM_ADDR mask, GM_ADDR attnBias,
+                                               GM_ADDR seq_offset_q, GM_ADDR seq_offset_k, GM_ADDR num_context,
+                                               GM_ADDR num_target, GM_ADDR attnOutput, GM_ADDR workspace,
                                                GM_ADDR tiling)
 {
     GET_TILING_DATA(tiling_data, tiling);
@@ -63,8 +54,9 @@ __global__ __aicore__ void hstu_jagged_forward(GM_ADDR q,
     args.workspace = workspace;
     args.tiling = tiling;
 
-    using FastConfig = HstuForward::TraitParams<DTYPE_Q, DTYPE_SEQ_OFFSET_Q, enableBias,
-        deterministic, static_cast<HstuForward::CausalMaskT>(maskedType), blockM, blockN, blockK>;
+    using FastConfig =
+        HstuForward::TraitParams<DTYPE_Q, DTYPE_SEQ_OFFSET_Q, enableBias, deterministic,
+                                 static_cast<HstuForward::CausalMaskT>(maskedType), blockM, blockN, blockK>;
 
     InvokeHstuOpImpl<HstuDenseForward::HstuDenseForwardJaggedKernel<FastConfig, HstuJaggedForwardTilingData>>(args);
 }

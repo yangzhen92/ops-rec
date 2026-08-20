@@ -71,11 +71,11 @@ def test_hstu_jagged_delta():
     k = torch.randn(total_k, N, D, dtype=torch.float16).npu()
     v = torch.randn(total_k, N, D, dtype=torch.float16).npu()
     seq_offset = torch.tensor([0] + [sum(seq_lens_q[: i + 1]) for i in range(batch)], device="npu", dtype=torch.int32)
-    seq_offset_k = torch.tensor([0] + [sum(seq_lens_k[: i + 1]) for i in range(batch)], device="npu",
-                                dtype=torch.int32)
+    seq_offset_k = torch.tensor([0] + [sum(seq_lens_k[: i + 1]) for i in range(batch)], device="npu", dtype=torch.int32)
 
-    y = ops_rec.ascendc.attention.hstu_jagged.delta(q, k, v, None, None, 0, s_q, s_k, silu_scale,
-                                                    seq_offset, seq_offset_k)
+    y = ops_rec.ascendc.attention.hstu_jagged.delta(
+        q, k, v, None, None, 0, s_q, s_k, silu_scale, seq_offset, seq_offset_k
+    )
 
     torch.npu.synchronize()
     print(f"[torch] hstu_jagged.delta output shape: {tuple(y.shape)}")

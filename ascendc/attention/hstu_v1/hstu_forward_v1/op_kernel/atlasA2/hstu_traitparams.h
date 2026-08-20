@@ -26,8 +26,8 @@ See the License for the specific language governing permissions and
 
 namespace HstuForward {
 
-template <typename qTypeTemplate, typename oTypeTemplate, bool bias,
-    bool determin, CausalMaskT maskedType, int tilingM, int tilingN, int tilingK>
+template <typename qTypeTemplate, typename oTypeTemplate, bool bias, bool determin, CausalMaskT maskedType, int tilingM,
+          int tilingN, int tilingK>
 struct TraitParams {
     using qType = qTypeTemplate;
     using oType = oTypeTemplate;
@@ -39,8 +39,6 @@ struct TraitParams {
     static constexpr int blockK = tilingK;
 };
 
-
 }  // namespace HstuForward
 
 #endif  // HSTU_TRAIPARAMS_H
-

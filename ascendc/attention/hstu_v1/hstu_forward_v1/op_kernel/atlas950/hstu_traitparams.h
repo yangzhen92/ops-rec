@@ -36,8 +36,8 @@ enum class VecToCubeT {
     PING_PONG_FULL_GM = 1,
 };
 
-template <typename qTypeTemplate, typename oTypeTemplate, bool bias,
-          bool determin, CausalMaskT maskedType, int tilingM, int tilingN, int tilingK>
+template <typename qTypeTemplate, typename oTypeTemplate, bool bias, bool determin, CausalMaskT maskedType, int tilingM,
+          int tilingN, int tilingK>
 struct TraitParams {
     using qType = qTypeTemplate;
     using oType = oTypeTemplate;
@@ -63,7 +63,7 @@ struct TraitParams {
             return MATMUL_L1_SIZE;
         }
     }
-    
+
     __aicore__ static constexpr bool EnableMask()
     {
         return maskedType != CausalMaskT::MASK_NONE;
@@ -101,7 +101,7 @@ struct TraitParams {
     // only used when enable CV passthrough
     __aicore__ static constexpr uint32_t GetUbBlockElem()
     {
-        int32_t returnElementNumer = 1; // init fot cast
+        int32_t returnElementNumer = 1;  // init fot cast
         returnElementNumer += EnableMask();
         returnElementNumer += EnableBias();
         returnElementNumer += GetInTQueNumber();
@@ -120,5 +120,5 @@ struct TraitParams {
         return Config.getSVMatmulConfig();
     }
 };
-}
+}  // namespace HstuForward
 #endif

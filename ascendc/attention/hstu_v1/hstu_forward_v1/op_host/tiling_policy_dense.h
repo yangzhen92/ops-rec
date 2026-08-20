@@ -13,7 +13,6 @@ See the License for the specific language governing permissions and
         limitations under the License.
 ==============================================================================*/
 
-
 #ifndef TILING_POLICY_DENSE_H
 #define TILING_POLICY_DENSE_H
 
@@ -29,11 +28,12 @@ public:
     virtual bool DenseGeneralShapeCheck(int64_t batchSize, int64_t seqLen, int64_t headNum, int64_t dim);
     virtual bool TilingHeighLevelApi(gert::TilingContext* context, optiling::HstuDenseForwardTilingData& tiling);
     virtual bool TilingKeySet(gert::TilingContext* context, optiling::HstuDenseForwardTilingData& tiling);
+
 private:
     bool TilingShape(gert::TilingContext* context, optiling::HstuDenseForwardTilingData& tiling);
     bool TilingSaveToBuffer(gert::TilingContext* context, optiling::HstuDenseForwardTilingData& tiling);
 };
 
-}
+}  // namespace HstuDenseForward
 
 #endif

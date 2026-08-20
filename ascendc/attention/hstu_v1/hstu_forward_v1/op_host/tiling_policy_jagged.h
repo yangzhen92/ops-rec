@@ -13,7 +13,6 @@ See the License for the specific language governing permissions and
         limitations under the License.
 ==============================================================================*/
 
-
 #ifndef TILING_POLICY_JAGGED_H
 #define TILING_POLICY_JAGGED_H
 
@@ -25,6 +24,7 @@ namespace HstuJaggedForward {
 class TilingPolicyJagged : public HstuForward::TilingPolicy {
 public:
     ge::graphStatus TilingProcess(gert::TilingContext* context) override;
+
 private:
     bool TilingAttribute(gert::TilingContext* context, optiling::HstuJaggedForwardTilingData& tiling);
     bool TilingShape(gert::TilingContext* context, optiling::HstuJaggedForwardTilingData& tiling);
@@ -32,6 +32,6 @@ private:
     bool TilingSaveToBuffer(gert::TilingContext* context, optiling::HstuJaggedForwardTilingData& tiling);
 };
 
-}
+}  // namespace HstuJaggedForward
 
 #endif

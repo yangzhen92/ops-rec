@@ -13,7 +13,6 @@ See the License for the specific language governing permissions and
         limitations under the License.
 ==============================================================================*/
 
-
 #ifndef TILING_POLICY_PAGED_H
 #define TILING_POLICY_PAGED_H
 
@@ -26,6 +25,7 @@ class TilingPolicyPaged : public HstuForward::TilingPolicy {
 public:
     ge::graphStatus TilingProcess(gert::TilingContext* context) override;
     bool TilingWorkSpace(gert::TilingContext* context) override;
+
 private:
     bool TilingAttribute(gert::TilingContext* context, optiling::HstuPagedForwardTilingData& tiling);
     bool TilingShape(gert::TilingContext* context, optiling::HstuPagedForwardTilingData& tiling);
@@ -34,6 +34,6 @@ private:
     bool TilingSaveToBuffer(gert::TilingContext* context, optiling::HstuPagedForwardTilingData& tiling);
 };
 
-}
+}  // namespace HstuPagedForward
 
-#endif // TILING_POLICY_PAGED_H
+#endif  // TILING_POLICY_PAGED_H

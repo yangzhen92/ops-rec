@@ -46,7 +46,7 @@ public:
     __aicore__ inline VectorScoreInter() {}
 
     __aicore__ inline void InitParams(TPipe* pipePtr, VecScoreRabGtInfo<qType>& gtInfo, float siluScale, float alpha,
-        int blockM, int blockN, int64_t maxSeqLenK)
+                                      int blockM, int blockN, int64_t maxSeqLenK)
     {
         pipe_ = pipePtr;
         attnMaskGt_ = gtInfo.attnMaskGt;
@@ -65,7 +65,7 @@ public:
     }
 
     __aicore__ inline void Init(TPipe* pipePtr, VecScoreRabGtInfo<qType>& gtInfo, float siluScale, float alpha,
-        int blockM, int blockN, int64_t maxSeqLenK)
+                                int blockM, int blockN, int64_t maxSeqLenK)
     {
         static_cast<VectorScoreImpl*>(this)->Init(pipePtr, gtInfo, siluScale, alpha, blockM, blockN, maxSeqLenK);
     }
@@ -93,7 +93,7 @@ public:
     }
 
     __aicore__ inline void DataCopyMayPad(const LocalTensor<qType>& lt, GlobalTensor<qType>& gt, uint16_t copyBlock,
-        uint32_t blockLen, int64_t offset)
+                                          uint32_t blockLen, int64_t offset)
     {
         bool align = false;
         uint16_t alignOfN = AlignUp(blockLen, ElementOfBlock);
@@ -105,33 +105,31 @@ public:
             uint16_t copyLen = alignOfN * sizeof(qType) / DATA_ALIGN_BYTES;
             uint16_t srcStride = (maxSeqLenK_ - blockLen) * sizeof(qType) / DATA_ALIGN_BYTES;
 
-            DataCopyParams copyParms = { copyBlock, copyLen, srcStride, dstStride };
+            DataCopyParams copyParms = {copyBlock, copyLen, srcStride, dstStride};
             DataCopy(lt, gt[offset], copyParms);
         } else {
             uint16_t copyLenBytes = blockLen * sizeof(qType);
             uint16_t srcStrideBytes = (maxSeqLenK_ - blockLen) * sizeof(qType);
 
             uint8_t padLens = alignOfN - blockLen;
-            DataCopyParams copyParms = { copyBlock, copyLenBytes, srcStrideBytes, dstStride };
-            DataCopyPadParams padParms = { true, 0, padLens, 0 };
+            DataCopyParams copyParms = {copyBlock, copyLenBytes, srcStrideBytes, dstStride};
+            DataCopyPadParams padParms = {true, 0, padLens, 0};
             DataCopyPad(lt, gt[offset], copyParms, padParms);
         }
     }
 
     __aicore__ inline bool DoMaskInitOptional(LocalTensor<qType>& inMaskLt, LocalTensor<float>& inMaskLtFp32,
-        MaskInfoType& maskinfo, int64_t maskOffset, int64_t thisLen, int64_t blockOffset, uint32_t n)
+                                              MaskInfoType& maskinfo, int64_t maskOffset, int64_t thisLen,
+                                              int64_t blockOffset, uint32_t n)
     {
         bool needMask = false;
         if constexpr (maskType == CausalMaskT::MASK_TRIL) {
             inMaskLtFp32 = queMaskIn_.template AllocTensor<float>();
             if constexpr (std::is_same<MaskInfoType, uint32_t>::value) {
                 // 处理 uint32_t 类型
-                needMask = GenMask(
-                    inMaskLtFp32,
-                    maskinfo,
-                    thisLen,
-                    ((maskinfo > 0) ? (blockOffset) : n),  // blockOffset为行号
-                    siluScale_);
+                needMask = GenMask(inMaskLtFp32, maskinfo, thisLen,
+                                   ((maskinfo > 0) ? (blockOffset) : n),  // blockOffset为行号
+                                   siluScale_);
             } else {
                 // 处理 BlockMaskParams 类型
                 BlockMaskGenerator blkMaskGen(maskinfo);
@@ -152,13 +150,13 @@ public:
         return needMask;
     }
 
-    __aicore__ inline bool GenMask(LocalTensor<float>& inMaskLt, int causalMask, int64_t maskLen,
-        int64_t maskOffset, float scale)
+    __aicore__ inline bool GenMask(LocalTensor<float>& inMaskLt, int causalMask, int64_t maskLen, int64_t maskOffset,
+                                   float scale)
     {
         bool needMask = false;
         if (causalMask == 1) {
-            DoCausalMask<float, CausalMaskT::MASK_TRIL>(inMaskLt, maskOffset, maskLen, blockN_,
-                maskLen / blockN_, scale);
+            DoCausalMask<float, CausalMaskT::MASK_TRIL>(inMaskLt, maskOffset, maskLen, blockN_, maskLen / blockN_,
+                                                        scale);
             needMask = true;
         }
 
@@ -166,7 +164,7 @@ public:
     }
 
     __aicore__ inline void CastQtype2Float(LocalTensor<float> distTensor, LocalTensor<qType> srcTensor,
-        LocalTensor<qType> midTensor, int64_t len)
+                                           LocalTensor<qType> midTensor, int64_t len)
     {
         if constexpr (!std::is_same<qType, float>::value) {
             DataCopy<qType>(midTensor, srcTensor, len);
@@ -175,7 +173,7 @@ public:
     }
 
     __aicore__ inline void CastFloat2Qtype(LocalTensor<qType>& distTensor, LocalTensor<float>& srcTensor,
-            LocalTensor<float>& midTensor, int64_t len)
+                                           LocalTensor<float>& midTensor, int64_t len)
     {
         if constexpr (!std::is_same<qType, float>::value) {
             DataCopy<float>(midTensor, srcTensor, len);
@@ -183,13 +181,9 @@ public:
         }
     }
 
-    __aicore__ inline void DoMaskOptional(
-        LocalTensor<qType>& inMaskLt,
-        LocalTensor<float>& inMaskLtFp32,
-        LocalTensor<qType>& tmpLt,
-        LocalTensor<float>& newOutLt,
-        int64_t thisLen,
-        bool needMask)
+    __aicore__ inline void DoMaskOptional(LocalTensor<qType>& inMaskLt, LocalTensor<float>& inMaskLtFp32,
+                                          LocalTensor<qType>& tmpLt, LocalTensor<float>& newOutLt, int64_t thisLen,
+                                          bool needMask)
     {
         if constexpr (maskType != CausalMaskT::MASK_NONE) {
             queMaskIn_.DeQue();
@@ -219,7 +213,7 @@ public:
     int blockN_;
     int64_t maxSeqLenK_;
 
-    TPipe *pipe_;
+    TPipe* pipe_;
 
     TQue<TPosition::VECCALC, USE_QUEUE_NUM> tmpBuff_;
     TQue<TPosition::VECIN, USE_QUEUE_NUM> queIn_;
@@ -230,16 +224,15 @@ public:
     GlobalTensor<qType> attnMaskGt_;
 };
 
-
 // 带bias的vectorScore计算
 template <typename qType, CausalMaskT maskType, typename MaskInfoType>
-class VectorScoreWithRab :
-    public VectorScoreInter<qType, maskType, MaskInfoType, VectorScoreWithRab<qType, maskType, MaskInfoType>> {
+class VectorScoreWithRab
+    : public VectorScoreInter<qType, maskType, MaskInfoType, VectorScoreWithRab<qType, maskType, MaskInfoType>> {
 public:
     __aicore__ inline VectorScoreWithRab() {}
 
     __aicore__ inline void Init(TPipe* pipePtr, VecScoreRabGtInfo<qType>& gtInfo, float siluScale, float alpha,
-        int blockM, int blockN, int64_t maxSeqLenK)
+                                int blockM, int blockN, int64_t maxSeqLenK)
     {
         this->InitParams(pipePtr, gtInfo, siluScale, alpha, blockM, blockN, maxSeqLenK);
         attnBiasGt_ = gtInfo.attnBiasGt;
@@ -272,8 +265,8 @@ public:
             int64_t blockOffset = (total - remain) / this->blockM_;
             DoBiasCopy(biasLt, params.biasOffset, thisLen, blockOffset, params.n);
 
-            bool needMask = this->DoMaskInitOptional(inMaskLt, inMaskLtFp32, params.maskinfo,
-                params.maskOffset, thisLen, blockOffset, params.n);
+            bool needMask = this->DoMaskInitOptional(inMaskLt, inMaskLtFp32, params.maskinfo, params.maskOffset,
+                                                     thisLen, blockOffset, params.n);
 
             CalcuVecScore(inLt, biasLt, inMaskLt, inMaskLtFp32, tmpLt, tmpLtFp32, needMask, thisLen);
 
@@ -288,7 +281,7 @@ public:
     }
 
     __aicore__ inline void DoBiasCopy(LocalTensor<qType>& biasLt, int64_t biasOffset, int64_t thisLen,
-        int64_t blockOffset, uint32_t n)
+                                      int64_t blockOffset, uint32_t n)
     {
         int64_t thisBiasOffset = biasOffset + blockOffset * this->maxSeqLenK_;
         biasLt = this->biasIn_.template AllocTensor<qType>();
@@ -296,15 +289,10 @@ public:
         this->biasIn_.EnQue(biasLt);
     }
 
-    __aicore__ inline void CalcuVecScore(
-        LocalTensor<qType>& inLt,
-        LocalTensor<qType>& biasLt,
-        LocalTensor<qType>& inMaskLt,
-        LocalTensor<float>& inMaskLtFp32,
-        LocalTensor<qType>& tmpLt,
-        LocalTensor<float>& tmpLtFp32,
-        bool needMask,
-        int64_t thisLen)
+    __aicore__ inline void CalcuVecScore(LocalTensor<qType>& inLt, LocalTensor<qType>& biasLt,
+                                         LocalTensor<qType>& inMaskLt, LocalTensor<float>& inMaskLtFp32,
+                                         LocalTensor<qType>& tmpLt, LocalTensor<float>& tmpLtFp32, bool needMask,
+                                         int64_t thisLen)
     {
         this->queIn_.DeQue();
         auto newInLt = inLt.template ReinterpretCast<float>();
@@ -322,11 +310,8 @@ public:
         this->queOut_.EnQue(outLt);
     }
 
-    __aicore__ inline void DoBias(
-        LocalTensor<float>& newInLt,
-        LocalTensor<qType>& biasLt,
-        LocalTensor<qType>& tmpLt,
-        int64_t thisLen)
+    __aicore__ inline void DoBias(LocalTensor<float>& newInLt, LocalTensor<qType>& biasLt, LocalTensor<qType>& tmpLt,
+                                  int64_t thisLen)
     {
         this->biasIn_.DeQue();
         auto newBiasLt = biasLt.template ReinterpretCast<float>();
@@ -340,13 +325,13 @@ public:
 
 // 不带bias的vectorScore计算
 template <typename qType, CausalMaskT maskType, typename MaskInfoType>
-class VectorScoreWithoutRab :
-    public VectorScoreInter<qType, maskType, MaskInfoType, VectorScoreWithoutRab<qType, maskType, MaskInfoType>> {
+class VectorScoreWithoutRab
+    : public VectorScoreInter<qType, maskType, MaskInfoType, VectorScoreWithoutRab<qType, maskType, MaskInfoType>> {
 public:
     __aicore__ inline VectorScoreWithoutRab() {}
 
     __aicore__ inline void Init(TPipe* pipePtr, VecScoreRabGtInfo<qType>& gtInfo, float siluScale, float alpha,
-        int blockM, int blockN, int64_t maxSeqLenK)
+                                int blockM, int blockN, int64_t maxSeqLenK)
     {
         this->InitParams(pipePtr, gtInfo, siluScale, alpha, blockM, blockN, maxSeqLenK);
     }
@@ -380,8 +365,8 @@ public:
 
             int64_t blockOffset = (total - remain) / this->blockM_;
 
-            bool needMask = this->DoMaskInitOptional(inMaskLt, inMaskLtFp32, params.maskinfo,
-                params.maskOffset, thisLen, blockOffset, params.n);
+            bool needMask = this->DoMaskInitOptional(inMaskLt, inMaskLtFp32, params.maskinfo, params.maskOffset,
+                                                     thisLen, blockOffset, params.n);
 
             CalcuVecScore(inLt, biasLt, inMaskLt, inMaskLtFp32, tmpLt, tmpLtFp32, needMask, thisLen);
 
@@ -396,15 +381,10 @@ public:
         this->tmpBuff_.FreeTensor(tmpLt);
     }
 
-    __aicore__ inline void CalcuVecScore(
-        LocalTensor<qType>& inLt,
-        LocalTensor<qType>& biasLt,
-        LocalTensor<qType>& inMaskLt,
-        LocalTensor<float>& inMaskLtFp32,
-        LocalTensor<qType>& tmpLt,
-        LocalTensor<float>& tmpLtFp32,
-        bool needMask,
-        int64_t thisLen)
+    __aicore__ inline void CalcuVecScore(LocalTensor<qType>& inLt, LocalTensor<qType>& biasLt,
+                                         LocalTensor<qType>& inMaskLt, LocalTensor<float>& inMaskLtFp32,
+                                         LocalTensor<qType>& tmpLt, LocalTensor<float>& tmpLtFp32, bool needMask,
+                                         int64_t thisLen)
     {
         if constexpr (!std::is_same<qType, float>::value) {
             this->queIn_.DeQue();
@@ -433,6 +413,6 @@ public:
     }
 };
 
-} // HstuForward
+}  // namespace HstuForward
 
-#endif // VECTOR_SCORE_INTER_H
+#endif  // VECTOR_SCORE_INTER_H

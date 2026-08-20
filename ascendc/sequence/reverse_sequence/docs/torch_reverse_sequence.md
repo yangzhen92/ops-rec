@@ -43,6 +43,7 @@ ops_rec.ascendc.sequence.reverse_sequence(input: Tensor, seq_lengths: Tensor) ->
 
 - input 必须为 3D，seq_lengths 必须为 1D，且 `input.shape[0] == seq_lengths.shape[0]`
 - input 数据类型仅支持 FLOAT32 / FLOAT16 / BF16 / INT64，seq_lengths 仅支持 INT64 / INT32
+- seq_lengths 元素取值应在 [0, max_seq_len] 范围内；越界值由 kernel 防御性截断（大于 max_seq_len 按 max_seq_len 处理），负值等效于 0（不逆序）
 - 该算子需要在 NPU 设备上运行
 
 ### torch 扩展层额外校验

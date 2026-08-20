@@ -25,7 +25,6 @@ namespace optiling {
     TILING_DATA_FIELD_DEF(int64_t, batchSize);
     TILING_DATA_FIELD_DEF(int64_t, maxSeqLen);
     TILING_DATA_FIELD_DEF(int64_t, dataDim);
-    TILING_DATA_FIELD_DEF(int64_t, handleNumOneTime);
     TILING_DATA_FIELD_DEF(int64_t, left);
     TILING_DATA_FIELD_DEF(int64_t, handleTotalCount);
     // 单条data数据bytes数为： unAlignBytes + alignBytes

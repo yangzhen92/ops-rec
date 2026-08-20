@@ -80,6 +80,7 @@ aclnnStatus：返回状态码，成功返回 `ACLNN_SUCCESS`。
 
 - input 必须为 3D，seqLengths 必须为 1D，且 `input.shape[0] == seqLengths.shape[0]`
 - input 数据类型仅支持 FLOAT32 / FLOAT16 / BF16 / INT64，seqLengths 仅支持 INT64 / INT32
+- seqLengths 元素取值应在 [0, max_seq_len] 范围内；越界值由 kernel 防御性截断（大于 max_seq_len 按 max_seq_len 处理），负值等效于 0（不逆序）
 - kernel 仅覆写每个 batch 前 seq_len 行，out 需先用 input 数据初始化
 - 该算子需要在 NPU 设备上运行
 

@@ -142,14 +142,12 @@ print(y.shape)  # torch.Size([512, 8, 128])
 
 ## 执行样例
 
-可独立运行的 PyTorch 样例见 [examples/torch/](../examples/torch/)，覆盖以下场景：
+可独立运行的 PyTorch 样例见 [examples/torch/](../examples/torch/)：
 
-| 场景 | 样例文件 |
-|------|----------|
-| attention 基础（dense） | [test_torch_hstu_forward_dense.py](../examples/torch/test_torch_hstu_forward_dense.py) |
-| MHA / GQA（jagged，N_q==N_k 与 N_q>N_k） | [test_torch_hstu_forward_jagged.py](../examples/torch/test_torch_hstu_forward_jagged.py)、[test_torch_hstu_forward_gqa.py](../examples/torch/test_torch_hstu_forward_gqa.py) |
-| causal / context / target mask | [test_torch_hstu_forward_mask.py](../examples/torch/test_torch_hstu_forward_mask.py) |
-| kvcache（paged 分页解码） | [test_torch_hstu_forward_paged.py](../examples/torch/test_torch_hstu_forward_paged.py) |
-| 量化（fp8，Atlas 950） | [test_torch_hstu_forward_fp8.py](../examples/torch/test_torch_hstu_forward_fp8.py) |
+- [test_torch_hstu_forward_dense.py](../examples/torch/test_torch_hstu_forward_dense.py)：dense（normal）基础场景
+- [test_torch_hstu_forward_jagged.py](../examples/torch/test_torch_hstu_forward_jagged.py)：jagged equal/delta 场景
+- [test_torch_hstu_forward_paged.py](../examples/torch/test_torch_hstu_forward_paged.py)：paged（kv_cache 分页）场景
 
-运行方式：`python3 examples/torch/test_torch_hstu_forward_<场景>.py`（或 `bash run_examples.sh --type torch --ops hstu_forward_v1` 自动发现执行）。
+各特性（GQA、dim 不等、复合 mask、attn_bias、deterministic、FP8 等）的增量用法见 [README.md](../README.md)「特性用法示例」。
+
+运行方式：`python3 examples/torch/test_torch_hstu_forward_<布局>.py`（或 `bash run_examples.sh --type torch --ops hstu_forward_v1` 自动发现执行）。

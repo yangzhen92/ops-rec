@@ -25,6 +25,17 @@
 
 **FP8 支持**：本算子仅在 A5 上支持 data_type 为 fp8_e4m3fn 的 qkv 输入，算子输出为 float16。
 
+## 接口说明
+
+| 接口类型 | 接口名称 | 说明 | 接口文档 |
+|---------|---------|------|---------|
+| aclnn | `aclnnHstuDenseForward` | normal（dense）格式前向 | [aclnn_hstu_forward.md](docs/aclnn_hstu_forward.md) |
+| aclnn | `aclnnHstuJaggedForward` | jagged 格式前向（equal/delta 双模式） | [aclnn_hstu_forward.md](docs/aclnn_hstu_forward.md) |
+| aclnn | `aclnnHstuPagedForward` | paged 格式前向（kv_cache 分页） | [aclnn_hstu_forward.md](docs/aclnn_hstu_forward.md) |
+| torch | `ops_rec.ascendc.attention.hstu_dense` | dense 布局 PyTorch 接口 | [torch_hstu_forward.md](docs/torch_hstu_forward.md) |
+| torch | `ops_rec.ascendc.attention.hstu_jagged.equal / .delta` | jagged 布局（equal/delta 双模式） | [torch_hstu_forward.md](docs/torch_hstu_forward.md) |
+| torch | `ops_rec.ascendc.attention.hstu_paged` | paged 布局（kv_cache 分页） | [torch_hstu_forward.md](docs/torch_hstu_forward.md) |
+
 ## 算子实现原理
 
 ### 计算公式
@@ -149,120 +160,152 @@ kv_cache 与分页元数据（page_offsets / page_ids / last_page_len）的完�
 
 ## 特性用法示例
 
-以下每个特性均为完整可运行的最小示例（含必要的变量构造，参数名与真实 schema 一致）。
+以下示例使用 PyTorch 接口演示各特性的用法：示例 1 给出完整代码（随机输入限定值域为 -1 ~ 1），后续示例在上一示例基础上做增量改动，参数名与真实 schema 一致。
 
-### GQA（仅 jagged，N_q=8，N_k=2）
+### 示例 1: 基础场景（MHA，jagged）
+
+MHA 模式（N_q == N_k），`mask_type=2`（不使用 mask），无 attn_bias，无 num_context/num_target。
 
 ```python
-N_q, D = 8, 64
-N_k = 2                                   # 每 4 个 Q 头共享 1 个 K/V 头
+# ===================== 示例 1: 基础场景（MHA，jagged） =====================
+batch_size = 2
 seq_lens = [4, 6]
-batch = len(seq_lens)
-total = sum(seq_lens)
-S = max(seq_lens)
-q = torch.randn(total, N_q, D, dtype=torch.float16).npu()
-k = torch.randn(total, N_k, D, dtype=torch.float16).npu()   # N_k < N_q（GQA）
-v = torch.randn(total, N_k, D, dtype=torch.float16).npu()   # N_v = N_k
-seq_offset = torch.tensor([0] + [sum(seq_lens[: i + 1]) for i in range(batch)], device="npu", dtype=torch.int32)
-y = ops_rec.ascendc.attention.hstu_jagged.equal(q, k, v, None, None, 0, S, 1.0 / S, seq_offset)
-print(y.shape)  # torch.Size([10, 8, 64])
-```
+total_len = sum(seq_lens)
+max_seq_len = max(seq_lens)
+head_num_q = 4
+head_num_k = 4
+head_dim_qk = 32
+head_dim_v = 32
+data_type = torch.float16
+mask_type = 2
+mask = None
+attn_bias = None
+silu_scale = 0.0
+num_context = None
+num_target = None
+target_group_size = 0
 
-约束：`N_q % N_k == 0` 且 `N_k == N_v`。
+# seq_offset: [0, seq0_len, seq0_len+seq1_len, ...]
+seq_offset = torch.tensor([0, 4, 10], dtype=torch.int32).npu()
 
-### qk 与 v 的 dim 不等（jagged）
+q = torch.empty(total_len, head_num_q, head_dim_qk, dtype=data_type).uniform_(-1, 1).npu()
+k = torch.empty(total_len, head_num_k, head_dim_qk, dtype=data_type).uniform_(-1, 1).npu()
+v = torch.empty(total_len, head_num_k, head_dim_v, dtype=data_type).uniform_(-1, 1).npu()
 
-```python
-N_q, D_qk, D_v = 8, 64, 128
-seq_lens = [4, 6]
-batch = len(seq_lens)
-total = sum(seq_lens)
-S = max(seq_lens)
-q = torch.randn(total, N_q, D_qk, dtype=torch.float16).npu()   # head_dim_qk=64
-k = torch.randn(total, N_q, D_qk, dtype=torch.float16).npu()
-v = torch.randn(total, N_q, D_v, dtype=torch.float16).npu()    # head_dim_v=128（需为 16 的倍数）
-seq_offset = torch.tensor([0] + [sum(seq_lens[: i + 1]) for i in range(batch)], device="npu", dtype=torch.int32)
-y = ops_rec.ascendc.attention.hstu_jagged.equal(q, k, v, None, None, 0, S, 1.0 / S, seq_offset)
-print(y.shape)  # torch.Size([10, 8, 128])，输出 dim 与 v 一致
-```
-
-### 自定义 mask（mask_type=3 + mask 传入）
-
-mask_type=1（上三角）暂不支持；mask_type=3 时 mask 必须传入，shape 为 `[B, N, S, S]`（B 为 batch 数，S 为 max_seq_len）。
-
-```python
-N, D = 8, 64
-seq_lens = [4, 6]
-batch = len(seq_lens)
-total = sum(seq_lens)
-S = max(seq_lens)
-q = torch.randn(total, N, D, dtype=torch.float16).npu()
-k = torch.randn(total, N, D, dtype=torch.float16).npu()
-v = torch.randn(total, N, D, dtype=torch.float16).npu()
-seq_offset = torch.tensor([0] + [sum(seq_lens[: i + 1]) for i in range(batch)], device="npu", dtype=torch.int32)
-mask = torch.tril(torch.ones(S, S, dtype=torch.float16)).expand(batch, N, S, S).npu()  # [B, N, S, S] 下三角 0/1
-y = ops_rec.ascendc.attention.hstu_jagged.equal(q, k, v, mask, None, 3, S, 1.0 / S, seq_offset)
-```
-
-### attn_bias 相对位置偏置（jagged）
-
-```python
-N, D = 8, 64
-seq_lens = [4, 6]
-batch = len(seq_lens)
-total = sum(seq_lens)
-S = max(seq_lens)
-q = torch.randn(total, N, D, dtype=torch.float16).npu()
-k = torch.randn(total, N, D, dtype=torch.float16).npu()
-v = torch.randn(total, N, D, dtype=torch.float16).npu()
-seq_offset = torch.tensor([0] + [sum(seq_lens[: i + 1]) for i in range(batch)], device="npu", dtype=torch.int32)
-attn_bias = torch.randn(batch, N, S, S, dtype=torch.float16).npu()  # [B, N, S, S] 相对位置偏置
-y = ops_rec.ascendc.attention.hstu_jagged.equal(q, k, v, None, attn_bias, 0, S, 1.0 / S, seq_offset)
-```
-
-### silu_scale 自定义（jagged）
-
-`silu_scale` 传 0.0（或默认值）时自动取 `1/max_seq_len`；需要其他缩放值（如按温度缩放）时显式传入：
-
-```python
-y = ops_rec.ascendc.attention.hstu_jagged.equal(q, k, v, None, None, 0, S, silu_scale=0.05, seq_offset)
-```
-
-### deterministic 确定性开关
-
-仅 jagged / paged 接口带 `deterministic` 参数（dense 接口无此参数）：
-
-```python
 y = ops_rec.ascendc.attention.hstu_jagged.equal(
-    q, k, v, None, None, 0, S, 1.0 / S, seq_offset, deterministic=True)
+    q, k, v, mask, attn_bias,
+    mask_type=mask_type, max_seq_len=max_seq_len, silu_scale=silu_scale,
+    seq_offset=seq_offset,
+    num_context=num_context, num_target=num_target, target_group_size=target_group_size)
+print(f"output shape: {y.shape}")   # [10, 4, 32]
 ```
 
-### jagged 的 num_context / num_target（可选参数）
+### 示例 2: GQA + dim 不等
 
-`num_context` / `num_target` 用于标记每个 batch 的上下文（context）与目标（target）token 数量，未传入时默认全 0：
+相比示例 1 的改动：`head_num_q=8 > head_num_k=2`（GQA，每 4 个 Q 头共享 1 个 K/V 头）、`head_dim_v=64 != head_dim_qk=32`（dim 不等，v_dim 需为 16 的倍数）。
+
+GQA 仅 jagged 布局支持（dense 布局 q/k/v 头数必须一致）；约束 `N_q % N_k == 0` 且 `N_k == N_v`。
 
 ```python
-num_context = torch.tensor([256, 256], dtype=torch.int32).npu()
-num_target = torch.tensor([0, 0], dtype=torch.int32).npu()
+# ===================== 示例 2: GQA + dim 不等 =====================
+# 相比示例 1 的改动：head_num_q=8 > head_num_k=2，head_dim_v=64 != head_dim_qk=32
+head_num_q = 8
+head_num_k = 2
+head_dim_qk = 32
+head_dim_v = 64
+# q 用 head_num_q 头，k/v 用 head_num_k 头
+q = torch.empty(total_len, head_num_q, head_dim_qk, dtype=data_type).uniform_(-1, 1).npu()
+k = torch.empty(total_len, head_num_k, head_dim_qk, dtype=data_type).uniform_(-1, 1).npu()
+v = torch.empty(total_len, head_num_k, head_dim_v, dtype=data_type).uniform_(-1, 1).npu()
+# 输出 shape [T, head_num_q, head_dim_v] = [10, 8, 64]
+```
+
+| 配置名称 | N_q | N_k | ratio | 说明 |
+|---------|-----|-----|-------|------|
+| 标准 MHA | 8   | 8   | 1     | 每个 Q 头有独立的 K/V 头 |
+| GQA-4   | 8   | 2   | 4     | 每 4 个 Q 头共享 1 个 K/V 头 |
+| MQA     | 8   | 1   | 8     | 所有 Q 头共享 1 个 K/V 头 |
+
+### 示例 3: 复合 Mask（Causal + Context + Target）
+
+相比示例 2 的改动：`mask_type` 改为 0（TRIL），新增 `num_context` / `num_target` / `target_group_size`，算子结合这些参数构造 HSTU 复合 mask。
+
+序列划分为 `[context] [causal] [target]` 三个区域：
+
+- **Context 区域**（前 num_context 个 token）：全量关注所有 context token
+- **Causal 区域**（中间 token）：因果关注（context + 自身之前的 causal token）
+- **Target 区域**（后 num_target 个 token）：只关注 context 和自身（不跨 target 相互关注）
+
+```python
+# ===================== 示例 3: 复合 Mask =====================
+# 相比示例 2 的改动：mask_type 改为 0，新增 num_context/num_target/target_group_size
+mask_type = 0
+num_context = torch.tensor([2, 3], dtype=torch.int32).npu()   # 每个 batch 的 context 长度
+num_target = torch.tensor([1, 2], dtype=torch.int32).npu()    # 每个 batch 的 target 长度
+target_group_size = 1
+```
+
+### 示例 4: attn_bias 与自定义 mask
+
+相比示例 3 的改动：可选传入 `attn_bias`（[B, N, S, S] 相对位置偏置）和/或自定义 `mask`（mask_type=3 时 mask 必须传入，shape [B, N, S, S]）。
+
+```python
+# ===================== 示例 4: attn_bias 与自定义 mask =====================
+# 相比示例 3 的改动：可选 attn_bias 与自定义 mask
+attn_bias = torch.empty(batch_size, head_num_q, max_seq_len, max_seq_len, dtype=data_type).uniform_(-1, 1).npu()
+mask = torch.tril(torch.ones(max_seq_len, max_seq_len, dtype=data_type)).expand(
+    batch_size, head_num_q, max_seq_len, max_seq_len).npu()   # [B, N, S, S] 下三角 0/1
 y = ops_rec.ascendc.attention.hstu_jagged.equal(
-    q, k, v, None, None, 0, 256, 1.0 / 256, seq_offset,
-    num_context=num_context, num_target=num_target)
+    q, k, v, mask, attn_bias,
+    mask_type=3, max_seq_len=max_seq_len, silu_scale=silu_scale, seq_offset=seq_offset,
+    num_context=num_context, num_target=num_target, target_group_size=target_group_size)
 ```
 
-### paged 的 target_group_size + num_target（decode 场景）
+### 示例 5: deterministic / silu_scale
 
-decode 场景：每个 batch 的历史 KV 已按 page_size 分页存入 kv_cache，`num_target` 描述本次新生成的 token 数（定义时 `target_group_size` 必须 > 0）：
+相比示例 4 的改动：`deterministic=True`（确定性计算开关，仅 jagged/paged 接口带此参数）、`silu_scale=0.05`（自定义缩放，传 0.0 或默认时自动取 1/max_seq_len）。
 
 ```python
-N, D, page_size, batch = 4, 32, 32, 2   # 注意：page_size 必须 ∈ {32, 64, 128, 256}（tiling 层约束）
+# ===================== 示例 5: deterministic / silu_scale =====================
+# 相比示例 4 的改动：deterministic=True、silu_scale 自定义
+deterministic = True
+silu_scale = 0.05
+y = ops_rec.ascendc.attention.hstu_jagged.equal(
+    q, k, v, mask, attn_bias,
+    mask_type=mask_type, max_seq_len=max_seq_len, silu_scale=silu_scale, seq_offset=seq_offset,
+    num_context=num_context, num_target=num_target, target_group_size=target_group_size,
+    deterministic=deterministic)
+```
+
+### 示例 6: FP8（仅 Atlas 950）
+
+相比示例 1 的改动：q/k/v 为 `fp8_e4m3fn`，输出为 `float16`；仅 Atlas 950（A5）支持。
+
+```python
+# ===================== 示例 6: FP8（仅 Atlas 950） =====================
+# 相比示例 1 的改动：q/k/v 为 fp8_e4m3fn，输出为 float16
+data_type = torch.float8_e4m3fn
+q = torch.empty(total_len, head_num_q, head_dim_qk, dtype=data_type).uniform_(-1, 1).npu()
+k = torch.empty(total_len, head_num_k, head_dim_qk, dtype=data_type).uniform_(-1, 1).npu()
+v = torch.empty(total_len, head_num_k, head_dim_v, dtype=data_type).uniform_(-1, 1).npu()
+# 输出 dtype 为 float16，shape [T, head_num_q, head_dim_v]
+```
+
+### paged（kvcache decode 场景）
+
+paged 布局独立示例：历史 KV 按 page_size 分页存入 kv_cache，`num_target` 描述本次新生成 token 数（定义时 `target_group_size` 必须 > 0）。
+
+```python
+# ===================== paged: kvcache 分页 decode =====================
+N, D, page_size, batch = 4, 32, 32, 2   # page_size 必须 ∈ {32, 64, 128, 256}（tiling 层约束）
 new_hist_lens = [32, 48]   # 每个 batch 的历史 token 数（已存入 kv_cache），覆盖恰好满页(32)与末页不足(48 % 32 = 16)
 num_targets = [4, 6]       # 每个 batch 新生成的 token 数
 seq_lens = [h + t for h, t in zip(new_hist_lens, num_targets)]
 total, max_seq_len = sum(seq_lens), max(seq_lens)
 
-q = torch.randn(total, N, D, dtype=torch.float16).npu()
-k = torch.randn(total, N, D, dtype=torch.float16).npu()
-v = torch.randn(total, N, D, dtype=torch.float16).npu()
+q = torch.empty(total, N, D, dtype=torch.float16).uniform_(-1, 1).npu()
+k = torch.empty(total, N, D, dtype=torch.float16).uniform_(-1, 1).npu()
+v = torch.empty(total, N, D, dtype=torch.float16).uniform_(-1, 1).npu()
 
 seq_offset = torch.tensor([0] + [sum(seq_lens[: i + 1]) for i in range(batch)], device="npu", dtype=torch.int32)
 seq_offset_k = seq_offset.clone()
@@ -270,13 +313,12 @@ seq_offset_t = torch.tensor([0] + [sum(num_targets[: i + 1]) for i in range(batc
 num_target = torch.tensor(num_targets, device="npu", dtype=torch.int32)
 
 # kv_cache 分页：每个 batch 的历史 KV 按 page_size 分页存放（末页不足时以 last_page_len 标记）
-# 注意：page_size 必须 ∈ {32, 64, 128, 256}（tiling 层 BLOCK_HEIGHT=256 / MIN_PAGE_SIZE=32 约束）
 num_pages_per_batch = [(h + page_size - 1) // page_size for h in new_hist_lens]
 page_ids = list(range(sum(num_pages_per_batch)))
 page_offsets = [0] + [sum(num_pages_per_batch[: i + 1]) for i in range(batch)]
 last_page_len = [h % page_size if h % page_size > 0 else page_size for h in new_hist_lens]
 
-kv_cache = torch.randn(sum(num_pages_per_batch), 2, page_size, N, D, device="npu", dtype=torch.float16)
+kv_cache = torch.empty(sum(num_pages_per_batch), 2, page_size, N, D, dtype=torch.float16).uniform_(-1, 1).npu()
 page_offsets = torch.tensor(page_offsets, device="npu", dtype=torch.int32)
 page_ids = torch.tensor(page_ids, device="npu", dtype=torch.int32)
 last_page_len = torch.tensor(last_page_len, device="npu", dtype=torch.int32)
@@ -291,45 +333,27 @@ y = ops_rec.ascendc.attention.hstu_paged(
 print(y.shape)  # torch.Size([90, 4, 32])
 ```
 
-### FP8 支持（仅 Atlas 950，jagged）
+## 调用示例
 
-```python
-# fp8_e4m3fn 输入 -> float16 输出；仅 Atlas 950（A5）支持
-N, D = 8, 64
-seq_lens = [4, 6]
-batch = len(seq_lens)
-total = sum(seq_lens)
-S = max(seq_lens)
-q = torch.randn(total, N, D).to(dtype=torch.float8_e4m3fn).npu()
-k = torch.randn(total, N, D).to(dtype=torch.float8_e4m3fn).npu()
-v = torch.randn(total, N, D).to(dtype=torch.float8_e4m3fn).npu()
-seq_offset = torch.tensor([0] + [sum(seq_lens[: i + 1]) for i in range(batch)], device="npu", dtype=torch.int32)
-y = ops_rec.ascendc.attention.hstu_jagged.equal(q, k, v, None, None, 0, S, 1.0 / S, seq_offset)
-print(y.dtype)  # torch.float16
-```
+### aclnn 接口
 
-## GQA (Grouped Query Attention) 支持说明（仅 jagged）
+- [dense 调用示例](examples/aclnn/test_aclnn_hstu_forward_dense.cpp)
+- [jagged 调用示例](examples/aclnn/test_aclnn_hstu_forward_jagged.cpp)
+- [paged 调用示例](examples/aclnn/test_aclnn_hstu_forward_paged.cpp)
+- [接口文档](./docs/aclnn_hstu_forward.md)
 
-仅 jagged（equal/delta）布局支持 GQA（N_k < N_q）；hstu_dense（dense 4D 布局）不支持 GQA，其 q/k/v 头数必须一致。
+### torch 接口
 
-| 配置名称 | N_q | N_k | h_h_k_ratio | 说明 |
-|---------|-----|-----|-------------|------|
-| 标准 MHA | 8   | 8   | 1           | 每个 Q 头有独立的 K/V 头 |
-| GQA-4   | 8   | 2   | 4           | 每 4 个 Q 头共享 1 个 K/V 头 |
-| MQA     | 8   | 1   | 8           | 所有 Q 头共享 1 个 K/V 头 |
+- [dense 调用示例](examples/torch/test_torch_hstu_forward_dense.py)
+- [jagged 调用示例](examples/torch/test_torch_hstu_forward_jagged.py)
+- [paged 调用示例](examples/torch/test_torch_hstu_forward_paged.py)
+- [接口文档](./docs/torch_hstu_forward.md)
 
-约束：`N_q % N_k == 0` 且 `N_k == N_v`。
+### pytest 测试
 
-## qk 与 v 的 dim 不等支持
-
-算子支持 qk 与 v 的 dim 不等的输入，输出 dim 与 v_dim 保持一致：
-
-```python
-q = torch.randn(batch_size * seq_len, num_heads, 64, dtype=torch.float16).npu()   # head_dim_qk=64
-v = torch.randn(batch_size * seq_len, num_heads, 128, dtype=torch.float16).npu()  # head_dim_v=128
-y = ops_rec.ascendc.attention.hstu_jagged.equal(q, q, v, None, None, 0, 256, 1.0/256, seq_offsets_q)
-print(y.shape)  # torch.Size([B*S, N, 128])
-```
+- [dense 测试](./test/pytest/test_hstu_dense.py)
+- [jagged 测试](./test/pytest/test_hstu_jagged.py)
+- [paged 测试](./test/pytest/test_hstu_paged.py)
 
 ## 编译与验证
 

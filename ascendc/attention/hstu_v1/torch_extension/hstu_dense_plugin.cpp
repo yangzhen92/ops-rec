@@ -184,9 +184,12 @@ public:
                               const c10::optional<at::Tensor>& mask, const c10::optional<at::Tensor>& attnBias,
                               const int64_t maskType, const int64_t maxSeqLen, const double siluScale)
     {
-        // torch.compile 图模式（fake tensor 构图）：不执行真实 NPU 算子，仅返回 shape 推导结果
+        // torch.compile 图模式（fake tensor 构图）：不执行真实 NPU 算子，仅返回 shape 推导结果。
+        // 注意返回 npu device 的 empty（与真实输出一致），FakeTensorMode 会将其转为 fake；
+        // 若返回 meta device，autograd Function 作为黑盒不会被 dynamo 转换，inductor 会报
+        // "Unsupported device type: meta"。
         if (IsFakeTensor(q)) {
-            return at::empty_like(q, q.options().device(c10::kMeta));
+            return at::empty_like(q, q.options());
         }
         at::AutoDispatchBelowADInplaceOrView guard;
         ctx->save_for_backward({q, k, v, mask.value_or(at::Tensor()), attnBias.value_or(at::Tensor())});

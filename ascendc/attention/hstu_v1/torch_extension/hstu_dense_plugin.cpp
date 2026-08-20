@@ -185,7 +185,7 @@ public:
                               const int64_t maskType, const int64_t maxSeqLen, const double siluScale)
     {
         // torch.compile 图模式（fake tensor 构图）：不执行真实 NPU 算子，仅返回 shape 推导结果
-        if (IsMetaContext()) {
+        if (IsFakeTensor(q)) {
             return at::empty_like(q);
         }
         at::AutoDispatchBelowADInplaceOrView guard;
@@ -256,7 +256,7 @@ at::Tensor hstu_dense_meta(const at::Tensor& q, const at::Tensor& k, const at::T
                            const int64_t maskType, const int64_t maxSeqLen, const double siluScale)
 {
     TORCH_CHECK(q.dim() == 4, "The q should be 4D in dense layout");
-    return at::empty_like(q);
+    return at::empty_like(q, q.options());
 }
 
 // std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> hstu_dense_backward_meta(

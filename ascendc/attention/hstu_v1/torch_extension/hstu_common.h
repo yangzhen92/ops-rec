@@ -55,12 +55,12 @@ constexpr uint32_t CONST_2 = 2;
 constexpr uint32_t CONST_1 = 1;
 
 namespace hstu {
-// torch.compile 图模式（fake tensor 构图）会激活 Meta dispatch key，
-// 此时 autograd Function 的 forward 不应执行真实 NPU 算子，仅返回 shape 推导结果。
-inline bool IsMetaContext()
+// torch.compile 图模式（fake tensor 构图）下，autograd Function 的 forward 收到的输入
+// 是 FakeTensor（其 dispatch key set 含 Meta）；真实执行时是普通 NPU tensor（不含 Meta）。
+// 据此判断：构图阶段不执行真实 NPU 算子，仅返回 shape 推导结果。
+inline bool IsFakeTensor(const at::Tensor& q)
 {
-    const auto tls = c10::impl::tls_local_dispatch_key_set();
-    return tls.included_.has(c10::DispatchKey::Meta);
+    return q.unsafeGetTensorImpl()->key_set().has(c10::DispatchKey::Meta);
 }
 
 inline bool MaskCheck(int64_t maskType, bool maskIsDefine)

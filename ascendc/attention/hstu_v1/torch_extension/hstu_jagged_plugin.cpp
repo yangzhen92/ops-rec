@@ -265,7 +265,7 @@ public:
                               const c10::optional<int64_t>& targetGroupSize, const c10::optional<double>& alpha)
     {
         // torch.compile 图模式（fake tensor 构图）：不执行真实 NPU 算子，仅返回 shape 推导结果
-        if (IsMetaContext()) {
+        if (IsFakeTensor(q)) {
             return at::empty_like(q);
         }
         ctx->save_for_backward({q, k, v, mask.value_or(at::Tensor()), attnBias.value_or(at::Tensor()),
@@ -370,7 +370,7 @@ at::Tensor hstu_jagged_equal_meta(const at::Tensor& q, const at::Tensor& k, cons
                                   const bool deterministic)
 {
     TORCH_CHECK(q.dim() == 3, "The q should be 3D in jagged layout");
-    return at::empty_like(q);
+    return at::empty_like(q, q.options());
 }
 
 std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> hstu_jagged_backward_equal_meta(
@@ -403,7 +403,7 @@ at::Tensor hstu_jagged_delta_meta(const at::Tensor& q, const at::Tensor& k, cons
                                   const bool deterministic)
 {
     TORCH_CHECK(q.dim() == 3, "The q should be 3D in jagged layout");
-    return at::empty_like(q);
+    return at::empty_like(q, q.options());
 }
 
 std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> hstu_jagged_backward_delta_meta(

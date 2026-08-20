@@ -5,8 +5,6 @@
 # ================================ A5 ops ===================================
 set(OPS_REC_OPS_ATLAS_950
     ln_mul
-    hstu_v1
-    disentangle_attention
     disentangle_attention
     block_sparse_func
     arbitrary_func

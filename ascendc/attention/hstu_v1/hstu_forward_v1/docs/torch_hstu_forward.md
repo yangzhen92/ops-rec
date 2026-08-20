@@ -10,7 +10,9 @@
 
 ## 功能说明
 
-HSTU（Hierarchical Sequential Transduction Unit）融合注意力算子，支持 normal（dense）、jagged、paged 三种数据格式，支持 GQA（K/V 头数小于 Q 头数）与 qk/v dim 不等，自动微分（autograd）由 C++ 侧 autograd 包装提供。
+HSTU（Hierarchical Sequential Transduction Unit）融合注意力算子，支持 normal（dense）、jagged、paged 三种数据格式，支持 GQA（K/V 头数小于 Q 头数）与 qk/v dim 不等。
+
+> 前向接口不注册 C++ AutogradPrivateUse1（autograd Function 黑盒会导致 inductor 图模式数值错误），反向梯度由独立算子 `hstu_dense_backward` / `hstu_jagged_backward.equal|delta` 提供。训练自动微分请在 Python 侧包装 `torch.autograd.Function`，详见下文「自动微分（训练）」。
 
 计算公式：
 
@@ -54,7 +56,7 @@ ops_rec.ascendc.attention.hstu_paged(
     deterministic: bool = False) -> Tensor
 ```
 
-> 反向接口 `hstu_dense_backward` / `hstu_jagged_backward.equal|delta` 自动挂载在 autograd 图中，一般无需直接调用。
+> 反向接口 `hstu_dense_backward` / `hstu_jagged_backward.equal|delta` 是独立算子，不自动挂载在 autograd 图中。可直接调用（见 [hstu_backward_v1](../../hstu_backward_v1/docs/torch_hstu_dense_backward.md)），或在训练场景通过 Python 侧 `torch.autograd.Function` 包装接入 `loss.backward()`（见下文）。
 
 ## 参数说明
 
@@ -107,6 +109,47 @@ ops_rec.ascendc.attention.hstu_paged(
 compiled = torch.compile(ops_rec.ascendc.attention.hstu_dense, dynamic=True, fullgraph=True)
 y = compiled(q, k, v, None, None, 0, 256, 1.0 / 256)
 ```
+
+图模式要求算子注册路径干净（仅 PrivateUse1 + Meta，不注册 C++ AutogradPrivateUse1）。`hstu_dense_backward` / `hstu_jagged_backward.equal|delta` 同样注册了 Meta 实现，可直接参与构图。
+
+## 自动微分（训练）
+
+前向算子不注册 C++ AutogradPrivateUse1，`y.backward()` 不会自动触发反向。训练场景请在 Python 侧用 `torch.autograd.Function` 包装 forward + backward 算子：
+
+```python
+import torch
+import ops_rec
+
+class HstuDenseAutograd(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, q, k, v, mask, attn_bias, mask_type, max_seq_len, silu_scale):
+        ctx.save_for_backward(q, k, v, mask, attn_bias)
+        ctx.mask_type = mask_type
+        ctx.max_seq_len = max_seq_len
+        ctx.silu_scale = silu_scale
+        return ops_rec.ascendc.attention.hstu_dense(
+            q, k, v, mask=mask, attn_bias=attn_bias,
+            mask_type=mask_type, max_seq_len=max_seq_len, silu_scale=silu_scale)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        q, k, v, mask, attn_bias = ctx.saved_tensors
+        q_grad, k_grad, v_grad, attn_bias_grad = \
+            ops_rec.ascendc.attention.hstu_dense_backward(
+                grad_output, q, k, v, mask, attn_bias,
+                ctx.mask_type, ctx.max_seq_len, ctx.silu_scale)
+        return (q_grad, k_grad, v_grad, None,
+                attn_bias_grad if attn_bias is not None else None,
+                None, None, None)
+
+# 训练循环中使用
+q.requires_grad_(True)
+y = HstuDenseAutograd.apply(q, k, v, None, None, 0, S, 1.0 / S)
+loss = criterion(y, target)
+loss.backward()  # 梯度流向 q/k/v/bias
+```
+
+该包装可被 dynamo 正常追踪（forward 走 Meta 构图），`torch.compile` 训练同样可用。dense / jagged（equal、delta）的完整包装与校验样例见 [test_torch_hstu_backward_v1_autograd.py](../../hstu_backward_v1/examples/torch/test_torch_hstu_backward_v1_autograd.py) 与回归用例 [test_hstu_autograd.py](../../hstu_backward_v1/test/pytest/test_hstu_autograd.py)。
 
 ## 安装方式
 

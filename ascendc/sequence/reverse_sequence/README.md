@@ -28,7 +28,12 @@ output[b, i, :] = input[b, i, :]                    (i >= seq_len[b])
 
 ## 算子实现原理
 
-算子采用 AscendC 进行开发，将 `batch_size * max_seq_len` 个序列行均摊到各 AI Vector 核处理。每个核按行执行：CopyIn（含 32B 非对齐尾部 DataCopyPad 补齐）→ 计算该行所属 batch 及行号 → 若行号小于该 batch 的 `seq_len`，则将数据 CopyOut 到逆序目标行；否则不写入（该行由调用侧预置的 input 拷贝保留原值）。
+算子采用 AscendC 进行开发，将 `batch_size * max_seq_len` 个序列行均摊到各 AI Vector 核处理（余数行由前 `left` 个核各多承担 1 行）。每个核按行循环执行以下步骤：
+
+1. **CopyIn**：当前行数据从 GM 搬入 UB——32B 对齐部分走 `DataCopy`，非对齐尾部走 `DataCopyPad` 补齐；
+2. **行内转存**：UB 内将数据从输入队列拷贝到输出队列（按 32B 对齐后的元素数）；
+3. **计算归属**：由行号计算所属 batch（`row / max_seq_len`），读取该 batch 的 `seq_len`（超出 `max_seq_len` 时截断）；
+4. **条件 CopyOut**：若行号 < `seq_len`，将数据写回逆序目标行（`batch * max_seq_len + seq_len - 1 - row`）；否则不写入，该行由调用侧预置的 input 拷贝保留原值。
 
 ## 参数说明
 
@@ -42,6 +47,7 @@ output[b, i, :] = input[b, i, :]                    (i >= seq_len[b])
 
 - input 必须为 3D，seq_lengths 必须为 1D，且 `input.shape[0] == seq_lengths.shape[0]`
 - input 数据类型仅支持 FLOAT32 / FLOAT16 / BF16 / INT64，seq_lengths 仅支持 INT64 / INT32
+- seq_lengths 元素取值应在 [0, max_seq_len] 范围内；越界值由 kernel 防御性截断（大于 max_seq_len 按 max_seq_len 处理），负值等效于 0（不逆序）
 - **aclnn 路径下 output 必须先用 input 的数据初始化**（kernel 仅覆写每个 batch 前 seq_len 行，其余行保持 output 原值）；torch 接口内部已通过 `input.clone()` 处理
 - 该算子需要在 NPU 设备上运行
 

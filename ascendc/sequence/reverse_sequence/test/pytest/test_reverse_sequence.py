@@ -190,7 +190,7 @@ def test_reverse_sequence(dims, types):
         npu_torch_loss = torch.sum(pytorch_ret)
         npu_torch_loss.backward()
         npu_torch_grad = input_data_npu_clone.grad.cpu()
-        input_data_npu.grad = None
+        input_data_npu_clone.grad = None
     # 比较前向结果（搬到 CPU 比较，避免比对算子在 NPU 同步点阻塞）
     compare_results(fused_op_ret.cpu(), pytorch_ret.cpu(), _PRECISION_ERROR_RANGE[types[0]])
 

@@ -101,8 +101,12 @@ int main()
 
     std::vector<int64_t> inputShape = {BS, MAX_SEQ_LEN, DATA_DIM};
     std::vector<int64_t> seqLengthsShape = {BS};
-    void *inputDeviceAddr = nullptr, *seqLengthsDeviceAddr = nullptr, *outDeviceAddr = nullptr;
-    aclTensor *input = nullptr, *seqLengths = nullptr, *out = nullptr;
+    void* inputDeviceAddr = nullptr;
+    void* seqLengthsDeviceAddr = nullptr;
+    void* outDeviceAddr = nullptr;
+    aclTensor* input = nullptr;
+    aclTensor* seqLengths = nullptr;
+    aclTensor* out = nullptr;
     ret = CreateAclTensor(inputHostData, inputShape, &inputDeviceAddr, aclDataType::ACL_FLOAT, &input);
     CHECK_RET(ret == ACL_SUCCESS, return ret);
     ret = CreateAclTensor(seqLengthsHostData, seqLengthsShape, &seqLengthsDeviceAddr, aclDataType::ACL_INT64,
@@ -157,8 +161,9 @@ int main()
     aclrtFree(inputDeviceAddr);
     aclrtFree(seqLengthsDeviceAddr);
     aclrtFree(outDeviceAddr);
-    if (workspaceAddr != nullptr)
+    if (workspaceAddr != nullptr) {
         aclrtFree(workspaceAddr);
+    }
     aclrtDestroyStream(stream);
     aclrtResetDevice(deviceId);
     aclFinalize();

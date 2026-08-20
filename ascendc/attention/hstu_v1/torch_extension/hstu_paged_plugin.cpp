@@ -100,4 +100,25 @@ TORCH_LIBRARY_IMPL(ops_rec, PrivateUse1, m)
 {
     m.impl("hstu_paged", TORCH_FN(hstu_paged_forward_impl_npu));
 }
+
+// Meta 实现：inductor 图模式（fake tensor 符号执行）需要算子具备 Meta kernel，
+// 否则 torch._dynamo 报 "Operator does not support running with fake tensors"。
+at::Tensor hstu_paged_meta(const at::Tensor& q, const at::Tensor& k, const at::Tensor& v,
+                           const at::Tensor& kvCache, const c10::optional<at::Tensor>& mask,
+                           const c10::optional<at::Tensor>& attnBias, const int64_t maskType,
+                           const int64_t maxSeqLen, const int64_t maxSeqLenK, const double siluScale,
+                           const at::Tensor& seqOffset, const at::Tensor& seqOffsetK,
+                           const at::Tensor& seqOffsetT, const at::Tensor& pageOffsets,
+                           const at::Tensor& pageIds, const at::Tensor& lastPageLen,
+                           const at::Tensor& numTarget, const int64_t targetGroupSize,
+                           const c10::optional<double>& alpha, const bool deterministic)
+{
+    TORCH_CHECK(q.dim() == CONST_3, "The q should be 3D in jagged layout");
+    return at::empty_like(q, q.options());
+}
+
+TORCH_LIBRARY_IMPL(ops_rec, Meta, m)
+{
+    m.impl("hstu_paged", &hstu_paged_meta);
+}
 }  // namespace hstu

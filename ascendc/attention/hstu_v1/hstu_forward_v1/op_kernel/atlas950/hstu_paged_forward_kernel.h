@@ -151,9 +151,7 @@ __aicore__ inline void HstuDenseForwardPagedKernel<TraitParams, TilingDataType>:
     InitArgs(args, tilingDataPtr);
     this->InitPipe(pipePtr);
     InitPagedArgs(args, tilingDataPtr, pipePtr);
-    // paged 流程中再清一次 syncGm flag 区（InitPipe 已清过一遍），
-    // 用于排查跨核 flag 残留导致 IBWait 死锁的问题
-    this->ClearSyncGm(GetBlockNum() * VCORE_NUM_IN_ONE_AIC);
+    this->ClearSyncGm();
 }
 
 template <typename TraitParams, typename TilingDataType>

@@ -180,25 +180,21 @@ public:
         
         InitCVStrategy();
 
-        ClearSyncGm(coreNum);
+        ClearSyncGm();
     }
 
-    // 清零 syncGm 跨核 flag 区域（block 0 写零 + 全核栅栏）。
-    // 必须在任何 IBSet/IBWait 使用前完成，避免残留 flag 干扰核间同步。
-    __aicore__ inline void ClearSyncGm(uint32_t coreNum)
+    __aicore__ inline void ClearSyncGm()
     {
         if constexpr (TraitParams::deterministic) {
             SyncAll<true>();
-            if (GetBlockIdx() == 0) {
-                uint32_t zeroNumber = coreNum * DATA_ALIGN_BYTES / sizeof(int32_t);
-                auto zeroBuff = queOut.template AllocTensor<int32_t>();
-                Duplicate<int32_t>(zeroBuff, 0, zeroNumber);
-                queOut.EnQue(zeroBuff);
-                auto overBuff = queOut.template DeQue<int32_t>();
-                pipe_barrier(PIPE_ALL);
-                DataCopy(syncGm, overBuff, zeroNumber);
-                queOut.template FreeTensor<int32_t>(overBuff);
-            }
+            const uint32_t zeroNumber = DATA_ALIGN_BYTES / sizeof(int32_t);
+            auto zeroBuff = queOut.template AllocTensor<int32_t>();
+            Duplicate<int32_t>(zeroBuff, 0, zeroNumber);
+            queOut.EnQue(zeroBuff);
+            auto overBuff = queOut.template DeQue<int32_t>();
+            pipe_barrier(PIPE_ALL);
+            DataCopy(syncGm[GetBlockIdx() * zeroNumber], overBuff, zeroNumber);
+            queOut.template FreeTensor<int32_t>(overBuff);
             SyncAll<true>();
         }
     }

@@ -2,8 +2,6 @@
 
 ## 说明
 
-本算子仅支持 NPU 调用，由 RecSDK `cust_op` 工程迁移而来（源码映射见文末「迁移说明」）。
-
 `hstu_v1` 为 HSTU 子组（转发层），内部按版本收敛多算子 vendor：当前仅包含 `hstu_forward_v1`（HSTU 前向融合注意力，HstuDenseForward / HstuJaggedForward / HstuPagedForward 三个 OpDef）。
 
 ## 产品支持情况
@@ -11,7 +9,6 @@
 | 硬件型号             | 是否支持 |
 | -------------------- | -------- |
 | Atlas A2 训练系列产品 | 是       |
-| Atlas A3 训练系列产品 | 是       |
 | Atlas A5 训练系列产品 | 是       |
 
 ## 功能
@@ -344,13 +341,3 @@ hstu_v1/                          # HSTU 子组（转发层，登记名：hstu_v
     ├── docs/                     # 算子接口文档
     └── test/pytest/              # Pytest 自动化回归用例
 ```
-
-## 迁移说明
-
-| RecSDK 原始路径 | ops-rec 目标路径 | 调整说明 |
-|-----------------|------------------|----------|
-| `cust_op/ascendc_op/ai_core_op/hstu_dense_forward/v220/op_host/*` | `hstu_forward_v1/op_host/` | 移除 SUPPORT_V200（310P 专用）分支；tiling key 头下沉至 `op_host/atlasA2/` |
-| `cust_op/ascendc_op/ai_core_op/hstu_dense_forward/v220/op_kernel/*` | `hstu_forward_v1/op_kernel/atlasA2/` | 移除 SUPPORT_V200（310P 专用）分支 |
-| `cust_op/ascendc_op/ai_core_op/hstu_dense_forward/c310/op_kernel/*` | `hstu_forward_v1/op_kernel/atlas950/` | A5 特化 kernel，SUPPORT_950 由根 CMake 注入 |
-| `cust_op/ascendc_op/ai_core_op/hstu_dense_forward/c310/op_kernel/hstu_kernel_tiling_key.h` | `hstu_forward_v1/op_host/atlas950/` | host 侧 tiling 生成依赖 c310 tiling key 布局 |
-| `cust_op/framework/torch_plugin/torch_library/hstu/*` | `torch_extension/hstu_forward.cpp` | 合并三文件，命名空间 mxrec → ops_rec，补充 Meta 注册 |

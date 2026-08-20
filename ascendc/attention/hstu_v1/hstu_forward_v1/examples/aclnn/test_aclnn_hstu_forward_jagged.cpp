@@ -19,7 +19,7 @@ See the License for the specific language governing permissions and
  *
  * 用例为两段式接口：
  *   GetWorkspaceSize -> aclrtMalloc(workspace) -> aclnnHstuJaggedForward 执行 -> aclrtSynchronizeDevice
- * 数据均使用 int16_t 模拟 fp16 的简单定值数据。
+ * 数据均使用 fp32 简单定值数据（与 hstu_backward_v1 样例一致）。
  */
 
 #include <iostream>
@@ -45,16 +45,16 @@ int TestHstuJagged(aclrtStream stream)
     std::vector<int64_t> kvShape = {TotalK, N, D};
     auto qElemNum = GetShapeSize(qShape);
     auto kvElemNum = GetShapeSize(kvShape);
-    std::vector<int16_t> qHostData(qElemNum);
-    std::vector<int16_t> kHostData(kvElemNum);
-    std::vector<int16_t> vHostData(kvElemNum);
-    std::vector<int16_t> outHostData(qElemNum, 0);
+    std::vector<float> qHostData(qElemNum);
+    std::vector<float> kHostData(kvElemNum);
+    std::vector<float> vHostData(kvElemNum);
+    std::vector<float> outHostData(qElemNum, 0);
     for (int64_t i = 0; i < qElemNum; ++i) {
-        qHostData[i] = static_cast<int16_t>((i % 3 - 1) * 100);  // fp16 简单定值数据
+        qHostData[i] = static_cast<float>(i % 3) / 3.0f;  // fp32 简单定值数据
     }
     for (int64_t i = 0; i < kvElemNum; ++i) {
-        kHostData[i] = static_cast<int16_t>((i % 5 - 2) * 50);
-        vHostData[i] = static_cast<int16_t>(i % 7);
+        kHostData[i] = static_cast<float>(i % 5) / 5.0f;
+        vHostData[i] = static_cast<float>(i % 7) / 7.0f;
     }
 
     std::vector<int64_t> offsetShape = {Batch + 1};
@@ -73,13 +73,13 @@ int TestHstuJagged(aclrtStream stream)
     aclTensor *q = nullptr, *k = nullptr, *v = nullptr, *out = nullptr;
     aclTensor *seqOffsetQ = nullptr, *seqOffsetK = nullptr;
     aclTensor *numContext = nullptr, *numTarget = nullptr;
-    auto ret = CreateAclTensor(qHostData, qShape, &qDeviceAddr, aclDataType::ACL_FLOAT16, &q);
+    auto ret = CreateAclTensor(qHostData, qShape, &qDeviceAddr, aclDataType::ACL_FLOAT, &q);
     CHECK_RET(ret == ACL_SUCCESS, return ret);
-    ret = CreateAclTensor(kHostData, kvShape, &kDeviceAddr, aclDataType::ACL_FLOAT16, &k);
+    ret = CreateAclTensor(kHostData, kvShape, &kDeviceAddr, aclDataType::ACL_FLOAT, &k);
     CHECK_RET(ret == ACL_SUCCESS, return ret);
-    ret = CreateAclTensor(vHostData, kvShape, &vDeviceAddr, aclDataType::ACL_FLOAT16, &v);
+    ret = CreateAclTensor(vHostData, kvShape, &vDeviceAddr, aclDataType::ACL_FLOAT, &v);
     CHECK_RET(ret == ACL_SUCCESS, return ret);
-    ret = CreateAclTensor(outHostData, qShape, &outDeviceAddr, aclDataType::ACL_FLOAT16, &out);
+    ret = CreateAclTensor(outHostData, qShape, &outDeviceAddr, aclDataType::ACL_FLOAT, &out);
     CHECK_RET(ret == ACL_SUCCESS, return ret);
     ret = CreateAclTensor(seqOffsetQHostData, offsetShape, &seqOffsetQDeviceAddr, aclDataType::ACL_INT32, &seqOffsetQ);
     CHECK_RET(ret == ACL_SUCCESS, return ret);
@@ -114,11 +114,11 @@ int TestHstuJagged(aclrtStream stream)
     ret = aclrtSynchronizeDevice();
     CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("aclrtSynchronizeDevice failed. ERROR: %d\n", ret); return ret);
 
-    auto outSize = qElemNum * sizeof(int16_t);
+    auto outSize = qElemNum * sizeof(float);
     ret = aclrtMemcpy(outHostData.data(), outSize, outDeviceAddr, outSize, ACL_MEMCPY_DEVICE_TO_HOST);
     CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("aclrtMemcpy output failed. ERROR: %d\n", ret); return ret);
 
-    LOG_PRINT("hstu_jagged_forward output sample [0,0,0,0..3]: %d %d %d %d\n", outHostData[0], outHostData[1],
+    LOG_PRINT("hstu_jagged_forward output sample [0,0,0,0..3]: %.4f %.4f %.4f %.4f\n", outHostData[0], outHostData[1],
               outHostData[2], outHostData[3]);
     LOG_PRINT("[aclnn] hstu_jagged_forward example ran OK\n");
 

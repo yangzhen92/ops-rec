@@ -1,0 +1,51 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls /c/Users/gg/cannbot-skills/plugins-official/ops-direct-invoke/workflows/scripts/init_operator_project.sh 2>/dev/null && echo \"init script exists\" || echo \"init script MISSING\"; ls /c/Users/gg/Desktop/ops-rec-2026/ascendc/attention/)",
+      "Read(//c/Users/gg/cannbot-skills/plugins-official/ops-direct-invoke/workflows/scripts/**)",
+      "Bash(bash /c/Users/gg/cannbot-skills/plugins-official/ops-direct-invoke/workflows/scripts/init_operator_project.sh hstu_dense_forward)",
+      "Bash(find /c/Users/gg/Desktop/ops-rec-2026/operators/hstu_dense_forward -type f; echo \"---template---\"; cat /c/Users/gg/cannbot-skills/plugins-official/ops-direct-invoke/workflows/templates/environment-template.md)",
+      "Read(//c/Users/gg/cannbot-skills/plugins-official/ops-direct-invoke/workflows/templates/**)",
+      "Read(//c/Users/gg/.claude/skills/ascendc-env-check/**)",
+      "Bash(bash scripts/npu_info.sh)",
+      "Bash(bash scripts/check_env.sh)",
+      "Bash(ls /c/Users/gg/Desktop/ops-rec-2026/operators/ 2>/dev/null; ls /c/Users/gg/Desktop/ops-rec-2026/docs/; echo \"---build_guide---\"; head -50 /c/Users/gg/Desktop/ops-rec-2026/docs/build_guide.md 2>/dev/null; echo \"---ssh config---\"; ls ~/.ssh/ 2>/dev/null)",
+      "Read(//c/Users/gg/.ssh/**)",
+      "Bash(cat ~/.ssh/config 2>/dev/null | head -40; echo \"---prior ops-rec remote docs---\"; grep -rn \"ssh\\\\|远程\\\\|remote\" /c/Users/gg/Desktop/ops-rec-2026/docs/contribute_guide.md 2>/dev/null | head -10)",
+      "Bash(git mv *)",
+      "Bash(cat \"C:\\\\Users\\\\gg\\\\.claude\\\\skills\\\\remote-cann-development\\\\scripts\\\\npus.example.yaml\" 2>/dev/null; echo \"===search npus.yaml===\"; ls \"C:\\\\Users\\\\gg\\\\Desktop\"/*.yaml \"C:\\\\Users\\\\gg\\\\Desktop\\\\ops-rec-2026\"/*.yaml 2>/dev/null; find \"C:\\\\Users\\\\gg\\\\Desktop\" -maxdepth 2 -name \".npus.yaml\" 2>/dev/null)",
+      "Read(//c/Users/gg/.claude/skills/remote-cann-development/scripts/**)",
+      "Bash(git -C \"c:/Users/gg/Desktop/ops-rec-2026\" status --short)",
+      "Bash(git -C \"c:/Users/gg/Desktop/ops-rec-2026\" diff --stat)",
+      "Bash(git -C \"c:/Users/gg/Desktop/ops-rec-2026\" ls-files)",
+      "Bash(git -C \"c:/Users/gg/Desktop/ops-rec-2026\" log --oneline -3)",
+      "Bash(git -C \"c:/Users/gg/Desktop/ops-rec-2026\" diff --cached --stat)",
+      "Bash(git -C \"c:/Users/gg/Desktop/ops-rec-2026\" check-ignore \"ascendc/attention/hstu_v1/hstu_forward_v1/torch_extension/hstu_forward.cpp\")",
+      "Bash(echo \"exit=$?\")",
+      "Bash(git -C \"c:/Users/gg/Desktop/ops-rec-2026\" show HEAD --stat)",
+      "Bash(git -C \"c:/Users/gg/Desktop/ops-rec-2026\" show HEAD:\"ascendc/attention/hstu_v1/hstu_forward_v1/torch_extension/hstu_forward.cpp\")",
+      "Bash(hdspace devenv *)",
+      "Bash(ssh -o ConnectTimeout=5 -o BatchMode=yes root@192.168.8.105 \"echo ok\")",
+      "Bash(git config *)",
+      "Bash(/c/Users/gg/AppData/Local/Programs/Python/Python314/python.exe -c \"import torch; print\\(torch.__version__\\)\")",
+      "Bash(where python3 *)",
+      "WebFetch(domain:gitcode.com)",
+      "Bash(curl -s --max-time 30 \"https://gitcode.com/api/v1/repos/Ascend/ops-rec/git/trees/master?recursive=true\" -o /tmp/ops_rec_tree.json)",
+      "Bash(curl -s --max-time 30 -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36 \\(KHTML, like Gecko\\) Chrome/126.0.0.0 Safari/537.36\" \"https://gitcode.com/Ascend/ops-rec\" -o /tmp/gc.html)",
+      "Bash(curl -s --max-time 30 -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36 \\(KHTML, like Gecko\\) Chrome/126.0.0.0 Safari/537.36\" \"https://gitcode.com/Ascend/ops-rec/tree/master/ascendc\" -o /tmp/gc_tree.html)",
+      "Bash(curl -s --max-time 30 -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36 \\(KHTML, like Gecko\\) Chrome/126.0.0.0 Safari/537.36\" \"https://gitcode.com/Ascend/ops-rec/tree/master/ascendc/attention\" -o /tmp/gc_attn.html)",
+      "Bash(python3 -m py_compile torch/test_torch_hstu_forward_dense.py torch/test_torch_hstu_forward_jagged.py torch/test_torch_hstu_forward_paged.py)",
+      "Bash(git pull *)",
+      "Bash(git stash *)",
+      "Bash(mkdir -p /tmp/git-backup)",
+      "Bash(mv .claude /tmp/git-backup/claude)",
+      "Bash(mv \"ascendc/attention/hstu_v1/hstu_forward_v1/docs/PLAN.md\" /tmp/git-backup/PLAN.md)",
+      "Bash(mv /tmp/git-backup/claude .claude)",
+      "Bash(mv /tmp/git-backup/PLAN.md \"ascendc/attention/hstu_v1/hstu_forward_v1/docs/PLAN.md\")",
+      "Bash(rmdir /tmp/git-backup 2>/dev/null && echo \"临时备份已清理\" || ls /tmp/git-backup)"
+    ],
+    "additionalDirectories": [
+      "\\tmp"
+    ]
+  }
+}

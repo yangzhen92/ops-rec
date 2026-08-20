@@ -13,7 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-# 共享工具：迁移自 RecSDK test_common_utils.py / test_target_mask.py
 # + numpy golden 实现（供 inductor 图模式测试使用）
 # ==============================================================================
 

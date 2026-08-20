@@ -19,7 +19,7 @@ See the License for the specific language governing permissions and
  *
  * 用例为两段式接口：
  *   GetWorkspaceSize -> aclrtMalloc(workspace) -> aclnnHstuPagedForward 执行 -> aclrtSynchronizeDevice
- * 数据均使用 int16_t 模拟 fp16 的简单定值数据。
+ * 数据均使用 fp32 简单定值数据（与 hstu_backward_v1 样例一致）。
  */
 
 #include <iostream>
@@ -53,18 +53,18 @@ int TestHstuPaged(aclrtStream stream)
 
     auto qkvElemNum = GetShapeSize(qkvShape);
     auto kvCacheElemNum = GetShapeSize(kvCacheShape);
-    std::vector<int16_t> qHostData(qkvElemNum);
-    std::vector<int16_t> kHostData(qkvElemNum);
-    std::vector<int16_t> vHostData(qkvElemNum);
-    std::vector<int16_t> kvCacheHostData(kvCacheElemNum);
-    std::vector<int16_t> outHostData(qkvElemNum, 0);
+    std::vector<float> qHostData(qkvElemNum);
+    std::vector<float> kHostData(qkvElemNum);
+    std::vector<float> vHostData(qkvElemNum);
+    std::vector<float> kvCacheHostData(kvCacheElemNum);
+    std::vector<float> outHostData(qkvElemNum, 0);
     for (int64_t i = 0; i < qkvElemNum; ++i) {
-        qHostData[i] = static_cast<int16_t>((i % 3 - 1) * 100);  // fp16 简单定值数据
-        kHostData[i] = static_cast<int16_t>((i % 5 - 2) * 50);
-        vHostData[i] = static_cast<int16_t>(i % 7);
+        qHostData[i] = static_cast<float>(i % 3) / 3.0f;  // fp32 简单定值数据
+        kHostData[i] = static_cast<float>(i % 5) / 5.0f;
+        vHostData[i] = static_cast<float>(i % 7) / 7.0f;
     }
     for (int64_t i = 0; i < kvCacheElemNum; ++i) {
-        kvCacheHostData[i] = static_cast<int16_t>(i % 11 - 5);
+        kvCacheHostData[i] = static_cast<float>(i % 11) / 11.0f;
     }
 
     std::vector<int32_t> seqOffsetQHostData = {0, 36, 90};
@@ -86,15 +86,15 @@ int TestHstuPaged(aclrtStream stream)
     aclTensor *seqOffsetQ = nullptr, *seqOffsetK = nullptr, *seqOffsetT = nullptr;
     aclTensor *pageOffsets = nullptr, *pageIds = nullptr, *lastPageLen = nullptr;
     aclTensor *numContext = nullptr, *numTarget = nullptr;
-    auto ret = CreateAclTensor(qHostData, qkvShape, &qDeviceAddr, aclDataType::ACL_FLOAT16, &q);
+    auto ret = CreateAclTensor(qHostData, qkvShape, &qDeviceAddr, aclDataType::ACL_FLOAT, &q);
     CHECK_RET(ret == ACL_SUCCESS, return ret);
-    ret = CreateAclTensor(kHostData, qkvShape, &kDeviceAddr, aclDataType::ACL_FLOAT16, &k);
+    ret = CreateAclTensor(kHostData, qkvShape, &kDeviceAddr, aclDataType::ACL_FLOAT, &k);
     CHECK_RET(ret == ACL_SUCCESS, return ret);
-    ret = CreateAclTensor(vHostData, qkvShape, &vDeviceAddr, aclDataType::ACL_FLOAT16, &v);
+    ret = CreateAclTensor(vHostData, qkvShape, &vDeviceAddr, aclDataType::ACL_FLOAT, &v);
     CHECK_RET(ret == ACL_SUCCESS, return ret);
-    ret = CreateAclTensor(outHostData, qkvShape, &outDeviceAddr, aclDataType::ACL_FLOAT16, &out);
+    ret = CreateAclTensor(outHostData, qkvShape, &outDeviceAddr, aclDataType::ACL_FLOAT, &out);
     CHECK_RET(ret == ACL_SUCCESS, return ret);
-    ret = CreateAclTensor(kvCacheHostData, kvCacheShape, &kvCacheDeviceAddr, aclDataType::ACL_FLOAT16, &kvCache);
+    ret = CreateAclTensor(kvCacheHostData, kvCacheShape, &kvCacheDeviceAddr, aclDataType::ACL_FLOAT, &kvCache);
     CHECK_RET(ret == ACL_SUCCESS, return ret);
     ret = CreateAclTensor(seqOffsetQHostData, offsetShape, &seqOffsetQDeviceAddr, aclDataType::ACL_INT32, &seqOffsetQ);
     CHECK_RET(ret == ACL_SUCCESS, return ret);
@@ -140,11 +140,11 @@ int TestHstuPaged(aclrtStream stream)
     ret = aclrtSynchronizeDevice();
     CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("aclrtSynchronizeDevice failed. ERROR: %d\n", ret); return ret);
 
-    auto outSize = qkvElemNum * sizeof(int16_t);
+    auto outSize = qkvElemNum * sizeof(float);
     ret = aclrtMemcpy(outHostData.data(), outSize, outDeviceAddr, outSize, ACL_MEMCPY_DEVICE_TO_HOST);
     CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("aclrtMemcpy output failed. ERROR: %d\n", ret); return ret);
 
-    LOG_PRINT("hstu_paged_forward output sample [0,0,0,0..3]: %d %d %d %d\n", outHostData[0], outHostData[1],
+    LOG_PRINT("hstu_paged_forward output sample [0,0,0,0..3]: %.4f %.4f %.4f %.4f\n", outHostData[0], outHostData[1],
               outHostData[2], outHostData[3]);
     LOG_PRINT("[aclnn] hstu_paged_forward example ran OK\n");
 

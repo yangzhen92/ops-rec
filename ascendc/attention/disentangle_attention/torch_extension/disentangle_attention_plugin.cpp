@@ -2,6 +2,7 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2025-2025. All rights reserved.
  */
 
+#define OPS_REC_CUST_VENDORS "disentangle_attention"
 #include <torch/csrc/autograd/custom_function.h>
 #include <torch/library.h>
 
@@ -11,7 +12,6 @@ using torch::autograd::AutogradContext;
 using torch::autograd::Function;
 using tensor_list = std::vector<at::Tensor>;
 using namespace at;
-
 
 constexpr uint32_t CONST_1 = 1;
 constexpr uint32_t CONST_2 = 2;

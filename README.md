@@ -25,7 +25,6 @@ ops-rec/                                  # 项目根目录
 ├── third_party/                          # 三方软件
 ├── build.sh                              # 统一构建入口
 ├── run_examples.sh                       # 示例运行入口
-├── setup.py                              # scikit-build 配置
 └── CMakeLists.txt                        # 顶层 CMake 入口
 ```
 
@@ -40,7 +39,7 @@ ops-rec/                                  # 项目根目录
 | CANN | >= 9.0.0，需执行 `set_env.sh` 配置环境变量 |
 | PyTorch + torch_npu | 2.7.1 / 2.10.0 |
 | triton-ascend | >= 3.2.0，使用 Triton 算子时必需 |
-| 构建依赖 | scikit-build、gcc/g++（支持 C++17） |
+| 构建依赖 | gcc/g++（支持 C++17）、cmake、python3（含 torch/torch_npu）；打包依赖 `packaging` |
 
 ## 🔨 编译安装
 
@@ -68,7 +67,7 @@ bash run_examples.sh --ops ln_mul
 
 ## 🛠️ 算子开发
 
-新增算子时，按 `<group>/<vendor>` 目录约定放置代码即可。完整迁移流程、SOC 注册、`torch_extension` 写法、PR 模板等见 [算子迁移指南](docs/contribute_guide.md)。
+新增算子时，按 `<group>/<vendor>` 目录约定放置代码即可。完整迁移流程、SOC 注册、`torch_extension` 写法、PR 模板等见 [算子贡献指南](docs/contribute_guide.md)。
 
 ## 🤝 建议与交流
 

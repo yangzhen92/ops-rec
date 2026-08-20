@@ -170,47 +170,62 @@ print(y.shape)  # torch.Size([10, 8, 64])
 
 约束：`N_q % N_k == 0` 且 `N_k == N_v`。
 
-### qk 与 v 的 dim 不等
+### qk 与 v 的 dim 不等（jagged）
 
 ```python
-B, S = 2, 128
-q = torch.randn(B, S, 8, 64, dtype=torch.float16).npu()    # head_dim_qk=64
-k = torch.randn(B, S, 8, 64, dtype=torch.float16).npu()
-v = torch.randn(B, S, 8, 128, dtype=torch.float16).npu()   # head_dim_v=128（需为 16 的倍数）
-y = ops_rec.ascendc.attention.hstu_dense(q, k, v, None, None, 0, S, 1.0 / S)
-print(y.shape)  # torch.Size([2, 128, 8, 128])，输出 dim 与 v 一致
+N_q, D_qk, D_v = 8, 64, 128
+seq_lens = [4, 6]
+batch = len(seq_lens)
+total = sum(seq_lens)
+S = max(seq_lens)
+q = torch.randn(total, N_q, D_qk, dtype=torch.float16).npu()   # head_dim_qk=64
+k = torch.randn(total, N_q, D_qk, dtype=torch.float16).npu()
+v = torch.randn(total, N_q, D_v, dtype=torch.float16).npu()    # head_dim_v=128（需为 16 的倍数）
+seq_offset = torch.tensor([0] + [sum(seq_lens[: i + 1]) for i in range(batch)], device="npu", dtype=torch.int32)
+y = ops_rec.ascendc.attention.hstu_jagged.equal(q, k, v, None, None, 0, S, 1.0 / S, seq_offset)
+print(y.shape)  # torch.Size([10, 8, 128])，输出 dim 与 v 一致
 ```
 
 ### 自定义 mask（mask_type=3 + mask 传入）
 
-mask_type=1（上三角）暂不支持；mask_type=3 时 mask 必须传入。
+mask_type=1（上三角）暂不支持；mask_type=3 时 mask 必须传入，shape 为 `[B, N, S, S]`（B 为 batch 数，S 为 max_seq_len）。
 
 ```python
-B, S, N = 2, 128, 8
-q = torch.randn(B, S, N, 64, dtype=torch.float16).npu()
-k = torch.randn(B, S, N, 64, dtype=torch.float16).npu()
-v = torch.randn(B, S, N, 64, dtype=torch.float16).npu()
-mask = torch.tril(torch.ones(S, S, dtype=torch.float16)).expand(B, N, S, S).npu()  # 下三角 0/1
-y = ops_rec.ascendc.attention.hstu_dense(q, k, v, mask, None, 3, S, 1.0 / S)
+N, D = 8, 64
+seq_lens = [4, 6]
+batch = len(seq_lens)
+total = sum(seq_lens)
+S = max(seq_lens)
+q = torch.randn(total, N, D, dtype=torch.float16).npu()
+k = torch.randn(total, N, D, dtype=torch.float16).npu()
+v = torch.randn(total, N, D, dtype=torch.float16).npu()
+seq_offset = torch.tensor([0] + [sum(seq_lens[: i + 1]) for i in range(batch)], device="npu", dtype=torch.int32)
+mask = torch.tril(torch.ones(S, S, dtype=torch.float16)).expand(batch, N, S, S).npu()  # [B, N, S, S] 下三角 0/1
+y = ops_rec.ascendc.attention.hstu_jagged.equal(q, k, v, mask, None, 3, S, 1.0 / S, seq_offset)
 ```
 
-### attn_bias 相对位置偏置
+### attn_bias 相对位置偏置（jagged）
 
 ```python
-B, S, N = 2, 128, 8
-q = torch.randn(B, S, N, 64, dtype=torch.float16).npu()
-k = torch.randn(B, S, N, 64, dtype=torch.float16).npu()
-v = torch.randn(B, S, N, 64, dtype=torch.float16).npu()
-attn_bias = torch.randn(B, N, S, S, dtype=torch.float16).npu()  # [B, N, S, S] 相对位置偏置
-y = ops_rec.ascendc.attention.hstu_dense(q, k, v, None, attn_bias, 0, S, 1.0 / S)
+N, D = 8, 64
+seq_lens = [4, 6]
+batch = len(seq_lens)
+total = sum(seq_lens)
+S = max(seq_lens)
+q = torch.randn(total, N, D, dtype=torch.float16).npu()
+k = torch.randn(total, N, D, dtype=torch.float16).npu()
+v = torch.randn(total, N, D, dtype=torch.float16).npu()
+seq_offset = torch.tensor([0] + [sum(seq_lens[: i + 1]) for i in range(batch)], device="npu", dtype=torch.int32)
+attn_bias = torch.randn(batch, N, S, S, dtype=torch.float16).npu()  # [B, N, S, S] 相对位置偏置
+y = ops_rec.ascendc.attention.hstu_jagged.equal(q, k, v, None, attn_bias, 0, S, 1.0 / S, seq_offset)
 ```
 
-### silu_scale 自定义
+### silu_scale 自定义（jagged）
 
 `silu_scale` 传 0.0（或默认值）时自动取 `1/max_seq_len`；需要其他缩放值（如按温度缩放）时显式传入：
 
 ```python
-y = ops_rec.ascendc.attention.hstu_dense(q, k, v, None, None, 0, S, silu_scale=0.05)
+y = ops_rec.ascendc.attention.hstu_jagged.equal(q, k, v, None, None, 0, S, silu_scale=0.05, seq_offset)
 ```
 
 ### deterministic 确定性开关
@@ -276,15 +291,20 @@ y = ops_rec.ascendc.attention.hstu_paged(
 print(y.shape)  # torch.Size([90, 4, 32])
 ```
 
-### FP8 支持（仅 Atlas 950）
+### FP8 支持（仅 Atlas 950，jagged）
 
 ```python
 # fp8_e4m3fn 输入 -> float16 输出；仅 Atlas 950（A5）支持
-B, S, N, D = 2, 128, 8, 64
-q = torch.randn(B, S, N, D).to(dtype=torch.float8_e4m3fn).npu()
-k = torch.randn(B, S, N, D).to(dtype=torch.float8_e4m3fn).npu()
-v = torch.randn(B, S, N, D).to(dtype=torch.float8_e4m3fn).npu()
-y = ops_rec.ascendc.attention.hstu_dense(q, k, v, None, None, 0, S, 1.0 / S)
+N, D = 8, 64
+seq_lens = [4, 6]
+batch = len(seq_lens)
+total = sum(seq_lens)
+S = max(seq_lens)
+q = torch.randn(total, N, D).to(dtype=torch.float8_e4m3fn).npu()
+k = torch.randn(total, N, D).to(dtype=torch.float8_e4m3fn).npu()
+v = torch.randn(total, N, D).to(dtype=torch.float8_e4m3fn).npu()
+seq_offset = torch.tensor([0] + [sum(seq_lens[: i + 1]) for i in range(batch)], device="npu", dtype=torch.int32)
+y = ops_rec.ascendc.attention.hstu_jagged.equal(q, k, v, None, None, 0, S, 1.0 / S, seq_offset)
 print(y.dtype)  # torch.float16
 ```
 
@@ -322,7 +342,7 @@ bash run_examples.sh --type torch --ops hstu_forward_v1
 
 # pytest 回归
 cd ascendc/attention/hstu_v1/hstu_forward_v1/test/pytest
-python3 -m pytest test_hstu_forward.py -x -v
+python3 -m pytest test_hstu_dense.py test_hstu_jagged.py test_hstu_paged.py -x -v
 ```
 
 ## 目录结构
@@ -336,7 +356,6 @@ hstu_v1/                          # HSTU 子组（转发层，登记名：hstu_v
     ├── op_kernel/
     │   ├── atlas950/             # A5 kernel（c310 实现）
     │   └── atlasA2/              # A2/A3 kernel（v220 实现）
-    ├── torch_extension/          # PyTorch 适配层（TORCH_LIBRARY ops_rec 注册，hstu_forward.cpp）
     ├── examples/                 # aclnn (C++) 与 PyTorch (Python) 验证样例
     ├── docs/                     # 算子接口文档
     └── test/pytest/              # Pytest 自动化回归用例

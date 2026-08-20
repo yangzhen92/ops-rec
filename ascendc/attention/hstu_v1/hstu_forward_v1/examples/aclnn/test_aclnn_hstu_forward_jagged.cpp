@@ -63,7 +63,7 @@ int TestHstuJagged(aclrtStream stream)
     std::vector<int32_t> seqOffsetKHostData = {0, 6, 14};
     // num_context/num_target 按 kernel 契约必须传入有效张量（不能为 nullptr）：
     // atlas950 jagged kernel 对这两个 GM 指针无条件解引用（PreInit/FillTaskInfo），
-    // 本用例不启用 context/target 掩码，传全零张量（与 torch 适配层无值时的行为一致）
+    // 本用例不启用 context/target 掩码，传全零张量（与默认行为一致）
     std::vector<int32_t> numContextHostData(Batch, 0);
     std::vector<int32_t> numTargetHostData(Batch, 0);
 

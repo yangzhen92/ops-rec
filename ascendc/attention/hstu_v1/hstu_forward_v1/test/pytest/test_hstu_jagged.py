@@ -13,16 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-# HSTU jagged 前向测试（equal + delta），迁移自 RecSDK
-# test_hstu_jagged_forward.py / test_hstu_deltaqk_forward.py
-#
-# 用例压缩策略（约 31700 -> 约 1140 组）：
-#   1. 强相关形状维度（batch/head/seq/dim）合并为元组组合，替代笛卡尔积；
-#   2. enable_bias × silu_scale 降为配对参数，4 种组合分散在不同测试中互补覆盖；
-#   3. mask 8 种组合仅在基础测试全量展开，其余测试取代表性子集；
-#   4. 全部特性值（GQA 比例、qk/v dim 关系、边界 batch、int32/int64、
-#      repeat_offset、deterministic、255/256/257/511/512 mask 边界）均保留覆盖。
-# ==============================================================================
 
 import random
 
@@ -217,7 +207,6 @@ class TestHstuJaggedDemo:
             res = allclose(output, golden, 1e-4, 1e-4)
         assert res
 
-    # 压缩策略：形状维度合并为元组组合（覆盖 batch 1/16、head 2/4、seq 15/1024、dim 16/128 的两两配对）
     @pytest.mark.parametrize("batch_size, head_num, max_seq_len, head_dim", [
         (1, 2, 15, 16),
         (16, 4, 1024, 128),

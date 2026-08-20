@@ -107,9 +107,6 @@ def dense_to_jagged(q, dense_tensor, seq_lens):
     return tensor
 
 
-# ────────────────── 掩码生成 (迁移自 test_target_mask.py) ──────────────────
-
-
 def _check_int_valid(num):
     if not isinstance(num, int):
         return False

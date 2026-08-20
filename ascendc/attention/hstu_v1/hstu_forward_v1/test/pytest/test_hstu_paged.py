@@ -512,11 +512,6 @@ def paged_hstu_attn_kernel(
     assert res
 
 
-# 削减策略（1152 -> 576，保持高覆盖率）：
-#   1. batch×num_heads×head_dim 三形状维度合并为 4 个元组组合（两极端 + 两混合），
-#      替代笛卡尔积：batch×head、batch×dim 两两配对全覆盖，各取值出现次数均衡；
-#   2. dtype（2/4 字节 host 分支 + CfgList + 容差）、seq×candidates（tiling 规模分级）、
-#      page_size（分页边界）、is_prev_hist、deterministic（paged 唯一模板参数）全部保留原值。
 @pytest.mark.parametrize("batch_size, num_heads, head_dim", [
     (1, 4, 32),     # 最小规模
     (32, 8, 128),   # 最大规模

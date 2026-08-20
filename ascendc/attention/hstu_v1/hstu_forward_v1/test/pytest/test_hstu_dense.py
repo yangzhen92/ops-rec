@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-# HSTU dense 前向测试，迁移自 RecSDK test_hstu_dense_forward.py
-# ==============================================================================
 
 import pytest
 import torch

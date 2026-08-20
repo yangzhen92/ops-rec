@@ -18,6 +18,7 @@ See the License for the specific language governing permissions and
 
 #include <string>
 #include <algorithm>
+#include <c10/core/DispatchKeySet.h>
 #include <torch/csrc/autograd/custom_function.h>
 #include <torch/library.h>
 
@@ -54,6 +55,14 @@ constexpr uint32_t CONST_2 = 2;
 constexpr uint32_t CONST_1 = 1;
 
 namespace hstu {
+// torch.compile 图模式（fake tensor 构图）会激活 Meta dispatch key，
+// 此时 autograd Function 的 forward 不应执行真实 NPU 算子，仅返回 shape 推导结果。
+inline bool IsMetaContext()
+{
+    const auto tls = c10::impl::tls_local_dispatch_key_set();
+    return tls.included_.has(c10::DispatchKey::Meta);
+}
+
 inline bool MaskCheck(int64_t maskType, bool maskIsDefine)
 {
     TORCH_CHECK(MASK_TYPE_TRIL <= maskType && maskType <= MASK_TYPE_CUSTOM, "maskType expect in [0, 3], but value is ",

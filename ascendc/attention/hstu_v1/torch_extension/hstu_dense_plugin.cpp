@@ -184,6 +184,10 @@ public:
                               const c10::optional<at::Tensor>& mask, const c10::optional<at::Tensor>& attnBias,
                               const int64_t maskType, const int64_t maxSeqLen, const double siluScale)
     {
+        // torch.compile 图模式（fake tensor 构图）：不执行真实 NPU 算子，仅返回 shape 推导结果
+        if (IsMetaContext()) {
+            return at::empty_like(q);
+        }
         at::AutoDispatchBelowADInplaceOrView guard;
         ctx->save_for_backward({q, k, v, mask.value_or(at::Tensor()), attnBias.value_or(at::Tensor())});
         ctx->saved_data["maskType"] = maskType;

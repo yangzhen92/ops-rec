@@ -178,79 +178,10 @@ TORCH_LIBRARY_IMPL(ops_rec, PrivateUse1, m)
     m.impl("hstu_dense_backward", TORCH_FN(hstu_dense_backward_impl_npu));
 }
 
-class HstuDenseNpuFusion : public torch::autograd::Function<HstuDenseNpuFusion> {
-public:
-    static at::Tensor forward(AutogradContext* ctx, const at::Tensor& q, const at::Tensor& k, const at::Tensor& v,
-                              const c10::optional<at::Tensor>& mask, const c10::optional<at::Tensor>& attnBias,
-                              const int64_t maskType, const int64_t maxSeqLen, const double siluScale)
-    {
-        // torch.compile 图模式（fake tensor 构图）：不执行真实 NPU 算子，仅返回 shape 推导结果。
-        // 注意返回 npu device 的 empty（与真实输出一致），FakeTensorMode 会将其转为 fake；
-        // 若返回 meta device，autograd Function 作为黑盒不会被 dynamo 转换，inductor 会报
-        // "Unsupported device type: meta"。
-        if (IsFakeTensor(q)) {
-            return at::empty_like(q, q.options());
-        }
-        at::AutoDispatchBelowADInplaceOrView guard;
-        ctx->save_for_backward({q, k, v, mask.value_or(at::Tensor()), attnBias.value_or(at::Tensor())});
-        ctx->saved_data["maskType"] = maskType;
-        ctx->saved_data["maxSeqLen"] = maxSeqLen;
-        ctx->saved_data["siluScale"] = siluScale;
-
-        return hstu_dense_forward_impl_npu(q, k, v, mask, attnBias, maskType, maxSeqLen, siluScale);
-    }
-
-    static tensor_list backward(AutogradContext* ctx, tensor_list grad_outputs)
-    {
-        auto grad = grad_outputs[0];
-
-        auto saved = ctx->get_saved_variables();
-        auto q = saved[0];
-        auto k = saved[1];
-        auto v = saved[2];
-        auto mask = saved[3];
-        auto attnBias = saved[4];
-
-        auto maskType = ctx->saved_data["maskType"].toInt();
-        auto maxSeqLen = ctx->saved_data["maxSeqLen"].toInt();
-        auto siluScale = ctx->saved_data["siluScale"].toDouble();
-
-        auto resultTuple = hstu_dense_backward_impl_npu(grad, q, k, v, mask, attnBias, maskType, maxSeqLen, siluScale);
-
-        if (attnBias.defined()) {
-            // 返回q, k, v, mask, attnBias, maskType, maxSeqLen, siluScale的梯度
-            return {std::get<0>(resultTuple),
-                    std::get<1>(resultTuple),
-                    std::get<2>(resultTuple),
-                    at::Tensor(),
-                    std::get<3>(resultTuple),
-                    at::Tensor(),
-                    at::Tensor(),
-                    at::Tensor()};
-        } else {
-            return {std::get<0>(resultTuple),
-                    std::get<1>(resultTuple),
-                    std::get<2>(resultTuple),
-                    at::Tensor(),
-                    at::Tensor(),
-                    at::Tensor(),
-                    at::Tensor(),
-                    at::Tensor()};
-        }
-    }
-};
-
-at::Tensor hstu_dense_autograd(const at::Tensor& q, const at::Tensor& k, const at::Tensor& v,
-                               const c10::optional<at::Tensor>& mask, const c10::optional<at::Tensor>& attnBias,
-                               const int64_t maskType, const int64_t maxSeqLen, const double siluScale)
-{
-    return HstuDenseNpuFusion::apply(q, k, v, mask, attnBias, maskType, maxSeqLen, siluScale);
-}
-
-TORCH_LIBRARY_IMPL(ops_rec, AutogradPrivateUse1, m)
-{
-    m.impl("hstu_dense", TORCH_FN(hstu_dense_autograd));
-}
+// 注意：forward 不注册 AutogradPrivateUse1（autograd Function 黑盒会导致 inductor 图模式
+// 数值错误——graph 模式仅走 PrivateUse1 + Meta 干净路径，与 paged/ln_mul/disentangle_attention
+// 已验证模式一致）。backward 由独立算子 hstu_dense_backward 提供，调用方直接使用。
+// 如需训练自动微分，请在 Python 侧包装 autograd.Function。
 
 namespace {
 

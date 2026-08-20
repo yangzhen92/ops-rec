@@ -39,7 +39,7 @@ ops_rec.ascendc.attention.create_q2k_block_sparse_from_func(
 
 | 参数名 | 输入/输出 | 参数类型 | 数据类型 | 数据格式 | shape | 说明 |
 | -------- | --------- | --------- | --------- | --------- | ------- | ------ |
-| func_tensor | 输入 | Tensor | INT32 | ND | [B, H, func_q_len, n_func] | 函数编码张量，n_func 为偶数 |
+| func_tensor | 输入 | Tensor | INT32 | ND | [B, H, func_q_len, n_func] | 函数编码张量，n_func 为偶数, func_q_len 应等于 q_len |
 | q_len | 输入 | int | - | - | - | Q 序列长度 |
 | kv_len | 输入 | int | - | - | - | KV 序列长度 |
 | q_block_size | 输入 | int | - | - | - | Q 块大小 |

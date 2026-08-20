@@ -104,7 +104,7 @@ aclnnStatus：返回状态码，成功返回 `ACLNN_SUCCESS`。
 - 仅支持 INT32 数据类型
 - func_tensor 必须为 4D，n_func 必须为偶数（如 2、4、6、8、...）
 - qLen、kvLen、qBlockSize、kvBlockSize 必须大于 0
-- blockIdx 每行尾端可能被过度分配（未初始化），只应读取 mask/full 计数对应的有效前缀
+- block_idx 每行尾端可能被过度分配（未初始化），只应读取前full_block_cnt个FULL块及后mask_block_cnt个MASK块的有效数据
 - 该算子需要在 NPU 设备上运行
 
 ## 调用示例

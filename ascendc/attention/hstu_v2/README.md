@@ -9,7 +9,7 @@
 ## 目录层级
 
 ```test
-hstu_backward_v2/
+hstu_v2/
 ├── CMakeLists.txt           # 根目录 CMake 配置
 ├── op_host/                 # Host 侧实现
 ├── op_kernel/               # Kernel 侧实现

@@ -122,6 +122,7 @@ aclnnStatus aclnnHstuPagedForward(
 ## 调用示例
 
 见 [examples/aclnn/](../examples/aclnn/) 目录下的独立调用示例：
+
 - `test_aclnn_hstu_forward_dense.cpp`：aclnnHstuDenseForward（normal 格式）
 - `test_aclnn_hstu_forward_jagged.cpp`：aclnnHstuJaggedForward（jagged 格式，delta 语义）
 - `test_aclnn_hstu_forward_paged.cpp`：aclnnHstuPagedForward（paged 格式）

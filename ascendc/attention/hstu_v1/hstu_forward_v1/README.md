@@ -38,7 +38,7 @@
 | torch | `ops_rec.ascendc.attention.hstu_jagged` | Jagged 布局 PyTorch 接口（重载 equal/delta，内部自动识别） | [torch_hstu_forward.md](docs/torch_hstu_forward.md) |
 | torch | `ops_rec.ascendc.attention.hstu_paged` | Paged 布局 PyTorch 接口 | [torch_hstu_forward.md](docs/torch_hstu_forward.md) |
 
-> 接口名与反向算子对应关系：`hstu_dense` ↔ `hstu_dense_backward`、`hstu_jagged.*` ↔ `hstu_jagged_backward`（见 [hstu_backward_v1](../../hstu_backward_v1/README.md)）。接口参数详细说明见 [docs/torch_hstu_forward.md](docs/torch_hstu_forward.md)。
+> 接口名与反向算子对应关系：`hstu_dense` ↔ `hstu_dense_backward`、`hstu_jagged.*` ↔ `hstu_jagged_backward`（见 [hstu_backward_v1](../hstu_backward_v1/README.md)）。接口参数详细说明见 [docs/torch_hstu_forward.md](docs/torch_hstu_forward.md)。
 
 ## 算子实现原理
 

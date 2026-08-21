@@ -255,108 +255,15 @@ TORCH_LIBRARY_IMPL(ops_rec, PrivateUse1, m)
     m.impl("hstu_jagged_backward.delta", TORCH_FN(hstu_deltaq_backward));
 }
 
-class HstuJaggedNpuFusion : public torch::autograd::Function<HstuJaggedNpuFusion> {
-public:
-    static at::Tensor forward(AutogradContext* ctx, const at::Tensor& q, const at::Tensor& k, const at::Tensor& v,
-                              const c10::optional<at::Tensor>& mask, const c10::optional<at::Tensor>& attnBias,
-                              const int64_t maskType, const int64_t maxSeqLenQ, const int64_t maxSeqLenK,
-                              const double siluScale, const at::Tensor& seqOffsetQ, const at::Tensor& seqOffsetK,
-                              const c10::optional<at::Tensor>& numContext, const c10::optional<at::Tensor>& numTarget,
-                              const c10::optional<int64_t>& targetGroupSize, const c10::optional<double>& alpha)
-    {
-        ctx->save_for_backward({q, k, v, mask.value_or(at::Tensor()), attnBias.value_or(at::Tensor()),
-                                numContext.value_or(at::Tensor()), numTarget.value_or(at::Tensor()), seqOffsetQ,
-                                seqOffsetK});
-
-        ctx->saved_data["maskType"] = maskType;
-        ctx->saved_data["maxSeqLenQ"] = maxSeqLenQ;
-        ctx->saved_data["maxSeqLenK"] = maxSeqLenK;
-        ctx->saved_data["siluScale"] = siluScale;
-        ctx->saved_data["targetGroupSize"] = targetGroupSize.value_or(0);
-        ctx->saved_data["alpha"] = alpha.value_or(1.0);
-
-        return hstu_deltaq_forward_impl_npu(q, k, v, mask, attnBias, maskType, maxSeqLenQ, maxSeqLenK, siluScale,
-                                            seqOffsetQ, seqOffsetK, numContext, numTarget, targetGroupSize, alpha);
-    }
-
-    static tensor_list backward(AutogradContext* ctx, tensor_list grad_outputs)
-    {
-        auto grad = grad_outputs[0];
-
-        auto saved = ctx->get_saved_variables();
-        auto q = saved[0];
-        auto k = saved[1];
-        auto v = saved[2];
-        auto mask = saved[3];
-        auto attnBias = saved[4];
-        auto numContext = saved[5];
-        auto numTarget = saved[6];
-        auto seqOffsetQ = saved[7];
-        auto seqOffsetK = saved[8];
-
-        auto maskType = ctx->saved_data["maskType"].toInt();
-        auto maxSeqLenQ = ctx->saved_data["maxSeqLenQ"].toInt();
-        auto maxSeqLenK = ctx->saved_data["maxSeqLenK"].toInt();
-        auto siluScale = ctx->saved_data["siluScale"].toDouble();
-        auto targetGroupSize = ctx->saved_data["targetGroupSize"].toInt();
-        auto alpha = ctx->saved_data["alpha"].toDouble();
-        auto resultTuple =
-            hstu_deltaq_backward_impl_npu(grad, q, k, v, mask, attnBias, maskType, maxSeqLenQ, maxSeqLenK, siluScale,
-                                          seqOffsetQ, seqOffsetK, numContext, numTarget, targetGroupSize, alpha);
-
-        // 返回梯度数量必须与前向输入参数数量一致
-        return {
-            std::get<0>(resultTuple),  // q
-            std::get<1>(resultTuple),  // k
-            std::get<2>(resultTuple),  // v
-            at::Tensor(),              // mask
-            std::get<3>(resultTuple),  // bias
-            at::Tensor(),              // mask_type
-            at::Tensor(),              // max_seqlen_q
-            at::Tensor(),              // max_seqlen_k
-            at::Tensor(),              // silu_scale
-            at::Tensor(),              // offset_q
-            at::Tensor(),              // offset_k
-            at::Tensor(),              // num_context
-            at::Tensor(),              // num_target
-            at::Tensor(),              // target_group_size
-            at::Tensor()               // alpha
-        };
-    }
-};
-
-at::Tensor hstu_jagged_autograd(const at::Tensor& q, const at::Tensor& k, const at::Tensor& v,
-                                const c10::optional<at::Tensor>& mask, const c10::optional<at::Tensor>& attnBias,
-                                const int64_t maskType, const int64_t maxSeqLen, const double siluScale,
-                                const at::Tensor& seqOffset, const c10::optional<at::Tensor>& numContext,
-                                const c10::optional<at::Tensor>& numTarget,
-                                const c10::optional<int64_t>& targetGroupSize, const c10::optional<double>& alpha,
-                                const bool deterministic = false)
-{
-    return HstuJaggedNpuFusion::apply(q, k, v, mask, attnBias, maskType, maxSeqLen, maxSeqLen, siluScale, seqOffset,
-                                      seqOffset, numContext, numTarget, targetGroupSize, alpha);
-}
-
-at::Tensor hstu_deltaq_autograd(const at::Tensor& q, const at::Tensor& k, const at::Tensor& v,
-                                const c10::optional<at::Tensor>& mask, const c10::optional<at::Tensor>& attnBias,
-                                const int64_t maskType, const int64_t maxSeqLenQ, const int64_t maxSeqLenK,
-                                const double siluScale, const at::Tensor& seqOffsetQ, const at::Tensor& seqOffsetK,
-                                const c10::optional<at::Tensor>& numContext, const c10::optional<at::Tensor>& numTarget,
-                                const c10::optional<int64_t>& targetGroupSize, const c10::optional<double>& alpha,
-                                const bool deterministic = false)
-{
-    return HstuJaggedNpuFusion::apply(q, k, v, mask, attnBias, maskType, maxSeqLenQ, maxSeqLenK, siluScale, seqOffsetQ,
-                                      seqOffsetK, numContext, numTarget, targetGroupSize, alpha);
-}
-
-TORCH_LIBRARY_IMPL(ops_rec, AutogradPrivateUse1, m)
-{
-    m.impl("hstu_jagged.equal", TORCH_FN(hstu_jagged_autograd));
-    m.impl("hstu_jagged.delta", TORCH_FN(hstu_deltaq_autograd));
-}
+// 注意：forward 不注册 AutogradPrivateUse1（autograd Function 黑盒会导致 inductor 图模式
+// 数值错误——graph 模式仅走 PrivateUse1 + Meta 干净路径，与 paged/ln_mul/disentangle_attention
+// 已验证模式一致）。backward 由独立算子 hstu_jagged_backward.equal/delta 提供，调用方直接使用。
+// 如需训练自动微分，请在 Python 侧包装 autograd.Function。
 
 namespace {
 
+// Meta 输出 shape 与真实实现对齐：真实输出为 {q.size(0), q.size(1), v.size(2)}
+// （jagged: total, N, D_v，D_v 可不同于 q 的 head_dim；fp8 输入时输出为 half）。
 at::Tensor hstu_jagged_equal_meta(const at::Tensor& q, const at::Tensor& k, const at::Tensor& v,
                                   const c10::optional<at::Tensor>& mask, const c10::optional<at::Tensor>& attnBias,
                                   const int64_t maskType, const int64_t maxSeqLen, const double siluScale,
@@ -366,7 +273,10 @@ at::Tensor hstu_jagged_equal_meta(const at::Tensor& q, const at::Tensor& k, cons
                                   const bool deterministic)
 {
     TORCH_CHECK(q.dim() == 3, "The q should be 3D in jagged layout");
-    return at::empty_like(q, q.options());
+    const bool use_fp8 = (q.scalar_type() == at::kFloat8_e4m3fn);
+    at::ScalarType output_dtype = use_fp8 ? at::kHalf : q.scalar_type();
+    std::vector<c10::SymInt> shape = {q.sym_size(0), q.sym_size(1), v.sym_size(2)};
+    return at::empty_symint(shape, q.options().dtype(output_dtype).device(c10::kMeta));
 }
 
 std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> hstu_jagged_backward_equal_meta(
@@ -389,6 +299,8 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> hstu_jagged_backward_
     return std::make_tuple(qGradOutput, kGradOutput, vGradOutput, attnBiasGradOutput);
 }
 
+// Meta 输出 shape 与真实实现对齐：真实输出为 {q.size(0), q.size(1), v.size(2)}
+// （jagged: total, N, D_v，D_v 可不同于 q 的 head_dim；fp8 输入时输出为 half）。
 at::Tensor hstu_jagged_delta_meta(const at::Tensor& q, const at::Tensor& k, const at::Tensor& v,
                                   const c10::optional<at::Tensor>& mask, const c10::optional<at::Tensor>& attnBias,
                                   const int64_t maskType, const int64_t maxSeqLen, const int64_t maxSeqLenK,
@@ -399,7 +311,10 @@ at::Tensor hstu_jagged_delta_meta(const at::Tensor& q, const at::Tensor& k, cons
                                   const bool deterministic)
 {
     TORCH_CHECK(q.dim() == 3, "The q should be 3D in jagged layout");
-    return at::empty_like(q, q.options());
+    const bool use_fp8 = (q.scalar_type() == at::kFloat8_e4m3fn);
+    at::ScalarType output_dtype = use_fp8 ? at::kHalf : q.scalar_type();
+    std::vector<c10::SymInt> shape = {q.sym_size(0), q.sym_size(1), v.sym_size(2)};
+    return at::empty_symint(shape, q.options().dtype(output_dtype).device(c10::kMeta));
 }
 
 std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> hstu_jagged_backward_delta_meta(

@@ -17,9 +17,12 @@
 """
 hstu_forward_v1 算子 PyTorch 接口使用样例 — jagged 格式
 
-覆盖接口（参数名与 torch schema 一一对应）：
-    - hstu_jagged.equal     : jagged 格式，q 与 k/v 共用同一 seq_offset（段长一致）
-    - hstu_jagged.delta     : jagged 格式，q 与 k/v 使用不同的 seq_offset / seq_offset_k（段长可不同）
+hstu_jagged 为 torch OpOverloadPacket（equal / delta 两个 overload 注册为同名接口），
+调用 ops_rec.ascendc.attention.hstu_jagged(...) 时按参数数量/类型自动分派：
+    - equal 语义（q 与 k/v 共用同一 seq_offset，段长一致）：不传 max_seq_len_k / seq_offset_k
+    - delta 语义（q 与 k/v 使用不同 seq_offset / seq_offset_k，段长可不同）：多传 max_seq_len_k / seq_offset_k
+
+示例主体直接调用 hstu_jagged(...)（自动识别），末尾保留 equal / delta 的简短基本示例。
 
 用法:
     python3 test_torch_hstu_forward_jagged.py
@@ -33,7 +36,7 @@ torch.npu.config.allow_internal_format = False
 
 
 def test_hstu_jagged_equal():
-    """运行 hstu_jagged.equal 前向样例（q 与 k/v 共用同一 seq_offset，段长一致），打印输出便于查看。"""
+    """简短基本示例：hstu_jagged.equal（q 与 k/v 共用同一 seq_offset，段长一致）。"""
     torch.npu.set_device(0)
     N, D = 4, 32
     seq_lens = [4, 6]
@@ -51,11 +54,10 @@ def test_hstu_jagged_equal():
 
     torch.npu.synchronize()
     print(f"[torch] hstu_jagged.equal output shape: {tuple(y.shape)}")
-    print(f"[torch] hstu_jagged.equal output sample: {y.flatten()[:4].cpu().tolist()}")
 
 
 def test_hstu_jagged_delta():
-    """运行 hstu_jagged.delta 前向样例（q 与 k/v 使用不同的 seq_offset / seq_offset_k，段长可不同）。"""
+    """简短基本示例：hstu_jagged.delta（q 与 k/v 使用不同 seq_offset / seq_offset_k，段长可不同）。"""
     torch.npu.set_device(0)
     N, D = 4, 32
     seq_lens_q = [4, 6]
@@ -79,10 +81,48 @@ def test_hstu_jagged_delta():
 
     torch.npu.synchronize()
     print(f"[torch] hstu_jagged.delta output shape: {tuple(y.shape)}")
-    print(f"[torch] hstu_jagged.delta output sample: {y.flatten()[:4].cpu().tolist()}")
+
+
+def test_hstu_jagged_dispatch():
+    """主体示例：直接调用 hstu_jagged(...)，torch 按参数自动分派到 equal / delta overload。
+
+    equal 语义（参数到 seq_offset 为止）：
+        hstu_jagged(q, k, v, mask, attn_bias, mask_type, max_seq_len, silu_scale, seq_offset)
+    delta 语义（额外传 max_seq_len_k / seq_offset_k）：
+        hstu_jagged(q, k, v, mask, attn_bias, mask_type, max_seq_len, max_seq_len_k,
+                    silu_scale, seq_offset, seq_offset_k)
+    """
+    torch.npu.set_device(0)
+    N, D = 4, 32
+    seq_lens = [4, 6]
+    batch = len(seq_lens)
+    total = sum(seq_lens)
+    S = max(seq_lens)
+    silu_scale = 1.0 / S
+
+    q = torch.randn(total, N, D, dtype=torch.float16).npu()
+    k = torch.randn(total, N, D, dtype=torch.float16).npu()
+    v = torch.randn(total, N, D, dtype=torch.float16).npu()
+    seq_offset = torch.tensor([0] + [sum(seq_lens[: i + 1]) for i in range(batch)], device="npu", dtype=torch.int32)
+
+    # equal 语义（不传 max_seq_len_k / seq_offset_k）
+    y = ops_rec.ascendc.attention.hstu_jagged(q, k, v, None, None, 0, S, silu_scale, seq_offset)
+    torch.npu.synchronize()
+    print(f"[torch] hstu_jagged (equal) output shape: {tuple(y.shape)}")
+
+    # delta 语义（多传 max_seq_len_k / seq_offset_k）
+    seq_lens_k = [6, 8]
+    total_k = sum(seq_lens_k)
+    k_d = torch.randn(total_k, N, D, dtype=torch.float16).npu()
+    v_d = torch.randn(total_k, N, D, dtype=torch.float16).npu()
+    seq_offset_k = torch.tensor([0] + [sum(seq_lens_k[: i + 1]) for i in range(batch)], device="npu", dtype=torch.int32)
+    y_d = ops_rec.ascendc.attention.hstu_jagged(q, k_d, v_d, None, None, 0, S, 8, silu_scale, seq_offset, seq_offset_k)
+    torch.npu.synchronize()
+    print(f"[torch] hstu_jagged (delta) output shape: {tuple(y_d.shape)}")
 
 
 if __name__ == "__main__":
+    test_hstu_jagged_dispatch()
     test_hstu_jagged_equal()
     test_hstu_jagged_delta()
     print("[torch] hstu_jagged torch examples done")

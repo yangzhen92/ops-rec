@@ -97,9 +97,9 @@ ops_rec.ascendc.attention.hstu_jagged_backward(
 
 ## 自动微分（autograd）用法
 
-前向算子 `hstu_jagged.equal|delta` 不注册 C++ AutogradPrivateUse1（保证 inductor 图模式干净），
+前向算子 `hstu_jagged`（equal/delta 两个 overload 注册为同名重载接口，调用时按参数自动识别：不传 `max_seq_len_k` / `seq_offset_k` 即 equal 语义，多传即 delta 语义）不注册 C++ AutogradPrivateUse1（保证 inductor 图模式干净），
 因此 `y.backward()` 不会自动触发本算子。训练场景请在 Python 侧用
-`torch.autograd.Function` 包装：forward 调用 `hstu_jagged.equal`（或 `delta`），
+`torch.autograd.Function` 包装：forward 直接调用 `hstu_jagged`（示例为 equal 语义），
 backward 调用 `hstu_jagged_backward`（equal 语义：`max_seq_len_k = max_seq_len`、`seq_offset_k = seq_offset`）。
 
 ```python
@@ -116,7 +116,7 @@ class HstuJaggedAutograd(torch.autograd.Function):
         ctx.silu_scale = silu_scale
         ctx.target_group_size = target_group_size
         ctx.alpha = alpha
-        return ops_rec.ascendc.attention.hstu_jagged.equal(
+        return ops_rec.ascendc.attention.hstu_jagged(
             q, k, v, mask=mask, attn_bias=attn_bias, mask_type=mask_type,
             max_seq_len=max_seq_len, silu_scale=silu_scale, seq_offset=seq_offset,
             num_context=num_context, num_target=num_target,
@@ -142,8 +142,8 @@ loss = criterion(y, target)
 loss.backward()  # 梯度流向 q/k/v/bias
 ```
 
-`hstu_jagged.delta`（q/k 长度不等）的包装方式相同，仅需将 forward 换成
-`hstu_jagged.delta` 并增加 `max_seq_len_k` / `seq_offset_k` 参数，backward 对应调用
+delta 语义（q/k 长度不等）的包装方式相同，仅需在 forward 调用中增加
+`max_seq_len_k` / `seq_offset_k` 参数（`hstu_jagged` 自动识别为 delta），backward 对应调用
 `hstu_jagged_backward` 的 delta 形式（16 参数签名）。
 
 该包装可被 dynamo 正常追踪（forward 走 Meta 构图），`torch.compile` 训练同样可用。

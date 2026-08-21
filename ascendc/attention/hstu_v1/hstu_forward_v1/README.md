@@ -19,7 +19,7 @@
 
 **dim 不等支持**：本算子支持 qk 的 head_dim 与 v_dim 不相等的场景。
 
-**jagged 双模式**：jagged 布局支持 equal 与 delta 两种模式。`hstu_jagged.equal` 中 q 与 k/v 共用同一个 `seq_offset`（每段内 q/k 长度一致）；`hstu_jagged.delta` 中 q 与 k/v 使用不同的 `seq_offset` / `seq_offset_k`，允许 q 段与 k 段长度不同（增量推理 / prefix-caching 场景）。
+**jagged 双模式**：jagged 布局支持 equal 与 delta 两种模式。equal 模式下 q 与 k/v 共用同一个 `seq_offset`（每段内 q/k 长度一致）；delta 模式下 q 与 k/v 使用不同的 `seq_offset` / `seq_offset_k`，允许 q 段与 k 段长度不同（增量推理 / prefix-caching 场景）。`hstu_jagged` 为 torch 重载接口（OpOverloadPacket），内部自动识别：不传 `max_seq_len_k` / `seq_offset_k` 即 equal 语义，多传即 delta 语义（也可显式写 `hstu_jagged.equal` / `hstu_jagged.delta`）。
 
 **paged 支持**：`hstu_paged` 面向 KV cache 分页解码场景，历史 KV 按 `page_size` 分页存放于 `kv_cache`，通过 `page_offsets` / `page_ids` / `last_page_len` 描述分页布局，`num_target` + `target_group_size` 描述当前批次新生成的（目标）token。
 
@@ -30,13 +30,15 @@
 ## 接口说明
 
 | 接口类型 | 接口名称 | 说明 | 接口文档 |
-|---------|---------|------|---------|
-| aclnn | `aclnnHstuDenseForward` | normal（dense）格式前向 | [aclnn_hstu_forward.md](docs/aclnn_hstu_forward.md) |
-| aclnn | `aclnnHstuJaggedForward` | jagged 格式前向（equal/delta 双模式） | [aclnn_hstu_forward.md](docs/aclnn_hstu_forward.md) |
-| aclnn | `aclnnHstuPagedForward` | paged 格式前向（kv_cache 分页） | [aclnn_hstu_forward.md](docs/aclnn_hstu_forward.md) |
-| torch | `ops_rec.ascendc.attention.hstu_dense` | dense 布局 PyTorch 接口 | [torch_hstu_forward.md](docs/torch_hstu_forward.md) |
-| torch | `ops_rec.ascendc.attention.hstu_jagged.equal / .delta` | jagged 布局（equal/delta 双模式） | [torch_hstu_forward.md](docs/torch_hstu_forward.md) |
-| torch | `ops_rec.ascendc.attention.hstu_paged` | paged 布局（kv_cache 分页） | [torch_hstu_forward.md](docs/torch_hstu_forward.md) |
+| -------- | -------- | ---- | -------- |
+| aclnn | `aclnnHstuDenseForward` | Normal 布局前向算子 | [aclnn_hstu_forward.md](docs/aclnn_hstu_forward.md) |
+| aclnn | `aclnnHstuJaggedForward` | Jagged 布局前向算子（equal/delta 双模式） | [aclnn_hstu_forward.md](docs/aclnn_hstu_forward.md) |
+| aclnn | `aclnnHstuPagedForward` | Paged 布局前向算子（kv_cache 分页） | [aclnn_hstu_forward.md](docs/aclnn_hstu_forward.md) |
+| torch | `ops_rec.ascendc.attention.hstu_dense` | Normal 布局 PyTorch 接口 | [torch_hstu_forward.md](docs/torch_hstu_forward.md) |
+| torch | `ops_rec.ascendc.attention.hstu_jagged` | Jagged 布局 PyTorch 接口（重载 equal/delta，内部自动识别） | [torch_hstu_forward.md](docs/torch_hstu_forward.md) |
+| torch | `ops_rec.ascendc.attention.hstu_paged` | Paged 布局 PyTorch 接口 | [torch_hstu_forward.md](docs/torch_hstu_forward.md) |
+
+> 接口名与反向算子对应关系：`hstu_dense` ↔ `hstu_dense_backward`、`hstu_jagged.*` ↔ `hstu_jagged_backward`（见 [hstu_backward_v1](../../hstu_backward_v1/README.md)）。接口参数详细说明见 [docs/torch_hstu_forward.md](docs/torch_hstu_forward.md)。
 
 ## 算子实现原理
 
@@ -136,30 +138,29 @@ y = ops_rec.ascendc.attention.hstu_dense(q, k, v, None, None, 0, S, 1.0 / S)
 print(y.shape)  # torch.Size([2, 256, 8, 64])
 ```
 
-### hstu_jagged.equal（jagged 格式，q 与 k/v 共用 seq_offset）
+### hstu_jagged（jagged 格式，重载 equal/delta 自动识别）
+
+`hstu_jagged` 为 torch 重载接口（OpOverloadPacket）：不传 `max_seq_len_k` / `seq_offset_k` 即 equal 语义（q 与 k/v 共用 seq_offset），多传即 delta 语义（q 与 k/v 使用不同 seq_offset，段长可不同）。
 
 ```python
+# equal 语义（q 与 k/v 共用 seq_offset，两段各 256 行）
 s_b, N, D = 512, 8, 64
 q = torch.randn(s_b, N, D, dtype=torch.float16).npu()
 k = torch.randn(s_b, N, D, dtype=torch.float16).npu()
 v = torch.randn(s_b, N, D, dtype=torch.float16).npu()
-seq_offset = torch.tensor([0, 256, 512], dtype=torch.int32).npu()  # [B+1]，两段各 256 行
-y = ops_rec.ascendc.attention.hstu_jagged.equal(
+seq_offset = torch.tensor([0, 256, 512], dtype=torch.int32).npu()  # [B+1]
+y = ops_rec.ascendc.attention.hstu_jagged(
     q, k, v, None, None, 0, 256, 1.0 / 256, seq_offset)
 print(y.shape)  # torch.Size([512, 8, 64])
-```
 
-### hstu_jagged.delta（jagged 格式，q 与 k/v 使用不同 seq_offset）
-
-```python
-# q 段长 [4, 6]，k/v 段长 [6, 8]，段长可以不同
+# delta 语义（额外传 max_seq_len_k / seq_offset_k；q 段长 [4, 6]，k/v 段长 [6, 8]）
 N, D = 4, 32
 q = torch.randn(10, N, D, dtype=torch.float16).npu()
 k = torch.randn(14, N, D, dtype=torch.float16).npu()
 v = torch.randn(14, N, D, dtype=torch.float16).npu()
 seq_offset = torch.tensor([0, 4, 10], dtype=torch.int32).npu()
 seq_offset_k = torch.tensor([0, 6, 14], dtype=torch.int32).npu()
-y = ops_rec.ascendc.attention.hstu_jagged.delta(
+y = ops_rec.ascendc.attention.hstu_jagged(
     q, k, v, None, None, 0, 6, 8, 1.0 / 6, seq_offset, seq_offset_k)
 print(y.shape)  # torch.Size([10, 4, 32])
 ```
@@ -212,7 +213,7 @@ q = torch.empty(total_len, head_num_q, head_dim_qk, dtype=data_type).uniform_(-1
 k = torch.empty(total_len, head_num_k, head_dim_qk, dtype=data_type).uniform_(-1, 1).npu()
 v = torch.empty(total_len, head_num_k, head_dim_v, dtype=data_type).uniform_(-1, 1).npu()
 
-y = ops_rec.ascendc.attention.hstu_jagged.equal(
+y = ops_rec.ascendc.attention.hstu_jagged(
     q, k, v, mask, attn_bias,
     mask_type=mask_type, max_seq_len=max_seq_len, silu_scale=silu_scale,
     seq_offset=seq_offset,
@@ -275,7 +276,7 @@ target_group_size = 1
 attn_bias = torch.empty(batch_size, head_num_q, max_seq_len, max_seq_len, dtype=data_type).uniform_(-1, 1).npu()
 mask = torch.tril(torch.ones(max_seq_len, max_seq_len, dtype=data_type)).expand(
     batch_size, head_num_q, max_seq_len, max_seq_len).npu()   # [B, N, S, S] 下三角 0/1
-y = ops_rec.ascendc.attention.hstu_jagged.equal(
+y = ops_rec.ascendc.attention.hstu_jagged(
     q, k, v, mask, attn_bias,
     mask_type=3, max_seq_len=max_seq_len, silu_scale=silu_scale, seq_offset=seq_offset,
     num_context=num_context, num_target=num_target, target_group_size=target_group_size)
@@ -290,7 +291,7 @@ y = ops_rec.ascendc.attention.hstu_jagged.equal(
 # 相比示例 4 的改动：deterministic=True、silu_scale 自定义
 deterministic = True
 silu_scale = 0.05
-y = ops_rec.ascendc.attention.hstu_jagged.equal(
+y = ops_rec.ascendc.attention.hstu_jagged(
     q, k, v, mask, attn_bias,
     mask_type=mask_type, max_seq_len=max_seq_len, silu_scale=silu_scale, seq_offset=seq_offset,
     num_context=num_context, num_target=num_target, target_group_size=target_group_size,

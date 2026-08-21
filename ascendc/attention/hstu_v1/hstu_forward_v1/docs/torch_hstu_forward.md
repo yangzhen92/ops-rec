@@ -28,15 +28,9 @@ ops_rec.ascendc.attention.hstu_dense(
     mask: Optional[Tensor] = None, attn_bias: Optional[Tensor] = None,
     mask_type: int = 0, max_seq_len: int = 0, silu_scale: float = 0.0) -> Tensor
 
-ops_rec.ascendc.attention.hstu_jagged.equal(
-    q: Tensor, k: Tensor, v: Tensor,
-    mask: Optional[Tensor] = None, attn_bias: Optional[Tensor] = None,
-    mask_type: int = 0, max_seq_len: int = 0, silu_scale: float = 0.0,
-    seq_offset: Tensor = None, num_context: Optional[Tensor] = None,
-    num_target: Optional[Tensor] = None, target_group_size: Optional[int] = 0,
-    alpha: Optional[float] = 1.0, deterministic: bool = False) -> Tensor
-
-ops_rec.ascendc.attention.hstu_jagged.delta(
+# hstu_jagged 为 torch OpOverloadPacket：equal / delta 两个 overload 注册为同名接口，
+# 调用时按参数自动分派（不传 max_seq_len_k / seq_offset_k 即 equal 语义，多传即 delta 语义）
+ops_rec.ascendc.attention.hstu_jagged(
     q: Tensor, k: Tensor, v: Tensor,
     mask: Optional[Tensor] = None, attn_bias: Optional[Tensor] = None,
     mask_type: int = 0, max_seq_len: int = 0, max_seq_len_k: int = 0,
@@ -55,6 +49,15 @@ ops_rec.ascendc.attention.hstu_paged(
     target_group_size: int = 0, alpha: Optional[float] = 1.0,
     deterministic: bool = False) -> Tensor
 ```
+
+### 重载（equal / delta）分派说明
+
+`hstu_jagged` 内部注册了两个 overload：`hstu_jagged.equal`（q 与 k/v 共用同一 `seq_offset`，段长一致）与 `hstu_jagged.delta`（q 与 k/v 使用不同的 `seq_offset` / `seq_offset_k`，段长可不同，增量推理 / prefix-caching 场景）。两者以同名接口 `ops_rec.ascendc.attention.hstu_jagged` 暴露，torch 按参数自动分派：
+
+- **equal 语义**：调用时不传 `max_seq_len_k` / `seq_offset_k`（上表原型中的 `max_seq_len_k=0` / `seq_offset_k=None` 即 equal）
+- **delta 语义**：调用时传入 `max_seq_len_k` / `seq_offset_k`（值非默认即 delta）
+
+也可以显式调用 `hstu_jagged.equal(...)` / `hstu_jagged.delta(...)`（两者功能等价，显式写法便于指定 overload）。文档其余示例默认直接调用 `hstu_jagged(...)`，由 torch 自动识别。
 
 > 反向接口 `hstu_dense_backward` / `hstu_jagged_backward.equal|delta` 是独立算子，不自动挂载在 autograd 图中。可直接调用（见 [hstu_backward_v1](../../hstu_backward_v1/docs/torch_hstu_dense_backward.md)），或在训练场景通过 Python 侧 `torch.autograd.Function` 包装接入 `loss.backward()`（见下文）。
 
@@ -172,13 +175,13 @@ v = torch.randn(B, S, N, D, dtype=torch.float16).npu()
 y = ops_rec.ascendc.attention.hstu_dense(q, k, v, None, None, 0, S, 1.0 / S)
 print(y.shape)  # torch.Size([2, 256, 8, 64])
 
-# jagged 格式（GQA + dim 不等）
+# jagged 格式（GQA + dim 不等；不传 max_seq_len_k / seq_offset_k，自动分派到 equal）
 s_b, N_q, D_qk, D_v = 512, 8, 64, 128
 q = torch.randn(s_b, N_q, D_qk, dtype=torch.float16).npu()
 k = torch.randn(s_b, 2, D_qk, dtype=torch.float16).npu()   # N_k=2（GQA）
 v = torch.randn(s_b, 2, D_v, dtype=torch.float16).npu()    # D_v=128（dim 不等）
 seq_offsets = torch.tensor([0, 256, 512], dtype=torch.int64).npu()
-y = ops_rec.ascendc.attention.hstu_jagged.equal(
+y = ops_rec.ascendc.attention.hstu_jagged(
     q, k, v, None, None, 0, 256, 1.0 / 256, seq_offsets)
 print(y.shape)  # torch.Size([512, 8, 128])
 ```

@@ -111,9 +111,10 @@ class HstuDenseAutograd(torch.autograd.Function):
 
 
 class HstuJaggedAutograd(torch.autograd.Function):
-    """jagged 布局 hstu_jagged.equal 的自动微分包装（q/k 等长，seq_offset 共用）。
+    """jagged 布局 hstu_jagged 的自动微分包装（equal 语义，q/k 等长，seq_offset 共用）。
 
-    forward 调用 ops_rec.ascendc.attention.hstu_jagged.equal，
+    forward 直接调用 ops_rec.ascendc.attention.hstu_jagged（不传 max_seq_len_k /
+    seq_offset_k，torch 重载自动识别为 equal 语义；delta 语义多传两个参数即可），
     backward 调用 ops_rec.ascendc.attention.hstu_jagged_backward（equal 语义：
     max_seq_len_k = max_seq_len，seq_offset_k = seq_offset）。
     """
@@ -141,7 +142,7 @@ class HstuJaggedAutograd(torch.autograd.Function):
         ctx.silu_scale = silu_scale
         ctx.target_group_size = target_group_size
         ctx.alpha = alpha
-        return ops_rec.ascendc.attention.hstu_jagged.equal(
+        return ops_rec.ascendc.attention.hstu_jagged(
             q,
             k,
             v,
@@ -338,7 +339,7 @@ def check_jagged_autograd(mask_type, enable_bias, silu_scale=0.0):
     torch.npu.synchronize()
 
     grads = (q_.grad, k_.grad, v_.grad, b_.grad if b_ is not None else None)
-    print(f"[jagged] hstu_jagged.equal 自动微分 (mask_type={mask_type}, enable_bias={enable_bias}):")
+    print(f"[jagged] hstu_jagged (equal) 自动微分 (mask_type={mask_type}, enable_bias={enable_bias}):")
     _check_grads("jagged", grads, grads_ref)
     print()
 

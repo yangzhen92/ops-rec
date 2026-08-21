@@ -23,6 +23,8 @@
 
 **paged 支持**：`hstu_paged` 面向 KV cache 分页解码场景，历史 KV 按 `page_size` 分页存放于 `kv_cache`，通过 `page_offsets` / `page_ids` / `last_page_len` 描述分页布局，`num_target` + `target_group_size` 描述当前批次新生成的（目标）token。
 
+**复合 Mask 支持**：jagged（equal/delta）与 paged 布局可通过 `num_context` / `num_target` / `target_group_size` 构造 HSTU 复合掩码，将序列划分为 Context / Causal / Target 三个区域（详见下节「复合 Mask 接口参数」）；dense 布局不支持。
+
 **FP8 支持**：本算子仅在 A5 上支持 data_type 为 fp8_e4m3fn 的 qkv 输入，算子输出为 float16。
 
 ## 接口说明
@@ -93,10 +95,28 @@ def hstu_dense_forward(q_np, k_np, v_np, rel_attn_bias_np, invalid_attn_mask_np)
 | layout   | 专属参数 |
 |----------|----------|
 | normal   | 无（4 维 q/k/v 直接使用） |
-| jagged   | seq_offset_q、seq_offset_k（`[B+1]`，int32/int64）、num_context、num_target（可选） |
-| paged    | seq_offset_q/k/t、kv_cache（`[num_pages, 2, page_size, N, D]`）、page_offsets、page_ids、last_page_len、num_target、target_group_size |
+| jagged   | seq_offset_q、seq_offset_k（`[B+1]`，int32/int64）、num_context、num_target、target_group_size（后三者可选，见「复合 Mask 接口参数」） |
+| paged    | seq_offset_q/k/t、kv_cache（`[num_pages, 2, page_size, N, D]`）、page_offsets、page_ids、last_page_len、num_target、target_group_size（见「复合 Mask 接口参数」） |
 
 > 详细参数说明见 [docs/torch_hstu_forward.md](docs/torch_hstu_forward.md)。
+
+### 复合 Mask 接口参数
+
+jagged（equal/delta）布局通过以下三个参数构造 HSTU 复合掩码；paged 布局支持其中 `num_target` / `target_group_size` 两个（无 context 区域）。需配合 `mask_type=0`（内置下三角）使用，在其基础上叠加 context / target 区域；dense 布局不支持。
+
+| 参数（torch） | 参数（aclnn） | 布局 | 输入/输出 | 类型 | shape | 说明 |
+|--------------|--------------|------|---------|------|-------|------|
+| `num_context` | `numContext` | 仅 jagged | 输入（可选） | Tensor[int32/int64] | `[B]` | 每个 batch 的 context token 数。context 区域全量关注 context + causal 区域（不含 target）。不传（None/nullptr）时不启用 context 区域 |
+| `num_target` | `numTarget` | jagged / paged | 输入（可选） | Tensor[int32/int64] | `[B]` | 每个 batch 的 target token 数。target 区域（序列尾部）只关注 context 与组内 target，组间不互相关注。不传时不启用 target 区域 |
+| `target_group_size` | `targetGroupSize` | jagged / paged | 输入（可选） | int | - | target 分组大小（>0 启用）。每个分组内的 target token 互相可见，不同分组之间不可见；`paged` 接口必传（>0） |
+
+序列划分为三个区域：
+
+- **Context 区域**（前 `num_context` 个 token）：全量关注所有 context 与 causal token（`[0, S - num_target)` 全宽）
+- **Causal 区域**（中间 token）：因果关注（下三角，仅关注自身及之前的 token）
+- **Target 区域**（后 `num_target` 个 token）：按 `target_group_size` 分组，组内 block-diagonal 关注（关注 context + 本组 target），组间挖空
+
+> 语义与 kernel 实现一致（见 `op_kernel/atlas950/hstu_dense_causal_mask.h` 的 `GenContextMask` / `GenCausalMask` / `GenTargetMask`），用法见「特性用法示例」示例 3。
 
 ## 调用方式
 
@@ -228,13 +248,13 @@ v = torch.empty(total_len, head_num_k, head_dim_v, dtype=data_type).uniform_(-1,
 
 ### 示例 3: 复合 Mask（Causal + Context + Target）
 
-相比示例 2 的改动：`mask_type` 改为 0（TRIL），新增 `num_context` / `num_target` / `target_group_size`，算子结合这些参数构造 HSTU 复合 mask。
+相比示例 2 的改动：`mask_type` 改为 0（TRIL），新增 `num_context` / `num_target` / `target_group_size`，算子结合这些参数构造 HSTU 复合 mask。参数语义见上节「复合 Mask 接口参数」。
 
 序列划分为 `[context] [causal] [target]` 三个区域：
 
-- **Context 区域**（前 num_context 个 token）：全量关注所有 context token
+- **Context 区域**（前 num_context 个 token）：全量关注 context + causal 区域（不含 target）
 - **Causal 区域**（中间 token）：因果关注（context + 自身之前的 causal token）
-- **Target 区域**（后 num_target 个 token）：只关注 context 和自身（不跨 target 相互关注）
+- **Target 区域**（后 num_target 个 token，按 target_group_size 分组）：只关注 context 和本组自身（不跨组互相关注）
 
 ```python
 # ===================== 示例 3: 复合 Mask =====================

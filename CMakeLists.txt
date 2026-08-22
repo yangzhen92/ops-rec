@@ -178,19 +178,27 @@ set(_OPS_REC_SOC_DEFS
     ${OPS_REC_SOC_CXX_DEFS}
 )
 
-# Torch 适配层源码 — 从每个算子的 torch_extension/ 目录收集。
-# Torch 适配层所依赖的 vendor（op_api 库）由各插件源码自行声明：在 torch_extension/<op>_plugin.cpp
-# 顶部通过 #define OPS_REC_CUST_VENDORS "vendor1,vendor2" 指定，EXEC_NPU_CMD 运行时按 ',' 逗号分隔逐个 vendor
-file(GLOB_RECURSE _ascendc_cpp_srcs
-    ${CMAKE_CURRENT_SOURCE_DIR}/ascendc/*.cpp
-)
+# Torch 适配层源码 — 按当前 SOC 白名单逐算子收集 torch_extension/*.cpp
+# 每个插件的 op_api 库依赖由源码自行声明：torch_extension/<op>_plugin.cpp 顶部
+# #define OPS_REC_CUST_VENDORS "vendor1,vendor2"，EXEC_NPU_CMD 运行时按 ',' 逗号分隔逐个 vendor
 set(OPS_REC_TORCH_PLUGIN_SRCS "")
-foreach(_src ${_ascendc_cpp_srcs})
-    if(_src MATCHES "/torch_extension/[^/]+\\.cpp$")
-        list(APPEND OPS_REC_TORCH_PLUGIN_SRCS "${_src}")
+foreach(_op IN LISTS OPS_REC_VENDORS)
+    ops_rec_find_op_dir("${_op}" _op_dir)
+    if(NOT _op_dir)
+        message(WARNING "ops-rec: op '${_op}' dir not found; skipping its torch_extension sources")
+        continue()
     endif()
+    file(GLOB_RECURSE _op_extension_srcs "${_op_dir}/torch_extension/*.cpp")
+    if(_op_extension_srcs)
+        message(STATUS "ops-rec: adapter sources for '${_op}': ${_op_extension_srcs}")
+        list(APPEND OPS_REC_TORCH_PLUGIN_SRCS ${_op_extension_srcs})
+    else()
+        message(STATUS "ops-rec: op '${_op}' has no torch_extension/*.cpp sources")
+    endif()
+    unset(_op_extension_srcs)
 endforeach()
-unset(_ascendc_cpp_srcs)
+unset(_op)
+unset(_op_dir)
 
 if(OPS_REC_TORCH_PLUGIN_SRCS)
     add_library(${OPS_REC_TORCH_SO_NAME} SHARED ${OPS_REC_TORCH_PLUGIN_SRCS})

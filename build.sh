@@ -202,6 +202,36 @@ sync_triton() {
     fi
 }
 
+# ---------------------------------------------------------------------------
+# 工具函数：同步各算子的 Python autograd 源码 -> 打包 merge 目录 ops_rec/autograd/
+# 源码约定位于每个算子的 torch_extension/ 目录（与 *_plugin.cpp 同处），
+# 打包阶段拷贝到 merge 树 ops_rec/autograd/ 子目录（源码树保留 __init__.py 作为
+# 包入口，不写拷贝物，避免 build 后源码树被污染进 git status）。
+# ---------------------------------------------------------------------------
+sync_autograd() {
+    local dst="${MERGE_ROOT}/autograd"
+    # 服务端 __init__.py 是包加载入口，不拷贝（merge 树里由源码树 cp 提供）。
+    # 同名冲突检测：多个算子提供同名 *_autograd.py 会在包内彼此覆盖，
+    # 导致注册错误模块。先按 basename 去重，发现重复立即失败。
+    local f name
+    local -A seen=()
+    while IFS= read -r -d '' f; do
+        name="$(basename "${f}")"
+        if [[ -n "${seen[${name}]}" ]]; then
+            die "autograd filename collision: '${f#${SCRIPT_DIR}/}' vs '${seen[${name}]#${SCRIPT_DIR}/}' (same basename '${name}')"
+        fi
+        seen["${name}"]="${f}"
+    done < <(find "${SCRIPT_DIR}/ascendc" -type f -name '*_autograd.py' -path '*/torch_extension/*' -print0)
+
+    mkdir -p "${dst}"
+    find "${dst}" -maxdepth 1 -name '*_autograd.py' -type f -delete
+
+    for f in "${seen[@]}"; do
+        cp -a "${f}" "${dst}/$(basename "${f}")"
+        echo "[INFO] Synced ${f#${SCRIPT_DIR}/} -> ops_rec/autograd/$(basename "${f}")"
+    done
+}
+
 # 打印错误并以非零退出（替代隐式依赖 set -e，确保失败被显式传播）。
 die() {
     echo "[ERROR] $*" >&2
@@ -456,11 +486,9 @@ main() {
             fi
         done
 
-        # 3) 单次构建适配层并收集
+        # 3) 单次构建适配层并收集 ops_rec_atlas_<variant>.so（适配层 install 到 stage 根目录）
         build_adapter "${soc}"
-        # 收集 ops_rec_atlas_<variant>.so（适配层 install 到 stage 根目录）
-        local so
-        so=$(find "${STAGE_ROOT}/${soc}/adapter" -maxdepth 1 -name 'ops_rec_atlas_*.so' 2>/dev/null | head -1)
+        local so=$(find "${STAGE_ROOT}/${soc}/adapter" -maxdepth 1 -name 'ops_rec_atlas_*.so' 2>/dev/null | head -1)
         if [ -n "${so}" ]; then
             cp -f "${so}" "${MERGE_ROOT}/$(basename "${so}")"
             echo "[INFO] Collected $(basename "${so}")"
@@ -488,6 +516,13 @@ main() {
         fi
         cp -a "${item}" "${MERGE_ROOT}/${name}"
     done
+
+    # 5) 同步各算子 torch_extension/*_autograd.py -> merge 树 ops_rec/autograd
+    sync_autograd
+
+    # 6) 清理打包树中的 Python 缓存（__pycache__ / *.pyc）。
+    find "${MERGE_ROOT}" -type d -name '__pycache__' -prune -exec rm -rf {} +
+    find "${MERGE_ROOT}" -type f -name '*.pyc' -delete
 
     echo ""
     echo "==========================================================="

@@ -37,22 +37,22 @@ static const uint64_t COMPUTE_PIPE_NUM = 2;
 }  // namespace
 
 namespace INPUT_INDEX_T {
-    constexpr int X_INDEX = 0;
-    constexpr int WEIGHT_INDEX = 1;
-    constexpr int BIAS_INDEX = 2;
-    constexpr int MASK_INDEX = 3;
-    constexpr int USER_GRAD_INDEX = 4;
-    constexpr int VALUE_GRAD_INDEX = 5;
-    constexpr int QUERY_GRAD_INDEX = 6;
-    constexpr int KEY_GRAD_INDEX = 7;
-    constexpr int X_GRAD_INDEX = 8;
-    constexpr int WEIGHTS_GRAD_INDEX = 9;
-    constexpr int BIAS_GRAD_INDEX = 10;
-}
+constexpr int X_INDEX = 0;
+constexpr int WEIGHT_INDEX = 1;
+constexpr int BIAS_INDEX = 2;
+constexpr int MASK_INDEX = 3;
+constexpr int USER_GRAD_INDEX = 4;
+constexpr int VALUE_GRAD_INDEX = 5;
+constexpr int QUERY_GRAD_INDEX = 6;
+constexpr int KEY_GRAD_INDEX = 7;
+constexpr int X_GRAD_INDEX = 8;
+constexpr int WEIGHTS_GRAD_INDEX = 9;
+constexpr int BIAS_GRAD_INDEX = 10;
+}  // namespace INPUT_INDEX_T
 
 namespace optiling {
-static bool TilingKeySetImpl(gert::TilingContext* context, InLinearSiluBackwardTilingData &tiling,
-                             bool isTrans, bool isVardim)
+static bool TilingKeySetImpl(gert::TilingContext* context, InLinearSiluBackwardTilingData& tiling, bool isTrans,
+                             bool isVardim)
 {
     bool enableBias = tiling.get_enableBias();
 
@@ -90,8 +90,8 @@ static uint32_t GetBlockM(gert::TilingContext* context, uint32_t seqLen)
     return blockM;
 }
 
-static bool RangeCheck(gert::TilingContext* context,
-                       int64_t seqLen, int64_t dim, int64_t hiddenSize, const int64_t *split_arg_list)
+static bool RangeCheck(gert::TilingContext* context, int64_t seqLen, int64_t dim, int64_t hiddenSize,
+                       const int64_t* split_arg_list)
 {
     int64_t uDim = split_arg_list[0];
     int64_t vDim = split_arg_list[1];
@@ -99,16 +99,16 @@ static bool RangeCheck(gert::TilingContext* context,
     int64_t kDim = split_arg_list[3];
     int64_t totalDim = uDim + vDim + qDim + kDim;
     OPS_LOG_E_IF(dim < MIN_X_DIM || dim > MAX_X_DIM, context, return false,
-        "[ERROR]InLinearSilu normed_x dim should be in range[%d, %d]!", MIN_X_DIM, MAX_X_DIM);
+                 "[ERROR]InLinearSilu normed_x dim should be in range[%d, %d]!", MIN_X_DIM, MAX_X_DIM);
     OPS_LOG_E_IF(hiddenSize < MIN_W_DIM || hiddenSize > MAX_W_DIM, context, return false,
-        "[ERROR]InLinearSilu weight hiddenSize should be in range[%d, %d]!", MIN_W_DIM, MAX_W_DIM);
+                 "[ERROR]InLinearSilu weight hiddenSize should be in range[%d, %d]!", MIN_W_DIM, MAX_W_DIM);
     OPS_LOG_E_IF(hiddenSize != totalDim, context, return false,
-        "[ERROR]InLinearSilu hiddenSize should equal to sum(split_arg_list)!");
+                 "[ERROR]InLinearSilu hiddenSize should equal to sum(split_arg_list)!");
     return true;
 }
 
-static ge::graphStatus TilingMatmulImpl(gert::TilingContext *context, uint32_t m, uint32_t n, uint32_t k,
-                                        bool isTrans, TCubeTiling &tiling_mm)
+static ge::graphStatus TilingMatmulImpl(gert::TilingContext* context, uint32_t m, uint32_t n, uint32_t k, bool isTrans,
+                                        TCubeTiling& tiling_mm)
 {
     matmul_tiling::DataType dataType;
     ge::DataType xType = context->GetInputTensor(0)->GetDataType();
@@ -134,20 +134,16 @@ static ge::graphStatus TilingMatmulImpl(gert::TilingContext *context, uint32_t m
     MM.SetBias(false);
     MM.SetBufferSpace(-1, -1, -1);
 
-    OPS_LOG_E_IF(MM.GetTiling(tiling_mm) == -1, context, return ge::GRAPH_FAILED,
-                 "matmul tiling failed");
+    OPS_LOG_E_IF(MM.GetTiling(tiling_mm) == -1, context, return ge::GRAPH_FAILED, "matmul tiling failed");
     return ge::GRAPH_SUCCESS;
 }
 
 static ge::graphStatus TilingFunc(gert::TilingContext* context)
 {
     OPS_LOG_E_IF_NULL("context", context, return ge::GRAPH_FAILED);
-    OPS_LOG_E_IF_NULL("xShape", context->GetInputShape(INPUT_INDEX_T::X_INDEX),
-                     return ge::GRAPH_FAILED);
-    OPS_LOG_E_IF_NULL("wShape", context->GetInputShape(INPUT_INDEX_T::WEIGHT_INDEX),
-                     return ge::GRAPH_FAILED);
-    OPS_LOG_E_IF_NULL("xInputDesc", context->GetInputDesc(INPUT_INDEX_T::X_INDEX),
-                     return ge::GRAPH_FAILED);
+    OPS_LOG_E_IF_NULL("xShape", context->GetInputShape(INPUT_INDEX_T::X_INDEX), return ge::GRAPH_FAILED);
+    OPS_LOG_E_IF_NULL("wShape", context->GetInputShape(INPUT_INDEX_T::WEIGHT_INDEX), return ge::GRAPH_FAILED);
+    OPS_LOG_E_IF_NULL("xInputDesc", context->GetInputDesc(INPUT_INDEX_T::X_INDEX), return ge::GRAPH_FAILED);
     InLinearSiluBackwardTilingData tiling;
     const auto ascendcPlatform = platform_ascendc::PlatformAscendC(context->GetPlatformInfo());
     size_t aicCoreNum = ascendcPlatform.GetCoreNumAic();
@@ -166,7 +162,7 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
                  "[ERROR]InLinearSilu attrs split_arg_list only support 4");
     const int64_t* data = list->GetData();
     OPS_LOG_E_IF_NULL("data", data, return ge::GRAPH_FAILED);
-    
+
     uint32_t hiddenSize = wShape.GetDim(0);
     // 有效范围校验
     if (!RangeCheck(context, seqLen, embedDim, hiddenSize, data)) {
@@ -208,8 +204,7 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
     size_t userSize = static_cast<size_t>(COMPUTE_PIPE_NUM * 2 * aicCoreNum * BLOCK_HEIGHT * blockK * sizeof(float));
     currentWorkspace[0] = userSize + sysWorkspaceSize;
     OPS_LOG_E_IF_NULL("raw tilingData", context->GetRawTilingData(), return ge::GRAPH_FAILED);
-    tiling.SaveToBuffer(context->GetRawTilingData()->GetData(),
-                        context->GetRawTilingData()->GetCapacity());
+    tiling.SaveToBuffer(context->GetRawTilingData()->GetData(), context->GetRawTilingData()->GetCapacity());
     context->GetRawTilingData()->SetDataSize(tiling.GetDataSize());
     return ge::GRAPH_SUCCESS;
 }
@@ -239,7 +234,7 @@ static ge::graphStatus InferDtype(gert::InferDataTypeContext* context)
 namespace ops {
 class InLinearSiluBackward : public OpDef {
 public:
-explicit InLinearSiluBackward(const char* name) : OpDef(name)
+    explicit InLinearSiluBackward(const char* name) : OpDef(name)
     {
         this->Input("x")
             .ParamType(REQUIRED)

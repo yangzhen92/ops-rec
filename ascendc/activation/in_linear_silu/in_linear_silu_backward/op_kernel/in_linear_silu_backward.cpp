@@ -29,8 +29,7 @@ __aicore__ inline void InvokeLinearSiluBackwardOpImpl(const InLinearSiluBackward
     T op;
     GET_TILING_DATA(tilingData, args.tiling);
     const InLinearSiluBackwardTilingData* __restrict tilingDataPtr = &tilingData;
-    REGIST_MATMUL_OBJ(&tPipe, GetSysWorkSpacePtr(), op.lxMatmul, &tilingData.LX_MM, op.lwMatmul,
-        &tilingData.LW_MM);
+    REGIST_MATMUL_OBJ(&tPipe, GetSysWorkSpacePtr(), op.lxMatmul, &tilingData.LX_MM, op.lwMatmul, &tilingData.LW_MM);
     uint64_t tilingPtr = reinterpret_cast<uint64_t>(args.tiling);
     op.lxMatmul.SetUserDefInfo(tilingPtr);
     op.lwMatmul.SetUserDefInfo(tilingPtr);
@@ -38,17 +37,16 @@ __aicore__ inline void InvokeLinearSiluBackwardOpImpl(const InLinearSiluBackward
     op.Compute();
 }
 
-template<bool enableBias, bool isTrans, bool isVardim>
+template <bool enableBias, bool isTrans, bool isVardim>
 __global__ __aicore__ void in_linear_silu_backward(GM_ADDR x, GM_ADDR weight, GM_ADDR bias, GM_ADDR user_grad,
                                                    GM_ADDR value_grad, GM_ADDR query_grad, GM_ADDR key_grad,
                                                    GM_ADDR linear_output, GM_ADDR x_grad, GM_ADDR weight_grad,
-                                                   GM_ADDR bias_grad,
-                                                   GM_ADDR workspace, GM_ADDR tiling)
+                                                   GM_ADDR bias_grad, GM_ADDR workspace, GM_ADDR tiling)
 {
     GET_TILING_DATA(tiling_data, tiling);
-    InLinearSiluBackward::Args args{x, weight, bias, user_grad, value_grad, query_grad, key_grad,
-                                   linear_output, x_grad, weight_grad, bias_grad,
-                                   workspace, tiling};
-    InvokeLinearSiluBackwardOpImpl<InLinearSiluBackward::InLinearSiluBackward<
-        DTYPE_X, DTYPE_WEIGHT, enableBias, isTrans, isVardim>>(args);
+    InLinearSiluBackward::Args args{x,          weight,    bias,          user_grad, value_grad,
+                                    query_grad, key_grad,  linear_output, x_grad,    weight_grad,
+                                    bias_grad,  workspace, tiling};
+    InvokeLinearSiluBackwardOpImpl<
+        InLinearSiluBackward::InLinearSiluBackward<DTYPE_X, DTYPE_WEIGHT, enableBias, isTrans, isVardim>>(args);
 }

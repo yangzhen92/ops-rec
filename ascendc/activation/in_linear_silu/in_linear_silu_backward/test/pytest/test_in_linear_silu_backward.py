@@ -99,33 +99,33 @@ def compare_data_with_double_pole(tensor_msg: str, actual_fused: Tensor, actual_
     rmse_fused = compute_rmse(actual_fused, golden)
     rmse_npu = compute_rmse(actual_npu, golden)
 
-    print_msg = (f"{tensor_msg}, mare_fused: {mare_fused}, mare_npu: {mare_npu}, mere_fused: {mere_fused},"
-                 f" mere_npu: {mere_npu}, rmse_fused: {rmse_fused}, rmse_npu: {rmse_npu};")
-    assert mare_fused / mare_npu <= MARE_L1 if mare_npu != 0.0 else abs(mare_fused - mare_npu) < 1e-6, \
-        f"{print_msg} mare error ratio does not meet the requirement"
-    assert mere_fused / mere_npu <= MERE_L1 if mere_npu != 0.0 else abs(mere_fused - mere_npu) < 1e-6, \
-        f"{print_msg} mere error ratio does not meet the requirement"
-    assert rmse_fused / rmse_npu <= RMSE_L1 if rmse_npu != 0.0 else (rmse_fused - rmse_npu) < 1e-6, \
-        f"{print_msg} rmse error ratio does not meet the requirement"
+    print_msg = (
+        f"{tensor_msg}, mare_fused: {mare_fused}, mare_npu: {mare_npu}, mere_fused: {mere_fused},"
+        f" mere_npu: {mere_npu}, rmse_fused: {rmse_fused}, rmse_npu: {rmse_npu};"
+    )
+    assert mare_fused / mare_npu <= MARE_L1 if mare_npu != 0.0 else abs(mare_fused - mare_npu) < 1e-6, (
+f"{print_msg} mare error ratio does not meet the requirement"
+    )
+    assert mere_fused / mere_npu <= MERE_L1 if mere_npu != 0.0 else abs(mere_fused - mere_npu) < 1e-6, (
+f"{print_msg} mere error ratio does not meet the requirement"
+    )
+    assert rmse_fused / rmse_npu <= RMSE_L1 if rmse_npu != 0.0 else abs(rmse_fused - rmse_npu) < 1e-6, (
+f"{print_msg} rmse error ratio does not meet the requirement"
+    )   
 
 
 def sigmoid(x):
     return 1.0 / (1.0 + np.exp(-x))
 
 
-def ln_linear_silu_backward_npu(mixed_uvqk_grad,
-                                normed_input,
-                                uvqk,
-                                bias,
-                                linear_output,
-                                dtype):
+def ln_linear_silu_backward_npu(mixed_uvqk_grad, normed_input, uvqk, bias, linear_output, dtype):
     # 1. 反向通过 F.silu 激活函数
     sigmoid_val = torch.sigmoid(linear_output.to(torch.float32))
     # silu的梯度: d(silu)/dx = sigmoid(x) + x * sigmoid(x) * (1 - sigmoid(x))
     silu_grad = sigmoid_val * (1 + linear_output * (1 - sigmoid_val))
-  
+
     # 应用链式法则
-    linear_output_grad = mixed_uvqk_grad * silu_grad # [SEQ_LEN, H]
+    linear_output_grad = mixed_uvqk_grad * silu_grad  # [SEQ_LEN, H]
 
     # 2. 反向通过线性层 (WX + b)
     # 对于线性变换 output = input @ weight + bias
@@ -153,7 +153,7 @@ def ln_linear_silu_backward_golden_cpu(mixed_uvqk_grad, normed_input, uvqk, bias
     silu_grad = linear_output * sigmoid_val * (1 - sigmoid_val)
 
     silu_grad = sigmoid_val + silu_grad
-    linear_output_grad = mixed_uvqk_grad * silu_grad # [SEQ_LEN, H]
+    linear_output_grad = mixed_uvqk_grad * silu_grad  # [SEQ_LEN, H]
 
     if bias is not None:
         bias_grad = np.sum(linear_output_grad, axis=0).astype(np.float32)
@@ -169,7 +169,7 @@ def ln_linear_silu_backward_golden_cpu(mixed_uvqk_grad, normed_input, uvqk, bias
 
 def get_data(total_seqs, embeddim_dim, hidden_size, enable_bias, data_type, is_diff_dim):
     h = hidden_size // 4
-    if (is_diff_dim):
+    if is_diff_dim:
         split_args = [h - 32, h - 16, h + 16, h + 32]
     else:
         split_args = [h] * 4
@@ -187,8 +187,8 @@ def get_data(total_seqs, embeddim_dim, hidden_size, enable_bias, data_type, is_d
         bias = torch.rand(N, dtype=torch.float32).uniform_(-1, 1)
     else:
         bias = None
-    return u_grad, v_grad, q_grad, k_grad, x, \
-        weight, bias, linear_output, split_args
+    return u_grad, v_grad, q_grad, k_grad, x, weight, bias, linear_output, split_args
+
 
 def _run_op(*args):
     return ops_rec.ascendc.activation.in_linear_silu_backward(*args)
@@ -202,14 +202,23 @@ def run_case(total_seqs, dim, enable_bias, data_type, is_diff_dim, backend):
     )
 
     bias_npu = bias.npu() if bias is not None else None
-    args = (x.npu(), weight.npu(), bias_npu, u_grad.npu(), v_grad.npu(), q_grad.npu(),
-           k_grad.npu(), linear_output.npu(), split_args)
+    args = (
+        x.npu(),
+        weight.npu(),
+        bias_npu,
+        u_grad.npu(),
+        v_grad.npu(),
+        q_grad.npu(),
+        k_grad.npu(),
+        linear_output.npu(),
+        split_args
+    )
 
     if backend == "graph":
         compiled = torch_compiled(_run_op, dynamic=None, fullgraph=False, backend="inductor")
     else:
         compiled = _run_op
-    
+
     x_grad_fused, weight_grad_fused, bias_grad_fused, _ = compiled(*args)
 
     mixed_uvqk_grad = torch.cat((u_grad, v_grad, q_grad, k_grad), dim=-1)
@@ -258,38 +267,41 @@ def test_in_linear_silu_backward_graph(total_seqs, dim, enable_bias, data_type, 
     run_case(total_seqs, dim, enable_bias, data_type, is_diff_dim, "graph")
 
 
-@pytest.mark.parametrize("invalid_case", [
-    # splitList长度不是4
-    ({"split_args": [64, 64, 64]}),
-    # splitList元素不在[16, 8192]范围内
-    ({"split_args": [8, 64, 64, 64]}),
-    ({"split_args": [8200, 64, 64, 64]}),
-    # splitList元素不是16的倍数
-    ({"split_args": [17, 64, 64, 64]}),
-    # x.dim[1]不在[16, 8192]范围内
-    ({"dim": (8, 256)}),
-    ({"dim": (8200, 256)}),
-    # x.dim[1]不是16的倍数
-    ({"dim": (17, 256)}),
-    # weight.dim[0]不等于sum(splitList)
-    ({"split_args": [64, 64, 64, 64], "weight_dim0": 257}),
-    # weight.dim[0]不在[16, 8192]范围内
-    ({"split_args": [2, 2, 2, 2]}),  # sum=8 < 64
-    ({"split_args": [2050, 2050, 2050, 2050]}),  # sum=8200 > 8192
-    # weight.dim[0]不是16的倍数
-    ({"split_args": [17, 17, 17, 17]}),  # sum=68, 68%16=4
-    # weight.dim[1]不等于x.dim[1]
-    ({"dim": (64, 256), "weight_dim1": 257}),
-    # weight.dim[1]不在[16, 8192]范围内
-    ({"dim": (8, 256)}),
-    ({"dim": (8200, 256)}),
-    # weight.dim[1]不是16的倍数
-    ({"dim": (17, 256)}),
-    # split_args的dim与weight.dim[0]不匹配
-    ({"split_args": [16, 16, 16, 16], "weight_dim0": 256}),
-    # uvqk_total_seqs不等于total_seqs
-    ({"uvqk_total_seqs": 1024}),
-])
+@pytest.mark.parametrize(
+    "invalid_case",
+    [
+        # splitList长度不是4
+        ({"split_args": [64, 64, 64]}),
+        # splitList元素不在[16, 8192]范围内
+        ({"split_args": [8, 64, 64, 64]}),
+        ({"split_args": [8200, 64, 64, 64]}),
+        # splitList元素不是16的倍数
+        ({"split_args": [17, 64, 64, 64]}),
+        # x.dim[1]不在[16, 8192]范围内
+        ({"dim": (8, 256)}),
+        ({"dim": (8200, 256)}),
+        # x.dim[1]不是16的倍数
+        ({"dim": (17, 256)}),
+        # weight.dim[0]不等于sum(splitList)
+        ({"split_args": [64, 64, 64, 64], "weight_dim0": 257}),
+        # weight.dim[0]不在[16, 8192]范围内
+        ({"split_args": [2, 2, 2, 2]}),  # sum=8 < 64
+        ({"split_args": [2050, 2050, 2050, 2050]}),  # sum=8200 > 8192
+        # weight.dim[0]不是16的倍数
+        ({"split_args": [17, 17, 17, 17]}),  # sum=68, 68%16=4
+        # weight.dim[1]不等于x.dim[1]
+        ({"dim": (64, 256), "weight_dim1": 257}),
+        # weight.dim[1]不在[16, 8192]范围内
+        ({"dim": (8, 256)}),
+        ({"dim": (8200, 256)}),
+        # weight.dim[1]不是16的倍数
+        ({"dim": (17, 256)}),
+        # split_args的dim与weight.dim[0]不匹配
+        ({"split_args": [16, 16, 16, 16], "weight_dim0": 256}),
+        # uvqk_total_seqs不等于total_seqs
+        ({"uvqk_total_seqs": 1024}),
+    ],
+)
 def test_in_linear_silu_backward_invalid_shape(invalid_case):
     """测试无效输入形状的情况"""
     total_seqs = 512
@@ -306,14 +318,14 @@ def test_in_linear_silu_backward_invalid_shape(invalid_case):
     v_grad = torch.rand(uvqk_total_seqs, split_args[1] if len(split_args) > 1 else 64, dtype=data_type).uniform_(-1, 1)
     q_grad = torch.rand(uvqk_total_seqs, split_args[2] if len(split_args) > 2 else 64, dtype=data_type).uniform_(-1, 1)
     k_grad = torch.rand(uvqk_total_seqs, split_args[3] if len(split_args) > 3 else 64, dtype=data_type).uniform_(-1, 1)
-    
+
     x = torch.rand(total_seqs, dim[0], dtype=data_type).uniform_(-1, 1)
     weight_dim0 = invalid_case.get("weight_dim0", N)
     weight_dim1 = invalid_case.get("weight_dim1", dim[0])
     weight = torch.rand(weight_dim0, weight_dim1, dtype=data_type).uniform_(-1, 1)
     
     linear_output = torch.rand(total_seqs, N, dtype=data_type).uniform_(-1, 1)
-    
+
     if enable_bias:
         bias = torch.rand(N, dtype=torch.float32).uniform_(-1, 1).npu()
     else:
@@ -337,12 +349,9 @@ def test_in_linear_silu_backward_invalid_shape(invalid_case):
 @pytest.mark.parametrize("data_type", [torch.float64])
 @pytest.mark.parametrize("is_diff_dim", [True, False])
 def test_in_linear_silu_backward_invalid_dtype(total_seqs, dim, enable_bias, data_type, is_diff_dim):
-    u_grad, v_grad, q_grad, k_grad, x, weight, bias, linear_output, split_args = get_data(total_seqs,
-                                                                                          dim[0],
-                                                                                          dim[1],
-                                                                                          enable_bias,
-                                                                                          data_type,
-                                                                                          is_diff_dim)
+    u_grad, v_grad, q_grad, k_grad, x, weight, bias, linear_output, split_args = get_data(
+        total_seqs, dim[0], dim[1], enable_bias, data_type, is_diff_dim
+        )
     with pytest.raises(Exception):
         _run_op(x, weight, bias, u_grad, v_grad, q_grad, k_grad, linear_output, split_args)    
 

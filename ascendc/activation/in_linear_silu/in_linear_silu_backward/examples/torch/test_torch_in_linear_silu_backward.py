@@ -22,7 +22,6 @@ in_linear_silu_backward 算子 PyTorch 接口使用样例
 """
 
 import torch
-import torch.nn.functional as F
 
 import ops_rec
 
@@ -35,7 +34,7 @@ def sigmoid(x):
 
 def silu_grad(linear_output):
     sig = sigmoid(linear_output.to(torch.float32))
-    return sig + linear_output.to(torch.float32) * sig * (1.0 -sig)
+    return sig + linear_output.to(torch.float32) * sig * (1.0 - sig)
 
 
 def run_manual(seq, h, embed, split_list, data_type):
@@ -49,7 +48,7 @@ def run_manual(seq, h, embed, split_list, data_type):
     k = torch.randn(seq, split_list[3], dtype=data_type)
     linear_output = torch.randn(seq, h, dtype=data_type).uniform_(-1, 1)
 
-    mixed = torch.cat((u, v, q, k), dim = -1)
+    mixed = torch.cat((u, v, q, k), dim=-1)
     lo_grad = mixed.to(torch.float32) * silu_grad(linear_output)
     x_grad = lo_grad.to(data_type) @ weight.to(data_type)
     w_grad = lo_grad.t().to(data_type) @ x.to(data_type)
@@ -69,8 +68,9 @@ def test_in_linear_silu_backward():
     x, weight, bias, u, v, q, k, linear_output, golden = run_manual(seq, h, embed, split_list, dtype)
     xg, wg, bg = golden
 
-    res = ops_rec.ascendc.activation.in_linear_silu_backward(x.npu(), weight.npu(), bias.npu(),
-        u.npu(), v.npu(), q.npu(), k.npu(), linear_output.npu(), split_list)
+    res = ops_rec.ascendc.activation.in_linear_silu_backward(
+        x.npu(), weight.npu(), bias.npu(), u.npu(), v.npu(), q.npu(), k.npu(), linear_output.npu(), split_list
+    )
 
     x_grad, weights_grad, bias_grad, _ = res
 

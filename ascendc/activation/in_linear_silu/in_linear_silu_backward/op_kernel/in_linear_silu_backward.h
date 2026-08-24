@@ -73,12 +73,11 @@ struct TaskInfo {
     int32_t computeMSeqLen = 0;
     int32_t computeNSeqLen = 0;
     int32_t computeKSeqLen = 0;
-    int32_t kOffset = 0; // LinearOut k轴总的偏移
-    int32_t uvqkSeqOffset = 0; // uvqk 单个偏移
+    int32_t kOffset = 0;        // LinearOut k轴总的偏移
+    int32_t uvqkSeqOffset = 0;  // uvqk 单个偏移
     int32_t uvqkId = 0;
     int32_t isFirst = 0;
 };
-
 
 template <typename xType, typename wType, bool enableBias, bool isTrans, bool isVardim>
 class InLinearSiluBackward {
@@ -87,7 +86,7 @@ public:
     static constexpr int vectorScoreUbBlockElem = VECTOR_SCORE_UB_SIZE / USE_QUEUE_NUM;
     __aicore__ inline InLinearSiluBackward() {}
     __aicore__ inline void Init(const Args& args, const InLinearSiluBackwardTilingData* __restrict tilingDataPtr,
-                             TPipe* pipePtr)
+                                TPipe* pipePtr)
     {
         InitArgs(args, tilingDataPtr);
         InitPipe(pipePtr);
@@ -148,9 +147,8 @@ public:
         coreNum = GetBlockNum() * VCORE_NUM_IN_ONE_AIC;
 
         int64_t oneBlockMidElem = blockK * blockM * COMPUTE_PIPE_NUM;
-        siluGradGt.SetGlobalBuffer(
-            reinterpret_cast<__gm__ xType*>(workspace) + oneBlockMidElem * GetBlockIdx(),
-            oneBlockMidElem);
+        siluGradGt.SetGlobalBuffer(reinterpret_cast<__gm__ xType*>(workspace) + oneBlockMidElem * GetBlockIdx(),
+                                   oneBlockMidElem);
         pipe->InitBuffer(queIn, USE_QUEUE_NUM, vectorScoreUbBlockElem * sizeof(float));
         pipe->InitBuffer(queOut, USE_QUEUE_NUM, vectorScoreUbBlockElem * sizeof(float));
         pipe->InitBuffer(tmpBuff, USE_QUEUE_NUM, vectorScoreUbBlockElem * sizeof(float));
@@ -196,13 +194,14 @@ public:
         sync.WaitFlag(0);
     }
 
-    __aicore__ inline void GetUvqkInput(TaskInfo &taskInfo,
-                                        LocalTensor<xType> &inputLt,
-                                        DataCopyParams &inParams,
+    __aicore__ inline void GetUvqkInput(TaskInfo& taskInfo, LocalTensor<xType>& inputLt, DataCopyParams& inParams,
                                         int32_t offset)
     {
-        GlobalTensor<xType>uvqkGt[UVQK_NUM] = {
-            uGradGt, vGradGt, qGradGt, kGradGt,
+        GlobalTensor<xType> uvqkGt[UVQK_NUM] = {
+            uGradGt,
+            vGradGt,
+            qGradGt,
+            kGradGt,
         };
         if constexpr (isVardim) {
             uint32_t srcOffset = (taskInfo.rowId * blockM + offset) * totalDim + taskInfo.kOffset;
@@ -218,16 +217,16 @@ public:
             }
         } else {
             // datacopyin uvqk
-            uint16_t uvqkSrcGap = (splitList[taskInfo.uvqkId] - taskInfo.computeKSeqLen) * \
-                sizeof(xType) / DATA_ALIGN_BYTES;
+            uint16_t uvqkSrcGap =
+                (splitList[taskInfo.uvqkId] - taskInfo.computeKSeqLen) * sizeof(xType) / DATA_ALIGN_BYTES;
             DataCopyParams uvqkParams = {inParams.blockCount, inParams.blockLen, uvqkSrcGap, inParams.dstStride};
-            uint32_t srcOffset = (taskInfo.rowId * this->blockM + offset) * splitList[taskInfo.uvqkId] + \
-                        taskInfo.uvqkSeqOffset;
+            uint32_t srcOffset =
+                (taskInfo.rowId * this->blockM + offset) * splitList[taskInfo.uvqkId] + taskInfo.uvqkSeqOffset;
             DataCopy(inputLt, uvqkGt[taskInfo.uvqkId][srcOffset], uvqkParams);
         }
     }
 
-    __aicore__ inline void SiluGrad(TaskInfo &taskInfo, int32_t taskId)
+    __aicore__ inline void SiluGrad(TaskInfo& taskInfo, int32_t taskId)
     {
         // datacopyIn linearOut
         int32_t totalLen = taskInfo.computeMSeqLen * taskInfo.computeKSeqLen;
@@ -254,7 +253,7 @@ public:
             uint16_t blockCount = lines;
             uint16_t blockLen = taskInfo.computeKSeqLen * sizeof(xType) / DATA_ALIGN_BYTES;
             uint16_t dstGap = 0;
-           
+
             uint16_t srcGap = (totalDim - taskInfo.computeKSeqLen) * sizeof(xType) / DATA_ALIGN_BYTES;
             DataCopyParams lnOutparams = {blockCount, blockLen, srcGap, dstGap};
             uint32_t srcOffset = (taskInfo.rowId * blockM + offset) * totalDim + taskInfo.kOffset;
@@ -262,8 +261,8 @@ public:
             DataCopy(inputLt, linearOutGt[srcOffset], lnOutparams);
             queIn.template EnQue(inputLt);
             inputLt = queIn.template DeQue<xType>();
-            
-            if constexpr(!std::is_same<xType, float>::value) {
+
+            if constexpr (!std::is_same<xType, float>::value) {
                 Cast(tmpLt, inputLt, RoundMode::CAST_NONE, calcLen);
                 auto srcLt = inputLt.template ReinterpretCast<float>();
                 LinearOutGradCalcFp32(tmpLt, srcLt, dstLt, calcLen);
@@ -289,11 +288,11 @@ public:
                 LinearOutGradCalcFp32(inputLt, tmpLt, dstLt, calcLen);
                 Wait_V_MTE2();
                 GetUvqkInput(taskInfo, inputLt, lnOutparams, offset);
-                
+
                 Wait_MTE2_V();
                 // x * d(sigmoid(x))/dx
                 Mul(dstLt, dstLt, inputLt, calcLen);
-                
+
                 Wait_V_MTE3();
 
                 DataCopy(siluGradGt[siluOffset + offset * taskInfo.computeKSeqLen], dstLt, calcLen);
@@ -302,7 +301,7 @@ public:
 
             offset += lines;
             totalLen -= calcLen;
-            
+
             queIn.template FreeTensor(inputLt);
             queOut.template FreeTensor(dstLt);
             tmpBuff.template FreeTensor(tmpLt);
@@ -316,53 +315,47 @@ public:
         transOut.template FreeTensor(biasLt);
     }
 
-    __aicore__ inline void GetBiasGrad(const LocalTensor<float>& srcLt,
-                                       const LocalTensor<float>& dstLt,
-                                       const LocalTensor<float>& biasLt,
-                                       uint32_t row,
-                                       uint32_t col,
-                                       uint32_t kOffset)
+    __aicore__ inline void GetBiasGrad(const LocalTensor<float>& srcLt, const LocalTensor<float>& dstLt,
+                                       const LocalTensor<float>& biasLt, uint32_t row, uint32_t col, uint32_t kOffset)
     {
         if (!enableBias) {
             return;
         }
-        constexpr bool isReUse = false; // 不允许对srcLt进行复用
-        constexpr bool srcInnerPad = false; // k轴切分时已对齐
-        uint32_t srcShape[2] = {row, col}; // 对第一维进行reduce RA
+        constexpr bool isReUse = false;      // 不允许对srcLt进行复用
+        constexpr bool srcInnerPad = false;  // k轴切分时已对齐
+        uint32_t srcShape[2] = {row, col};   // 对第一维进行reduce RA
         AscendC::ReduceSum<float, AscendC::Pattern::Reduce::RA, isReUse>(dstLt, srcLt, srcShape, srcInnerPad);
         Add<float>(biasLt, biasLt, dstLt, col);
     }
 
-    __aicore__ inline void LinearOutGradCalcFp32(const LocalTensor<float>& srcLt,
-                                                 const LocalTensor<float>& tmpLt,
-                                                 const LocalTensor<float>& dstLt,
-                                                 uint32_t calcLen)
+    __aicore__ inline void LinearOutGradCalcFp32(const LocalTensor<float>& srcLt, const LocalTensor<float>& tmpLt,
+                                                 const LocalTensor<float>& dstLt, uint32_t calcLen)
     {
         // silu_grad(x) = sigmoid(x) + x*sigmoid(x)*(1-sigmoid(x))
         // = sigmoid(x) * (1 + x*(1-sigmoid(x)))
-        
+
         // Step 1: 计算 sigmoid(x) 并存储到 tmpLt
         Sigmoid<float>(tmpLt, srcLt, calcLen);
-        
+
         // Step 2: 计算 1 - sigmoid(x) 并存储到 dstLt
         Duplicate<float>(dstLt, 1.0, calcLen);
         Sub<float>(dstLt, dstLt, tmpLt, calcLen);
-        
+
         // Step 3: 计算 x*(1-sigmoid(x)) 并存储到 dstLt
         Mul<float>(dstLt, srcLt, dstLt, calcLen);
-        
+
         // Step 4: 计算 1 + x*(1-sigmoid(x)) 并存储到 dstLt
         Adds<float>(dstLt, dstLt, 1.0, calcLen);
-        
+
         // Step 5: 计算 sigmoid(x) * (1 + x*(1-sigmoid(x))) 并存储到 dstLt
         Mul<float>(dstLt, tmpLt, dstLt, calcLen);
     }
 
-    __aicore__ inline void FillTaskInfo(TaskInfo &taskInfo, uint32_t rowId)
+    __aicore__ inline void FillTaskInfo(TaskInfo& taskInfo, uint32_t rowId)
     {
         taskInfo.rowId = rowId;
-        taskInfo.computeMSeqLen = (taskInfo.rowId + 1) * blockM < this->seqLen ? blockM :
-                             this->seqLen - taskInfo.rowId * blockM;
+        taskInfo.computeMSeqLen =
+            (taskInfo.rowId + 1) * blockM < this->seqLen ? blockM : this->seqLen - taskInfo.rowId * blockM;
         taskInfo.computeKSeqLen = blockK;
         taskInfo.isFirst = 1;
     }
@@ -375,30 +368,32 @@ public:
         computeTaskInfo[nextTaskId] = computeTaskInfo[currTaskId];
         computeTaskInfo[nextTaskId].isFirst = 0;
         if (lastTaskOffset >= splitList[computeTaskInfo[currTaskId].uvqkId]) {
-            if (computeTaskInfo[currTaskId].uvqkId < UVQK_INDEX_K) { // 换uvqk
+            if (computeTaskInfo[currTaskId].uvqkId < UVQK_INDEX_K) {  // 换uvqk
                 computeTaskInfo[nextTaskId].rowId = computeTaskInfo[currTaskId].rowId;
                 computeTaskInfo[nextTaskId].uvqkId = computeTaskInfo[currTaskId].uvqkId + 1;
-                computeTaskInfo[nextTaskId].kOffset = computeTaskInfo[currTaskId].computeKSeqLen +
-                computeTaskInfo[currTaskId].kOffset;
+                computeTaskInfo[nextTaskId].kOffset =
+                    computeTaskInfo[currTaskId].computeKSeqLen + computeTaskInfo[currTaskId].kOffset;
             } else {
                 computeTaskInfo[nextTaskId].rowId = computeTaskInfo[currTaskId].rowId + 1;
                 computeTaskInfo[nextTaskId].uvqkId = UVQK_INDEX_U;
                 computeTaskInfo[nextTaskId].kOffset = 0;
-                computeTaskInfo[nextTaskId].computeMSeqLen = (computeTaskInfo[nextTaskId].rowId + 1) *
-                    blockM < this->seqLen ? blockM :
-                    this->seqLen - computeTaskInfo[nextTaskId].rowId * blockM;
+                computeTaskInfo[nextTaskId].computeMSeqLen =
+                    (computeTaskInfo[nextTaskId].rowId + 1) * blockM < this->seqLen
+                        ? blockM
+                        : this->seqLen - computeTaskInfo[nextTaskId].rowId * blockM;
                 computeTaskInfo[nextTaskId].isFirst = 1;
             }
             computeTaskInfo[nextTaskId].uvqkSeqOffset = 0;
         } else {
-            computeTaskInfo[nextTaskId].uvqkSeqOffset = computeTaskInfo[currTaskId].uvqkSeqOffset +
-                computeTaskInfo[currTaskId].computeKSeqLen;
-            computeTaskInfo[nextTaskId].kOffset = computeTaskInfo[currTaskId].kOffset +
-                computeTaskInfo[currTaskId].computeKSeqLen;
+            computeTaskInfo[nextTaskId].uvqkSeqOffset =
+                computeTaskInfo[currTaskId].uvqkSeqOffset + computeTaskInfo[currTaskId].computeKSeqLen;
+            computeTaskInfo[nextTaskId].kOffset =
+                computeTaskInfo[currTaskId].kOffset + computeTaskInfo[currTaskId].computeKSeqLen;
         }
         int32_t uvqkLen = splitList[computeTaskInfo[nextTaskId].uvqkId];
-        computeTaskInfo[nextTaskId].computeKSeqLen = ((computeTaskInfo[nextTaskId].uvqkSeqOffset + blockK) < uvqkLen) ?
-            blockK : uvqkLen - computeTaskInfo[nextTaskId].uvqkSeqOffset;
+        computeTaskInfo[nextTaskId].computeKSeqLen = ((computeTaskInfo[nextTaskId].uvqkSeqOffset + blockK) < uvqkLen)
+                                                         ? blockK
+                                                         : uvqkLen - computeTaskInfo[nextTaskId].uvqkSeqOffset;
     }
 
     __aicore__ inline void UpdateTaskInfoVarDim(uint32_t taskId)
@@ -411,19 +406,21 @@ public:
         if (lastTaskOffset >= totalDim) {
             computeTaskInfo[nextTaskId].rowId = computeTaskInfo[currTaskId].rowId + 1;
             computeTaskInfo[nextTaskId].kOffset = 0;
-            computeTaskInfo[nextTaskId].computeMSeqLen = (computeTaskInfo[nextTaskId].rowId + 1) *
-                blockM < this->seqLen ? blockM :
-                this->seqLen - computeTaskInfo[nextTaskId].rowId * blockM;
+            computeTaskInfo[nextTaskId].computeMSeqLen =
+                (computeTaskInfo[nextTaskId].rowId + 1) * blockM < this->seqLen
+                    ? blockM
+                    : this->seqLen - computeTaskInfo[nextTaskId].rowId * blockM;
             computeTaskInfo[nextTaskId].isFirst = 1;
         } else {
-            computeTaskInfo[nextTaskId].kOffset = computeTaskInfo[currTaskId].kOffset +
-                computeTaskInfo[currTaskId].computeKSeqLen;
+            computeTaskInfo[nextTaskId].kOffset =
+                computeTaskInfo[currTaskId].kOffset + computeTaskInfo[currTaskId].computeKSeqLen;
         }
-        computeTaskInfo[nextTaskId].computeKSeqLen = ((computeTaskInfo[nextTaskId].kOffset + blockK) < totalDim) ?
-            blockK : totalDim - computeTaskInfo[nextTaskId].kOffset;
+        computeTaskInfo[nextTaskId].computeKSeqLen = ((computeTaskInfo[nextTaskId].kOffset + blockK) < totalDim)
+                                                         ? blockK
+                                                         : totalDim - computeTaskInfo[nextTaskId].kOffset;
     }
 
-    __aicore__ inline void DolwMatmul(TaskInfo &taskInfo, uint32_t taskId)
+    __aicore__ inline void DolwMatmul(TaskInfo& taskInfo, uint32_t taskId)
     {
         // [sq, H] [H, d]
         int32_t siluOffset = blockM * blockK * taskId;
@@ -433,14 +430,14 @@ public:
         lwMatmul.SetTensorA(siluGradGt[siluOffset]);
         lwMatmul.SetTensorB(weightGt[startOffsetB], false);
         lwMatmul.SetTail(taskInfo.computeMSeqLen, dim, taskInfo.computeKSeqLen);
-        if (taskInfo.isFirst == 1) { // 第一个块直接拷贝，减少zero_like耗时
+        if (taskInfo.isFirst == 1) {  // 第一个块直接拷贝，减少zero_like耗时
             lwMatmul.template IterateAll<false>(xGradGt[outOffset], 0, false, true);
         } else {
             lwMatmul.template IterateAll<false>(xGradGt[outOffset], 1, false, true);
         }
     }
 
-    __aicore__ inline void DolxMatmul(TaskInfo &taskInfo, uint32_t taskId)
+    __aicore__ inline void DolxMatmul(TaskInfo& taskInfo, uint32_t taskId)
     {
         // [sq, H] [sq, d]
         int32_t siluOffset = blockM * blockK * taskId;
@@ -458,13 +455,13 @@ public:
         lxMatmul.WaitIterateAll();
         lxMatmul.End();
     }
-    
+
     __aicore__ inline void WaitLwMatmul()
     {
         lwMatmul.WaitIterateAll();
         lwMatmul.End();
     }
-    
+
     __aicore__ inline void ComputeAllBlock()
     {
         uint32_t taskId = 0;
@@ -472,26 +469,26 @@ public:
         uint32_t prevTaskId = taskId - 1;
         FillTaskInfo(computeTaskInfo[taskId], this->sRow);
         while (computeTaskInfo[currentTaskId].rowId < this->eRow) {
-                if (taskId > 0) {
-                    DolxMatmul(computeTaskInfo[prevTaskId], prevTaskId);
-                    DolwMatmul(computeTaskInfo[prevTaskId], prevTaskId);
-                }
+            if (taskId > 0) {
+                DolxMatmul(computeTaskInfo[prevTaskId], prevTaskId);
+                DolwMatmul(computeTaskInfo[prevTaskId], prevTaskId);
+            }
 
-                SiluGrad(computeTaskInfo[currentTaskId], currentTaskId);
-                if (taskId > 0) {
-                    WaitLxMatmul();
-                    WaitLwMatmul();
-                }
-                if (isVardim || totalDim <= MAX_BLOCK_DIM) {
-                    UpdateTaskInfoVarDim(taskId);
-                } else {
-                    UpdateTaskInfo(taskId);
-                }
-                taskId++;
-                currentTaskId = taskId % COMPUTE_PIPE_NUM;
-                prevTaskId = (taskId - 1) % COMPUTE_PIPE_NUM;
+            SiluGrad(computeTaskInfo[currentTaskId], currentTaskId);
+            if (taskId > 0) {
+                WaitLxMatmul();
+                WaitLwMatmul();
+            }
+            if (isVardim || totalDim <= MAX_BLOCK_DIM) {
+                UpdateTaskInfoVarDim(taskId);
+            } else {
+                UpdateTaskInfo(taskId);
+            }
+            taskId++;
+            currentTaskId = taskId % COMPUTE_PIPE_NUM;
+            prevTaskId = (taskId - 1) % COMPUTE_PIPE_NUM;
         }
-           
+
         if (taskId >= 1) {
             pipe_barrier(PIPE_ALL);
             DolxMatmul(computeTaskInfo[prevTaskId], prevTaskId);
@@ -535,7 +532,7 @@ public:
     TaskInfo computeTaskInfo[COMPUTE_PIPE_NUM];
 
     // Tpipe
-    TPipe *pipe;
+    TPipe* pipe;
     TQue<TPosition::VECIN, USE_QUEUE_NUM> queIn;
     TQue<TPosition::VECCALC, USE_QUEUE_NUM> tmpBuff;
     TQue<TPosition::VECOUT, USE_QUEUE_NUM> queOut;
@@ -550,7 +547,7 @@ public:
     GlobalTensor<xType> qGradGt;
     GlobalTensor<xType> kGradGt;
     GlobalTensor<xType> linearOutGt;
-   
+
     GlobalTensor<float> xGradGt;
     GlobalTensor<float> weightGradGt;
     GlobalTensor<float> biasGradGt;
@@ -558,20 +555,20 @@ public:
     GlobalTensor<xType> siluGradGt;
 
     matmul::Matmul<
-    matmul::MatmulType<TPosition::GM, CubeFormat::ND, xType, true, LayoutMode::NONE, false,
-        TPosition::VECOUT>,
-    matmul::MatmulType<TPosition::GM, CubeFormat::ND, xType, false>,
-    matmul::MatmulType<TPosition::GM, CubeFormat::ND, float, false>,
-    matmul::MatmulType<TPosition::GM, CubeFormat::ND, float>, CFG_NORM,
-    matmul::MatmulCallBackFunc<nullptr, nullptr, nullptr>> lxMatmul;
+        matmul::MatmulType<TPosition::GM, CubeFormat::ND, xType, true, LayoutMode::NONE, false, TPosition::VECOUT>,
+        matmul::MatmulType<TPosition::GM, CubeFormat::ND, xType, false>,
+        matmul::MatmulType<TPosition::GM, CubeFormat::ND, float, false>,
+        matmul::MatmulType<TPosition::GM, CubeFormat::ND, float>, CFG_NORM,
+        matmul::MatmulCallBackFunc<nullptr, nullptr, nullptr>>
+        lxMatmul;
 
     matmul::Matmul<
-    matmul::MatmulType<TPosition::GM, CubeFormat::ND, xType, false, LayoutMode::NONE, false,
-        TPosition::VECOUT>,
-    matmul::MatmulType<TPosition::GM, CubeFormat::ND, xType, false>,
-    matmul::MatmulType<TPosition::GM, CubeFormat::ND, float, false>,
-    matmul::MatmulType<TPosition::GM, CubeFormat::ND, float>, CFG_NORM,
-    matmul::MatmulCallBackFunc<nullptr, nullptr, nullptr>> lwMatmul;
+        matmul::MatmulType<TPosition::GM, CubeFormat::ND, xType, false, LayoutMode::NONE, false, TPosition::VECOUT>,
+        matmul::MatmulType<TPosition::GM, CubeFormat::ND, xType, false>,
+        matmul::MatmulType<TPosition::GM, CubeFormat::ND, float, false>,
+        matmul::MatmulType<TPosition::GM, CubeFormat::ND, float>, CFG_NORM,
+        matmul::MatmulCallBackFunc<nullptr, nullptr, nullptr>>
+        lwMatmul;
 };
 }  // namespace InLinearSiluBackward
 #endif

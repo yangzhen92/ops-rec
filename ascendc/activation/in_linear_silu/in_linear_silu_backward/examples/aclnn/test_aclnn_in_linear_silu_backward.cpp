@@ -106,7 +106,7 @@ int main() {
   // 创建输入及中间梯度 aclTensor
   CreateAclTensor(xHostData, xShape, &xDevAddr, aclDataType::ACL_FLOAT16, &x);
   CreateAclTensor(weightHostData, weightShape, &weightDevAddr, aclDataType::ACL_FLOAT16, &weight);
-  CreateAclTensor(biasHostData, biasShape, &biasDevAddr, aclDataType::ACL_FLOAT16, &bias);
+  CreateAclTensor(biasHostData, biasShape, &biasDevAddr, aclDataType::ACL_FLOAT, &bias);
   CreateAclTensor(userGradHostData, gradShape, &userGradDevAddr, aclDataType::ACL_FLOAT16, &userGrad);
   CreateAclTensor(valueGradHostData, gradShape, &valueGradDevAddr, aclDataType::ACL_FLOAT16, &valueGrad);
   CreateAclTensor(queryGradHostData, gradShape, &queryGradDevAddr, aclDataType::ACL_FLOAT16, &queryGrad); 

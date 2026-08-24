@@ -29,6 +29,7 @@ import ops_rec
 
 torch.npu.config.allow_internal_format = False
 
+
 def get_user_value_query_key_tensors_uniattn(x, weight, bias, split_arg_list):
     mixed_uvqk = torch.addmm(bias, x, weight.t())
     linear_output = mixed_uvqk
@@ -47,10 +48,7 @@ def get_user_value_query_key_tensors_uniattn(x, weight, bias, split_arg_list):
 
 def get_user_value_query_key_tensors_fused(x, weight, bias, split_arg_list):
     result = ops_rec.ascendc.activation.distance_in_linear_silu(
-        x,
-        weight,
-        bias.to(torch.float32).contiguous(),
-        split_arg_list
+        x, weight, bias.to(torch.float32).contiguous(), split_arg_list
     )
     return result
 
@@ -83,7 +81,7 @@ def test_in_linear_silu():
 
     golden = get_user_value_query_key_tensors_uniattn(x, w, bias, split_arg_list)
     result = get_user_value_query_key_tensors_fused(x, w, bias, split_arg_list)
-    compare_result(golden, result, dtype)
+    compare_result(result, golden, dtype)
     print("[torch] in_linear_silu torch example PASSED")
 
 

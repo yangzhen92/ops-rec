@@ -328,8 +328,7 @@ def test_in_linear_silu_backward_invalid_shape(invalid_case):
     linear_output = linear_output.npu()
 
     with pytest.raises(Exception):
-        _run_op(u_grad, v_grad, q_grad, k_grad, x, weight,
-            bias, linear_output, split_args)
+        _run_op(x, weight, bias, u_grad, v_grad, q_grad, k_grad, linear_output, split_args)
 
 
 @pytest.mark.parametrize("total_seqs", [1024])
@@ -345,8 +344,7 @@ def test_in_linear_silu_backward_invalid_dtype(total_seqs, dim, enable_bias, dat
                                                                                           data_type,
                                                                                           is_diff_dim)
     with pytest.raises(Exception):
-        _run_op(u_grad, v_grad, q_grad, k_grad, x, weight,
-            bias, linear_output, split_args)    
+        _run_op(x, weight, bias, u_grad, v_grad, q_grad, k_grad, linear_output, split_args)    
 
 
 @pytest.mark.ci

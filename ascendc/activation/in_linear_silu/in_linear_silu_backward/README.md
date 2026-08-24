@@ -12,7 +12,8 @@
 
 in_linear_silu_backward是in_linear_silu算子的反向传播实现，用于计算输入x、权重weight和偏置bias的梯度。
 
-## 接口
+## 接口说明
+
 - aclnn 接口：`aclnnInLinearSiluBackward`
 - torch 接口：`ops_rec.ascendc.activation.in_linear_silu_backward`
 
@@ -33,7 +34,6 @@ in_linear_silu_backward是in_linear_silu算子的反向传播实现，用于计�
 | x_grad | 输出     | Tensor | float16/bfloat16 | [seq_len, embed_dim] | embed_dim取值范围[16, 8192] |   embed_dim为16的整数倍, 数据类型与x保持一致          |
 | weights_grad | 输出     | Tensor | float16/bfloat16 | [hidden_size, embed_dim] | hidden_size取值范围[64, 32768] |   hidden_size为16的整数倍, 数据类型与weight保持一致          |
 | bias_grad | 输出     | Tensor | float32 | [hidden_size] | hidden_size取值范围[64, 32768] |   hidden_size为16的整数倍, 仅当输入包含bias时输出         |
-
 
 ## 调用示例
 

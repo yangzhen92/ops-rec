@@ -49,7 +49,8 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
                  "[ERROR]InLinearSilu weight dim k must be a multiple of 16, k: %lld.", k);
     OPS_LOG_E_IF(!((n > k) && (n % (4 * k) == 0) && (n <= MAX_N)), context, return ge::GRAPH_FAILED,
                  "[ERROR]InLinearSilu weight dim n must be a multiple of 4 k, Greater than k, and less than or equal "
-                 "to 512 * 4 * 16, k: %lld, n: %lld", k, n);
+                 "to 512 * 4 * 16, k: %lld, n: %lld",
+                 k, n);
     const auto attrs = context->GetAttrs();
     OPS_LOG_E_IF_NULL("attrs", attrs, return ge::GRAPH_FAILED);
 

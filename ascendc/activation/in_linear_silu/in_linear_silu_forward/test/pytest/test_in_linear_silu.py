@@ -25,10 +25,12 @@ torch.npu.config.allow_internal_format = False
 torch._dynamo.config.cache_size_limit = 256
 NPU_DEVICE = "npu:0"
 
+
 def torch_compiled(model, **kwargs):
     if sys.version_info < (3, 12, 0):
         return torch.compile(model, **kwargs)
     return model
+
 
 def get_user_value_query_key_tensors_uniattn(x, weight, bias, split_arg_list):
     mixed_uvqk = torch.addmm(bias, x, weight.t())
@@ -48,10 +50,7 @@ def get_user_value_query_key_tensors_uniattn(x, weight, bias, split_arg_list):
 
 def get_user_value_query_key_tensors_fused(x, weight, bias, split_arg_list):
     result = ops_rec.ascendc.activation.distance_in_linear_silu(
-        x,
-        weight,
-        bias.to(torch.float32).contiguous(),
-        split_arg_list
+        x, weight, bias.to(torch.float32).contiguous(), split_arg_list
     )
     return result
 
@@ -130,7 +129,7 @@ def in_linear_silu_test(m, n, k, device, dtype):
 @pytest.mark.parametrize("k", [48, 64])
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
 def test_in_linear_silu(m, n, k, dtype):
-    if (n != 16384 and k != 48):
+    if n != 16384 and k != 48:
         device = NPU_DEVICE
         torch.npu.set_device(device)
         in_linear_silu_test(m, n, k, device, dtype)
@@ -141,7 +140,7 @@ def test_in_linear_silu(m, n, k, dtype):
 @pytest.mark.parametrize("k", [16, 32, 48, 64])
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
 def test_in_linear_silu_normal(m, n, k, dtype):
-    if (k != 48 and (n != 4096 or n != 16384)):
+    if k != 48 and (n != 4096 or n != 16384):
         device = NPU_DEVICE
         torch.npu.set_device(device)
         in_linear_silu_test(m, n, k, device, dtype)
@@ -182,13 +181,14 @@ def test_invalid_x_weight():
     with pytest.raises(RuntimeError):
         _ = get_user_value_query_key_tensors_fused(x.t(), weight, bias, split_arg_list)
 
+
 @pytest.mark.graph
 @pytest.mark.parametrize("m", [256, 512, 2048, 20480])
 @pytest.mark.parametrize("n", [1024, 4096, 9216, 16384])
 @pytest.mark.parametrize("k", [16, 32, 48, 64])
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
 def test_in_linear_silu_normal_graph(m, n, k, dtype):
-    if (k != 48 and (n != 4096 or n != 16384)):
+    if k != 48 and (n != 4096 or n != 16384):
         device = NPU_DEVICE
         torch.npu.set_device(device)
         in_linear_silu_graph_test(m, n, k, device, dtype)

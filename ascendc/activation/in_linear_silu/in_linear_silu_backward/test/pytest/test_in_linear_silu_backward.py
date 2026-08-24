@@ -18,7 +18,6 @@ import sys
 import pytest
 import torch
 import numpy as np
-import logging
 
 import ops_rec
 from torch import Tensor
@@ -104,13 +103,13 @@ def compare_data_with_double_pole(tensor_msg: str, actual_fused: Tensor, actual_
         f" mere_npu: {mere_npu}, rmse_fused: {rmse_fused}, rmse_npu: {rmse_npu};"
     )
     assert mare_fused / mare_npu <= MARE_L1 if mare_npu != 0.0 else abs(mare_fused - mare_npu) < 1e-6, (
-f"{print_msg} mare error ratio does not meet the requirement"
+        f"{print_msg} mare error ratio does not meet the requirement"
     )
     assert mere_fused / mere_npu <= MERE_L1 if mere_npu != 0.0 else abs(mere_fused - mere_npu) < 1e-6, (
-f"{print_msg} mere error ratio does not meet the requirement"
+        f"{print_msg} mere error ratio does not meet the requirement"
     )
     assert rmse_fused / rmse_npu <= RMSE_L1 if rmse_npu != 0.0 else abs(rmse_fused - rmse_npu) < 1e-6, (
-f"{print_msg} rmse error ratio does not meet the requirement"
+        f"{print_msg} rmse error ratio does not meet the requirement"
     )   
 
 
@@ -164,7 +163,7 @@ def ln_linear_silu_backward_golden_cpu(mixed_uvqk_grad, normed_input, uvqk, bias
     normed_input_grad = np.matmul(linear_output_grad, uvqk)
     uvqk_grad = np.matmul(linear_output_grad.T, normed_input)
 
-    return torch.from_numpy(normed_input_grad), torch.from_numpy(uvqk_grad), bias_grad    
+    return torch.from_numpy(normed_input_grad), torch.from_numpy(uvqk_grad), bias_grad
 
 
 def get_data(total_seqs, embeddim_dim, hidden_size, enable_bias, data_type, is_diff_dim):
@@ -211,7 +210,7 @@ def run_case(total_seqs, dim, enable_bias, data_type, is_diff_dim, backend):
         q_grad.npu(),
         k_grad.npu(),
         linear_output.npu(),
-        split_args
+        split_args,
     )
 
     if backend == "graph":
@@ -233,8 +232,7 @@ def run_case(total_seqs, dim, enable_bias, data_type, is_diff_dim, backend):
     compare_data_with_double_pole("x_grad", x_grad_fused, x_grad_npu, x_grad_golden)
     compare_data_with_double_pole("weight_grad", weight_grad_fused, weight_grad_npu, w_grad_golden)
     if bias is not None:
-        compare_data_with_double_pole("bias_grad", bias_grad_fused, bias_grad_npu, bias_grad_golden)    
-
+        compare_data_with_double_pole("bias_grad", bias_grad_fused, bias_grad_npu, bias_grad_golden)
 
 @pytest.mark.parametrize("total_seqs", [1, 1123, 2048, 3201, 7687, 20480])
 @pytest.mark.parametrize("dim", [(16, 128), (64, 512), (240, 960), (128, 2048), (768, 768 * 4)])
@@ -323,7 +321,7 @@ def test_in_linear_silu_backward_invalid_shape(invalid_case):
     weight_dim0 = invalid_case.get("weight_dim0", N)
     weight_dim1 = invalid_case.get("weight_dim1", dim[0])
     weight = torch.rand(weight_dim0, weight_dim1, dtype=data_type).uniform_(-1, 1)
-    
+
     linear_output = torch.rand(total_seqs, N, dtype=data_type).uniform_(-1, 1)
 
     if enable_bias:
@@ -351,9 +349,9 @@ def test_in_linear_silu_backward_invalid_shape(invalid_case):
 def test_in_linear_silu_backward_invalid_dtype(total_seqs, dim, enable_bias, data_type, is_diff_dim):
     u_grad, v_grad, q_grad, k_grad, x, weight, bias, linear_output, split_args = get_data(
         total_seqs, dim[0], dim[1], enable_bias, data_type, is_diff_dim
-        )
+    )
     with pytest.raises(Exception):
-        _run_op(x, weight, bias, u_grad, v_grad, q_grad, k_grad, linear_output, split_args)    
+        _run_op(x, weight, bias, u_grad, v_grad, q_grad, k_grad, linear_output, split_args)
 
 
 @pytest.mark.ci

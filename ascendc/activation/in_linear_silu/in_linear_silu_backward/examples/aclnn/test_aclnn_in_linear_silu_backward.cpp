@@ -109,15 +109,23 @@ int main()
               *linearOutput = nullptr;
 
     // 创建输入及中间梯度 aclTensor
-    CreateAclTensor(xHostData, xShape, &xDevAddr, aclDataType::ACL_FLOAT16, &x);
-    CreateAclTensor(weightHostData, weightShape, &weightDevAddr, aclDataType::ACL_FLOAT16, &weight);
-    CreateAclTensor(biasHostData, biasShape, &biasDevAddr, aclDataType::ACL_FLOAT, &bias);
-    CreateAclTensor(userGradHostData, gradShape, &userGradDevAddr, aclDataType::ACL_FLOAT16, &userGrad);
-    CreateAclTensor(valueGradHostData, gradShape, &valueGradDevAddr, aclDataType::ACL_FLOAT16, &valueGrad);
-    CreateAclTensor(queryGradHostData, gradShape, &queryGradDevAddr, aclDataType::ACL_FLOAT16, &queryGrad);
-    CreateAclTensor(keyGradHostData, gradShape, &keyGradDevAddr, aclDataType::ACL_FLOAT16, &keyGrad);
-    CreateAclTensor(linearOutputHostData, linearOutputShape, &linearOutputDevAddr, aclDataType::ACL_FLOAT16,
+    ret = CreateAclTensor(xHostData, xShape, &xDevAddr, aclDataType::ACL_FLOAT16, &x);
+    CHECK_RET(ret == ACL_SUCCESS, return ret);
+    ret = CreateAclTensor(weightHostData, weightShape, &weightDevAddr, aclDataType::ACL_FLOAT16, &weight);
+    CHECK_RET(ret == ACL_SUCCESS, return ret);
+    ret = CreateAclTensor(biasHostData, biasShape, &biasDevAddr, aclDataType::ACL_FLOAT, &bias);
+    CHECK_RET(ret == ACL_SUCCESS, return ret);
+    ret = CreateAclTensor(userGradHostData, gradShape, &userGradDevAddr, aclDataType::ACL_FLOAT16, &userGrad);
+    CHECK_RET(ret == ACL_SUCCESS, return ret);
+    ret = CreateAclTensor(valueGradHostData, gradShape, &valueGradDevAddr, aclDataType::ACL_FLOAT16, &valueGrad);
+    CHECK_RET(ret == ACL_SUCCESS, return ret);
+    ret = CreateAclTensor(queryGradHostData, gradShape, &queryGradDevAddr, aclDataType::ACL_FLOAT16, &queryGrad);
+    CHECK_RET(ret == ACL_SUCCESS, return ret);
+    ret = CreateAclTensor(keyGradHostData, gradShape, &keyGradDevAddr, aclDataType::ACL_FLOAT16, &keyGrad);
+    CHECK_RET(ret == ACL_SUCCESS, return ret);
+    ret = CreateAclTensor(linearOutputHostData, linearOutputShape, &linearOutputDevAddr, aclDataType::ACL_FLOAT16,
                     &linearOutput);
+    CHECK_RET(ret == ACL_SUCCESS, return ret);
 
     // 3. 准备输出梯度 Tensor (x_grad, weight_grad, bias_grad)
     std::vector<float> xGradHost(GetShapeSize(xShape), 0.0f);
@@ -127,9 +135,12 @@ int main()
     void *xGradDevAddr = nullptr, *weightGradDevAddr = nullptr, *biasGradDevAddr = nullptr;
     aclTensor *xGrad = nullptr, *weightGrad = nullptr, *biasGrad = nullptr;
 
-    CreateAclTensor(xGradHost, xShape, &xGradDevAddr, aclDataType::ACL_FLOAT, &xGrad);
-    CreateAclTensor(weightGradHost, weightShape, &weightGradDevAddr, aclDataType::ACL_FLOAT, &weightGrad);
-    CreateAclTensor(biasGradHost, biasShape, &biasGradDevAddr, aclDataType::ACL_FLOAT, &biasGrad);
+    ret = CreateAclTensor(xGradHost, xShape, &xGradDevAddr, aclDataType::ACL_FLOAT, &xGrad);
+    CHECK_RET(ret == ACL_SUCCESS, return ret);
+    ret = CreateAclTensor(weightGradHost, weightShape, &weightGradDevAddr, aclDataType::ACL_FLOAT, &weightGrad);
+    CHECK_RET(ret == ACL_SUCCESS, return ret);
+    ret = CreateAclTensor(biasGradHost, biasShape, &biasGradDevAddr, aclDataType::ACL_FLOAT, &biasGrad);
+    CHECK_RET(ret == ACL_SUCCESS, return ret);
 
     // 4. 构造属性参数 (attr_dict, isTrans, isVardim)
     std::vector<int64_t> attrValues = {64, 64, 64, 64};

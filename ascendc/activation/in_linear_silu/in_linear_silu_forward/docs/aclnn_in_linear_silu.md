@@ -97,4 +97,4 @@ aclnnStatus：返回状态码，成功返回 `ACLNN_SUCCESS`。
 
 ## 调用示例
 
-具体参考 [test_aclnn_in_linear_silu.cpp](../examples/aclnn/test_aclnn_in_linear_silu.cpp) 的完整实现。
+具体参考 [test_aclnn_in_linear_silu_forward.cpp](../examples/aclnn/test_aclnn_in_linear_silu_forward.cpp) 的完整实现。

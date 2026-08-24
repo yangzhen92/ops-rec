@@ -66,32 +66,6 @@ void IsValidShape(const at::Tensor& x, const at::Tensor& weight, const at::Tenso
     }
 }
 
-void IsValidShapeBackward(const at::Tensor& x, const at::Tensor& weight, const at::Tensor& user_grad,
-                          const at::Tensor& value_grad, const at::Tensor& query_grad, const at::Tensor& key_grad,
-                          const at::Tensor& linear_output, at::IntArrayRef splitList)
-{
-    check_tensor_non_empty(user_grad, "user_grad");
-    check_tensor_non_empty(value_grad, "value_grad");
-    check_tensor_non_empty(query_grad, "query_grad");
-    check_tensor_non_empty(key_grad, "key_grad");
-    check_tensor_non_empty(linear_output, "linear_output");
-
-    check_tensor_dim(user_grad, DIM_2, "user_grad");
-    check_tensor_dim(value_grad, DIM_2, "value_grad");
-    check_tensor_dim(query_grad, DIM_2, "query_grad");
-    check_tensor_dim(key_grad, DIM_2, "key_grad");
-    check_tensor_dim(linear_output, DIM_2, "linear_output");
-
-    auto n = weight.size(0);
-    TORCH_CHECK(user_grad.size(1) == splitList[0] && value_grad.size(1) == splitList[1] &&
-                query_grad.size(1) == splitList[2] && key_grad.size(1) == splitList[3] &&
-                "user_grad, value_grad, query_grad, key_grad dim[1] must be equal to splitList.");
-    TORCH_CHECK(user_grad.size(0) == x.size(0) && value_grad.size(0) == x.size(0) && query_grad.size(0) == x.size(0) &&
-                    key_grad.size(0) == x.size(0) && linear_output.size(0) == x.size(0),
-                "user_grad, value_grad, query_grad, key_grad linear_output dim[0] must equal to x dim[0].");
-    TORCH_CHECK(linear_output.size(1) == n, "linear_output dim[1] must equal to weight dim[0].");
-}
-
 std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor> RunInLinearSiluForwardInter(
     const at::Tensor& x, const at::Tensor& weight, const at::Tensor& bias, at::IntArrayRef splitList)
 {

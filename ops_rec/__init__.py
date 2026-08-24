@@ -18,6 +18,9 @@ import os
 import logging
 import warnings
 
+import importlib
+import pkgutil
+
 
 def env_setup_path() -> str:
     """返回 env_setup.sh 的路径，供 shell 级配置使用。
@@ -134,28 +137,55 @@ def _so_name(variant: str) -> str:
     return f"ops_rec_atlas_{suffix}.so"
 
 
-def _load_custom_so(variant: str):
+def _load_custom_so(variant: str, no_throw: bool = False):
     # 加载对应 variant 的 ops_rec_atlas_<variant>.so (torch 适配层).
     pkg_dir = os.path.dirname(os.path.abspath(__file__))
     so_name = _so_name(variant)
     so_path = os.path.join(pkg_dir, so_name)
     if not os.path.isfile(so_path):
-        logging.warning("ops_rec: %s not found", so_name)
-        return
+        msg = f"ops_rec: {so_name} not found (expected at {so_path})"
+        if no_throw:
+            logging.warning("%s; continuing without adapter .so", msg)
+            return
+        raise FileNotFoundError(msg)
 
     try:
         import torch
 
         torch.ops.load_library(so_path)
     except Exception as exc:
-        warnings.warn(f"ops_rec: Failed to load {so_path}: {exc}")
+        if no_throw:
+            warnings.warn(f"ops_rec: Failed to load {so_path}: {exc}")
+            return
+        raise RuntimeError(f"ops_rec: Failed to load {so_path}: {exc}") from exc
+
+
+def _load_plugins(*plugin_pkgs: str) -> None:
+    """自动加载指定的注册子包，顺次导入包内所有 py 模块。"""
+    for pkg_name in plugin_pkgs:
+        try:
+            pkg = importlib.import_module(f"{__name__}.{pkg_name}")
+        except Exception as exc:
+            logging.warning("ops_rec: failed to import plugin package '%s': %s", pkg_name, exc)
+            continue
+        for _, mod_name, is_pkg in pkgutil.iter_modules(pkg.__path__):
+            try:
+                importlib.import_module(f"{pkg.__name__}.{mod_name}")
+            except Exception as exc:
+                logging.warning("ops_rec: failed to import plugin module '%s.%s': %s", pkg.__name__, mod_name, exc)
+
+
+def _bootstrap() -> None:
+    from . import ascendc  # noqa: F401
+    from . import triton  # noqa: F401
+    from . import experimental  # noqa: F401
+
+    # 加载各功能注册子包（autograd 等）
+    _load_plugins("autograd")
 
 
 # 模块加载时自动检测 SOC 并加载对应变体
 _variant = _select_variant()
 _setup_custom_opp_path(_variant)
 _load_custom_so(_variant)
-
-from . import ascendc  # noqa: F401, E402
-from . import triton  # noqa: F401, E402
-from . import experimental  # noqa: F401, E402
+_bootstrap()

@@ -9,6 +9,7 @@ set(OPS_REC_OPS_ATLAS_950
     block_sparse_func
     arbitrary_func
     hstu_v1
+    in_linear_silu
 )
 
 # ================================ A3 ops ===================================
@@ -16,6 +17,7 @@ set(OPS_REC_OPS_ATLAS_A3
     ln_mul
     disentangle_attention
     hstu_v1
+    in_linear_silu
 )
 
 # ================================ A2 ops ===================================
@@ -23,6 +25,7 @@ set(OPS_REC_OPS_ATLAS_A2
     ln_mul
     disentangle_attention
     hstu_v1
+    in_linear_silu
 )
 
 

@@ -8,18 +8,21 @@ set(OPS_REC_OPS_ATLAS_950
     disentangle_attention
     block_sparse_func
     arbitrary_func
+    in_linear_silu_backward
 )
 
 # ================================ A3 ops ===================================
 set(OPS_REC_OPS_ATLAS_A3
     ln_mul
     disentangle_attention
+    in_linear_silu_backward
 )
 
 # ================================ A2 ops ===================================
 set(OPS_REC_OPS_ATLAS_A2
     ln_mul
     disentangle_attention
+    in_linear_silu_backward
 )
 
 

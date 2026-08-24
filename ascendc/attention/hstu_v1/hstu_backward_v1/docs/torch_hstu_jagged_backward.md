@@ -95,6 +95,62 @@ ops_rec.ascendc.attention.hstu_jagged_backward(
 - max_seq_len 必须在 [1, 20480] 范围内
 - 需要安装 `torch_npu`
 
+## 自动微分（autograd）用法
+
+前向算子 `hstu_jagged`（equal/delta 两个 overload 注册为同名重载接口，调用时按参数自动识别：不传 `max_seq_len_k` / `seq_offset_k` 即 equal 语义，多传即 delta 语义）不注册 C++ AutogradPrivateUse1（保证 inductor 图模式干净），
+因此 `y.backward()` 不会自动触发本算子。训练场景请在 Python 侧用
+`torch.autograd.Function` 包装：forward 直接调用 `hstu_jagged`（示例为 equal 语义），
+backward 调用 `hstu_jagged_backward`（equal 语义：`max_seq_len_k = max_seq_len`、`seq_offset_k = seq_offset`）。
+
+```python
+import torch
+import ops_rec
+
+class HstuJaggedAutograd(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, q, k, v, mask, attn_bias, mask_type, max_seq_len, silu_scale,
+                seq_offset, num_context, num_target, target_group_size, alpha):
+        ctx.save_for_backward(q, k, v, mask, attn_bias, seq_offset, num_context, num_target)
+        ctx.mask_type = mask_type
+        ctx.max_seq_len = max_seq_len
+        ctx.silu_scale = silu_scale
+        ctx.target_group_size = target_group_size
+        ctx.alpha = alpha
+        return ops_rec.ascendc.attention.hstu_jagged(
+            q, k, v, mask=mask, attn_bias=attn_bias, mask_type=mask_type,
+            max_seq_len=max_seq_len, silu_scale=silu_scale, seq_offset=seq_offset,
+            num_context=num_context, num_target=num_target,
+            target_group_size=target_group_size, alpha=alpha)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        q, k, v, mask, attn_bias, seq_offset, num_context, num_target = ctx.saved_tensors
+        q_grad, k_grad, v_grad, attn_bias_grad = \
+            ops_rec.ascendc.attention.hstu_jagged_backward(
+                grad_output, q, k, v, mask, attn_bias, ctx.mask_type,
+                ctx.max_seq_len, ctx.max_seq_len, ctx.silu_scale,
+                seq_offset, seq_offset, num_context, num_target,
+                ctx.target_group_size, ctx.alpha)
+        # 返回值顺序与 forward 入参一一对应（13 个入参）
+        return (q_grad, k_grad, v_grad, None,
+                attn_bias_grad if attn_bias is not None else None,
+                None, None, None, None, None, None, None, None)
+
+y = HstuJaggedAutograd.apply(q, k, v, mask, bias, mask_type, max_seq_len, silu_scale,
+                             seq_offset, None, None, None, alpha)
+loss = criterion(y, target)
+loss.backward()  # 梯度流向 q/k/v/bias
+```
+
+delta 语义（q/k 长度不等）的包装方式相同，仅需在 forward 调用中增加
+`max_seq_len_k` / `seq_offset_k` 参数（`hstu_jagged` 自动识别为 delta），backward 对应调用
+`hstu_jagged_backward` 的 delta 形式（16 参数签名）。
+
+该包装可被 dynamo 正常追踪（forward 走 Meta 构图），`torch.compile` 训练同样可用。
+完整可运行样例与校验见
+[test_torch_hstu_backward_v1_autograd.py](../examples/torch/test_torch_hstu_backward_v1_autograd.py)，
+回归用例见 [test_hstu_autograd.py](../test/pytest/test_hstu_autograd.py)。
+
 ## 调用示例
 
 参考 [test_torch_hstu_jagged_backward.py](../examples/torch/test_torch_hstu_backward_v1_jagged.py)

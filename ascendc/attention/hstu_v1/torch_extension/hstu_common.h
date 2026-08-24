@@ -18,6 +18,7 @@ See the License for the specific language governing permissions and
 
 #include <string>
 #include <algorithm>
+#include <c10/core/DispatchKeySet.h>
 #include <torch/csrc/autograd/custom_function.h>
 #include <torch/library.h>
 
@@ -54,6 +55,16 @@ constexpr uint32_t CONST_2 = 2;
 constexpr uint32_t CONST_1 = 1;
 
 namespace hstu {
+// torch.compile 图模式（fake tensor 构图）下，autograd Function 的 forward 收到的输入
+// 是 FakeTensor——它是 Python Tensor subclass（dispatch key 含 Python），或用 Meta 内核执行
+// （dispatch key 含 Meta）；真实执行时是普通 NPU tensor（两者均不含）。
+// 据此判断：构图阶段不执行真实 NPU 算子，仅返回 shape 推导结果。
+inline bool IsFakeTensor(const at::Tensor& q)
+{
+    const auto ks = q.unsafeGetTensorImpl()->key_set();
+    return ks.has(c10::DispatchKey::Python) || ks.has(c10::DispatchKey::Meta);
+}
+
 inline bool MaskCheck(int64_t maskType, bool maskIsDefine)
 {
     TORCH_CHECK(MASK_TYPE_TRIL <= maskType && maskType <= MASK_TYPE_CUSTOM, "maskType expect in [0, 3], but value is ",

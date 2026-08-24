@@ -68,7 +68,7 @@ ops_rec.ascendc.activation.distance_in_linear_silu(
 
 ### torch 扩展层额外校验
 
-由 [in_linear_silu_plugin.cpp](../torch_extension/in_linear_silu_plugin.cpp) 在调用算子前完成：
+由 [in_linear_silu_plugin.cpp](../../torch_extension/in_linear_silu_plugin.cpp) 在调用算子前完成：
 
 - x、weight 输入 tensor 必须已定义且非空
 - x、weight 必须为 2D，bias 若传入必须为 1D
@@ -86,4 +86,4 @@ bash build.sh --install -j16
 
 ## 调用示例
 
-完整调用示例参考 [test_torch_in_linear_silu.py](../examples/torch/test_torch_in_linear_silu.py)。
+完整调用示例参考 [test_torch_in_linear_silu_forward.py](../examples/torch/test_torch_in_linear_silu_forward.py)。

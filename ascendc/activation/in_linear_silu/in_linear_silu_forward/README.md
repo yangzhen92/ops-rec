@@ -68,8 +68,8 @@ git submodule update --init --recursive
 
 ## 调用示例
 
-- [aclnn 调用示例](./examples/aclnn/test_aclnn_in_linear_silu.cpp)
-- [torch 调用示例](./examples/torch/test_torch_in_linear_silu.py)
-- [torch 功能测试](./test/test_in_linear_silu.py)
+- [aclnn 调用示例](./examples/aclnn/test_aclnn_in_linear_silu_forward.cpp)
+- [torch 调用示例](./examples/torch/test_torch_in_linear_silu_forward.py)
+- [torch 功能测试](./test/pytest/test_in_linear_silu.py)
 - [aclnn 接口文档](./docs/aclnn_in_linear_silu.md)
 - [torch 接口文档](./docs/torch_in_linear_silu.md)

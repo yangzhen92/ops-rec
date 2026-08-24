@@ -11,6 +11,7 @@ set(OPS_REC_OPS_ATLAS_950
     hstu_v1
     hstu_v2
     reverse_sequence
+    in_linear_silu_backward
 )
 
 # ================================ A3 ops ===================================
@@ -19,6 +20,7 @@ set(OPS_REC_OPS_ATLAS_A3
     disentangle_attention
     hstu_v1
     reverse_sequence
+    in_linear_silu_backward
 )
 
 # ================================ A2 ops ===================================
@@ -27,6 +29,7 @@ set(OPS_REC_OPS_ATLAS_A2
     disentangle_attention
     hstu_v1
     reverse_sequence
+    in_linear_silu_backward
 )
 
 

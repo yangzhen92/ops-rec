@@ -70,22 +70,22 @@ ops_rec.ascendc.attention.hstu_dense_backward(
 
 ## 自动微分（autograd）用法
 
-前向算子 `hstu_dense` 不注册 C++ AutogradPrivateUse1（保证 inductor 图模式干净），
-因此 `y.backward()` 不会自动触发本算子。训练场景使用 `ops_rec.autograd.hstu_v1_autograd`
-提供的 `HstuDenseAutograd` 包装（`import ops_rec` 后自动加载）：
+前向算子 `hstu_dense` 不注册 C++ AutogradPrivateUse1（保证 inductor 图模式干净）。
+训练自动微分由 `ops_rec.autograd.hstu_v1_autograd` 通过 `torch.library.register_autograd`
+将本算子绑定为 `hstu_dense` 的 autograd 公式（`import ops_rec` 后自动生效），
+直接调用前向算子即可训练：
 
 ```python
 import torch
 import ops_rec
-from ops_rec.autograd.hstu_v1_autograd import HstuDenseAutograd
 
-y = HstuDenseAutograd.apply(q, k, v, mask, bias, mask_type, max_seq_len, silu_scale)
+y = ops_rec.ascendc.attention.hstu_dense(q, k, v, mask, bias, mask_type, max_seq_len, silu_scale)
 loss = criterion(y, target)
 loss.backward()  # 梯度流向 q/k/v/bias
 ```
 
-该包装可被 dynamo 正常追踪（forward 走 Meta 构图），`torch.compile` 训练同样可用。
-包装类定义位于 [hstu_v1_autograd.py](../../torch_extension/hstu_v1_autograd.py)。
+eager 与 `torch.compile` 训练均可用。
+注册逻辑位于 [hstu_v1_autograd.py](../../torch_extension/hstu_v1_autograd.py)。
 完整可运行样例与校验见
 [test_torch_hstu_backward_v1_autograd.py](../examples/torch/test_torch_hstu_backward_v1_autograd.py)，
 回归用例见 [test_hstu_autograd.py](../test/pytest/test_hstu_autograd.py)。

@@ -97,35 +97,31 @@ ops_rec.ascendc.attention.hstu_jagged_backward(
 
 ## 自动微分（autograd）用法
 
-前向算子 `hstu_jagged`（equal/delta 两个 overload 注册为同名重载接口，调用时按参数自动识别：不传 `max_seq_len_k` / `seq_offset_k` 即 equal 语义，多传即 delta 语义）不注册 C++ AutogradPrivateUse1（保证 inductor 图模式干净），
-因此 `y.backward()` 不会自动触发本算子。训练场景使用 `ops_rec.autograd.hstu_v1_autograd`
-提供的包装类（`import ops_rec` 后自动加载）：
-
-- `HstuJaggedAutograd`：equal 语义（q/k 等长，seq_offset 共用）
-- `HstuJaggedDeltaAutograd`：delta 语义（q/k 可不等长，max_seq_len_k / seq_offset_k 独立）
+前向算子 `hstu_jagged`（equal/delta 两个 overload 注册为同名重载接口，调用时按参数自动识别：不传 `max_seq_len_k` / `seq_offset_k` 即 equal 语义，多传即 delta 语义）不注册 C++ AutogradPrivateUse1（保证 inductor 图模式干净）。
+训练自动微分由 `ops_rec.autograd.hstu_v1_autograd` 通过 `torch.library.register_autograd`
+将本算子（equal / delta 两个 overload）绑定为 `hstu_jagged` 的 autograd 公式
+（`import ops_rec` 后自动生效），直接调用前向算子即可训练：
 
 ```python
 import torch
 import ops_rec
-from ops_rec.autograd.hstu_v1_autograd import HstuJaggedAutograd
 
-# equal 语义
-y = HstuJaggedAutograd.apply(q, k, v, mask, bias, mask_type, max_seq_len, silu_scale,
-                             seq_offset, None, None, None, alpha)
+# equal 语义（不传 max_seq_len_k / seq_offset_k）
+y = ops_rec.ascendc.attention.hstu_jagged(q, k, v, mask, bias, mask_type, max_seq_len, silu_scale,
+                                          seq_offset, None, None, None, alpha)
 loss = criterion(y, target)
 loss.backward()  # 梯度流向 q/k/v/bias
 
-# delta 语义
-from ops_rec.autograd.hstu_v1_autograd import HstuJaggedDeltaAutograd
-y = HstuJaggedDeltaAutograd.apply(q, k, v, mask, bias, mask_type, max_seq_len, max_seq_len_k,
-                                  silu_scale, seq_offset, seq_offset_k,
-                                  None, None, None, alpha, deterministic=False)
+# delta 语义（多传 max_seq_len_k / seq_offset_k）
+y = ops_rec.ascendc.attention.hstu_jagged(q, k, v, mask, bias, mask_type, max_seq_len, max_seq_len_k,
+                                          silu_scale, seq_offset, seq_offset_k,
+                                          None, None, None, alpha, deterministic=False)
 loss = criterion(y, target)
 loss.backward()
 ```
 
-该包装可被 dynamo 正常追踪（forward 走 Meta 构图），`torch.compile` 训练同样可用。
-包装类定义位于 [hstu_v1_autograd.py](../../torch_extension/hstu_v1_autograd.py)。
+eager 与 `torch.compile` 训练均可用。
+注册逻辑位于 [hstu_v1_autograd.py](../../torch_extension/hstu_v1_autograd.py)。
 完整可运行样例与校验见
 [test_torch_hstu_backward_v1_autograd.py](../examples/torch/test_torch_hstu_backward_v1_autograd.py)，
 回归用例见 [test_hstu_autograd.py](../test/pytest/test_hstu_autograd.py)。

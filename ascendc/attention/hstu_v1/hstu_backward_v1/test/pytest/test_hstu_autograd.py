@@ -18,11 +18,13 @@
 训练自动微分回归用例。
 
 hstu_v1 前向算子不注册 C++ AutogradPrivateUse1（保证 inductor 图模式干净），
-训练场景的自动微分由 Python 侧 torch.autograd.Function 包装 forward + backward
-算子提供。本用例校验：
+训练自动微分由 ops_rec.autograd.hstu_v1_autograd 通过
+torch.library.register_autograd 绑定 backward 算子（import ops_rec 后自动生效）。
+本用例校验：
 
-1. eager：y.backward() 得到的 q/k/v/bias 梯度与直接调用 hstu_*_backward 算子一致；
-2. graph：Python 侧包装可被 dynamo 追踪（forward 走 Meta 构图），eager vs compiled 梯度一致。
+1. eager：直接调用前向算子 + loss.backward() 得到的 q/k/v/bias 梯度
+   与直接调用 hstu_*_backward 算子一致；
+2. graph：注册的 autograd 公式可被 dynamo 追踪，eager vs compiled 梯度一致。
 """
 
 import sys
@@ -31,7 +33,6 @@ import pytest
 import torch
 
 import ops_rec
-from ops_rec.autograd.hstu_v1_autograd import HstuDenseAutograd, HstuJaggedAutograd
 
 from test_common_utils import allclose, MaskType
 
@@ -125,13 +126,14 @@ class TestHstuAutograd:
         if not enable_bias:
             grads_ref = grads_ref[:3] + (None,)
 
-        # 训练链路：y = autograd(...) -> loss = sum(y * grad) -> loss.backward()
+        # 训练链路：y = hstu_dense(...) -> loss = sum(y * grad) -> loss.backward()
+        # （autograd 公式已由 ops_rec.autograd 注册，无需显式包装）
         q_ = q_npu.detach().clone().requires_grad_(True)
         k_ = k_npu.detach().clone().requires_grad_(True)
         v_ = v_npu.detach().clone().requires_grad_(True)
         b_ = bias_npu.detach().clone().requires_grad_(True) if enable_bias else None
 
-        y = HstuDenseAutograd.apply(q_, k_, v_, mask_npu, b_, mask_type, max_seq_len, silu_scale)
+        y = ops_rec.ascendc.attention.hstu_dense(q_, k_, v_, mask_npu, b_, mask_type, max_seq_len, silu_scale)
         (y * grad_npu).sum().backward()
         torch.npu.synchronize()
 
@@ -155,7 +157,7 @@ class TestHstuAutograd:
 
     @pytest.mark.graph
     def test_dense_autograd_graph(self):
-        """graph：Python 侧 autograd.Function 包装可被 dynamo 追踪（forward 走 Meta 构图）。"""
+        """graph：注册的 autograd 公式可被 dynamo 追踪，eager vs compiled 梯度一致。"""
         B, S, N, D = 1, 16, 4, 32
         data_type = torch.float16
         q = torch.rand(B, S, N, D, device="npu", dtype=data_type).uniform_(-1, 1)
@@ -172,11 +174,11 @@ class TestHstuAutograd:
             return y, q_.grad, k_.grad, v_.grad
 
         compiled_fn = torch_compiled(
-            lambda q_, k_, v_: HstuDenseAutograd.apply(q_, k_, v_, None, None, 0, S, 1.0 / S),
+            lambda q_, k_, v_: ops_rec.ascendc.attention.hstu_dense(q_, k_, v_, None, None, 0, S, 1.0 / S),
             dynamic=True,
         )
         y_eager, qg_eager, kg_eager, vg_eager = run(
-            lambda q_, k_, v_: HstuDenseAutograd.apply(q_, k_, v_, None, None, 0, S, 1.0 / S)
+            lambda q_, k_, v_: ops_rec.ascendc.attention.hstu_dense(q_, k_, v_, None, None, 0, S, 1.0 / S)
         )
         y_compiled, qg_compiled, kg_compiled, vg_compiled = run(compiled_fn)
         torch.npu.synchronize()
@@ -232,7 +234,8 @@ class TestHstuAutograd:
         v_ = v_npu.detach().clone().requires_grad_(True)
         b_ = bias_npu.detach().clone().requires_grad_(True) if enable_bias else None
 
-        y = HstuJaggedAutograd.apply(
+        # autograd 公式已由 ops_rec.autograd 注册，直接调用前向算子即可训练
+        y = ops_rec.ascendc.attention.hstu_jagged(
             q_,
             k_,
             v_,
@@ -273,7 +276,7 @@ class TestHstuAutograd:
 
     @pytest.mark.graph
     def test_jagged_autograd_graph(self):
-        """graph：jagged 包装同样可被 dynamo 追踪，eager vs compiled 梯度一致。"""
+        """graph：注册的 jagged autograd 公式可被 dynamo 追踪，eager vs compiled 梯度一致。"""
         batch_size, max_seq_len, head_num, head_dim_qk, head_dim_v = 2, 64, 4, 32, 32
         data_type = torch.float16
         grad, q, k, v, bias, mask, seq_offset_q, seq_offset_k = generate_jagged_tensor(
@@ -295,7 +298,7 @@ class TestHstuAutograd:
             return y, q_.grad, k_.grad, v_.grad
 
         compiled_fn = torch_compiled(
-            lambda q_, k_, v_: HstuJaggedAutograd.apply(
+            lambda q_, k_, v_: ops_rec.ascendc.attention.hstu_jagged(
                 q_,
                 k_,
                 v_,
@@ -313,7 +316,7 @@ class TestHstuAutograd:
             dynamic=True,
         )
         y_eager, qg_eager, kg_eager, vg_eager = run(
-            lambda q_, k_, v_: HstuJaggedAutograd.apply(
+            lambda q_, k_, v_: ops_rec.ascendc.attention.hstu_jagged(
                 q_,
                 k_,
                 v_,

@@ -18,15 +18,18 @@
 hstu_v1 训练自动微分（autograd）使用样例
 
 背景:
-    hstu_v1 前向算子（hstu_dense / hstu_jagged.equal|delta）在 torch_extension 中不注册
-    C++ AutogradPrivateUse1——autograd Function 黑盒会导致 inductor 图模式数值错误，
+    hstu_v1 前向算子（hstu_dense / hstu_jagged）在 torch_extension 中不注册
+    C++ AutogradPrivateUse1--C++ autograd Function 黑盒会导致 inductor 图模式数值错误，
     图模式仅走 PrivateUse1 + Meta 干净路径（与 paged/ln_mul/disentangle_attention
     已验证模式一致）。反向梯度由独立算子 hstu_dense_backward / hstu_jagged_backward 提供。
 
-    如需训练自动微分（loss.backward()），请在 Python 侧用 torch.autograd.Function 包装：
-        forward  -> 调用前向算子
-        backward -> 调用对应的 backward 算子
-    本样例演示 dense 与 jagged（equal）两种布局的包装方法，并校验 y.backward() 得到的
+    训练自动微分（loss.backward()）由 ops_rec.autograd.hstu_v1_autograd 通过
+    torch.library.register_autograd 将 backward 算子绑定到前向算子，
+    import ops_rec 后自动生效--直接调用前向算子即可训练，无需任何显式包装：
+        y = ops_rec.ascendc.attention.hstu_dense(q, k, v, ...)
+        loss = criterion(y, target)
+        loss.backward()
+    本样例演示 dense 与 jagged（equal）两种布局，并校验 loss.backward() 得到的
     q/k/v/bias 梯度与直接调用 backward 算子结果一致。
 
 用法:
@@ -40,7 +43,6 @@ import torch
 import torch_npu
 
 import ops_rec
-from ops_rec.autograd.hstu_v1_autograd import HstuDenseAutograd, HstuJaggedAutograd
 
 # pylint: disable=duplicate-code
 torch.npu.config.allow_internal_format = False
@@ -100,13 +102,14 @@ def check_dense_autograd(mask_type, enable_bias, silu_scale=0.0):
     if bias is None:
         grads_ref = grads_ref[:3] + (None,)
 
-    # 训练链路：y = autograd(q, k, v, ...) -> loss = sum(y * grad) -> loss.backward()
+    # 训练链路：y = hstu_dense(...) -> loss = sum(y * grad) -> loss.backward()
+    # （autograd 公式已由 ops_rec.autograd 注册，直接调用前向算子即可）
     q_ = q.detach().clone().requires_grad_(True)
     k_ = k.detach().clone().requires_grad_(True)
     v_ = v.detach().clone().requires_grad_(True)
     b_ = bias.detach().clone().requires_grad_(True) if bias is not None else None
 
-    y = HstuDenseAutograd.apply(q_, k_, v_, mask, b_, mask_type, max_seq_len, silu_scale)
+    y = ops_rec.ascendc.attention.hstu_dense(q_, k_, v_, mask, b_, mask_type, max_seq_len, silu_scale)
     loss = (y * grad).sum()
     loss.backward()
     torch.npu.synchronize()
@@ -171,13 +174,13 @@ def check_jagged_autograd(mask_type, enable_bias, silu_scale=0.0):
     if bias is None:
         grads_ref = grads_ref[:3] + (None,)
 
-    # 训练链路
+    # 训练链路（autograd 公式已由 ops_rec.autograd 注册，直接调用前向算子即可）
     q_ = q.detach().clone().requires_grad_(True)
     k_ = k.detach().clone().requires_grad_(True)
     v_ = v.detach().clone().requires_grad_(True)
     b_ = bias.detach().clone().requires_grad_(True) if bias is not None else None
 
-    y = HstuJaggedAutograd.apply(
+    y = ops_rec.ascendc.attention.hstu_jagged(
         q_,
         k_,
         v_,

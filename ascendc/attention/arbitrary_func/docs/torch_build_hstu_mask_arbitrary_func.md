@@ -24,6 +24,9 @@
 其中 `seq_start=offsets[seq_id]`，`base=seq_start+hist_end`，`hist_end=ctx_len+hist_len`，
 `hist_len=seq_len-ctx_len-tgt_len`。
 
+### 编码示意图
+![build_hstu_mask_arbitrary_func af编码与注意力mask对应关系](build_hstu_mask_arbitrary_func示意图.svg)
+
 ## 接口原型
 
 ```python

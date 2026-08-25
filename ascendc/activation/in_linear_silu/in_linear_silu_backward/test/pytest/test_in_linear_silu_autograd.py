@@ -166,16 +166,12 @@ def in_linear_silu_autograd_golden(x, weight, bias, target, split_args):
 def execute(total_seqs, dim, data_type, is_diff_dim, backend):
     if dim[0] <= 32 and is_diff_dim:
         return
-    x, weight, bias, target, split_args = get_data_autograd(
-        total_seqs, dim[0], dim[1], data_type, is_diff_dim
-    )
+    x, weight, bias, target, split_args = get_data_autograd(total_seqs, dim[0], dim[1], data_type, is_diff_dim)
 
     x_grad_golden, weight_grad_golden, bias_grad_golden = in_linear_silu_autograd_golden(
         x, weight, bias, target, split_args
     )
-    x_grad, weight_grad, bias_grad = in_linear_silu_autograd_npu(
-        x, weight, bias, target, split_args, backend
-    )
+    x_grad, weight_grad, bias_grad = in_linear_silu_autograd_npu(x, weight, bias, target, split_args, backend)
 
     torch.npu.synchronize()
     atol = 1e-4

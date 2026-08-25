@@ -1,1 +1,2 @@
 add_subdirectory(in_linear_silu_forward)
+add_subdirectory(in_linear_silu_backward)

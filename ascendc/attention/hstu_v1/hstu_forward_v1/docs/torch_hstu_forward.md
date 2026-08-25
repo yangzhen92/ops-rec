@@ -117,33 +117,12 @@ y = compiled(q, k, v, None, None, 0, 256, 1.0 / 256)
 
 ## 自动微分（训练）
 
-前向算子不注册 C++ AutogradPrivateUse1，`y.backward()` 不会自动触发反向。训练场景请在 Python 侧用 `torch.autograd.Function` 包装 forward + backward 算子：
+前向算子不注册 C++ AutogradPrivateUse1，`y.backward()` 不会自动触发反向。训练场景使用 `ops_rec.autograd.hstu_v1_autograd` 提供的 `torch.autograd.Function` 包装（`import ops_rec` 后自动加载）：
 
 ```python
 import torch
 import ops_rec
-
-class HstuDenseAutograd(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, q, k, v, mask, attn_bias, mask_type, max_seq_len, silu_scale):
-        ctx.save_for_backward(q, k, v, mask, attn_bias)
-        ctx.mask_type = mask_type
-        ctx.max_seq_len = max_seq_len
-        ctx.silu_scale = silu_scale
-        return ops_rec.ascendc.attention.hstu_dense(
-            q, k, v, mask=mask, attn_bias=attn_bias,
-            mask_type=mask_type, max_seq_len=max_seq_len, silu_scale=silu_scale)
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        q, k, v, mask, attn_bias = ctx.saved_tensors
-        q_grad, k_grad, v_grad, attn_bias_grad = \
-            ops_rec.ascendc.attention.hstu_dense_backward(
-                grad_output, q, k, v, mask, attn_bias,
-                ctx.mask_type, ctx.max_seq_len, ctx.silu_scale)
-        return (q_grad, k_grad, v_grad, None,
-                attn_bias_grad if attn_bias is not None else None,
-                None, None, None)
+from ops_rec.autograd.hstu_v1_autograd import HstuDenseAutograd
 
 # 训练循环中使用
 q.requires_grad_(True)
@@ -152,7 +131,7 @@ loss = criterion(y, target)
 loss.backward()  # 梯度流向 q/k/v/bias
 ```
 
-该包装可被 dynamo 正常追踪（forward 走 Meta 构图），`torch.compile` 训练同样可用。dense / jagged（equal、delta）的完整包装与校验样例见 [test_torch_hstu_backward_v1_autograd.py](../../hstu_backward_v1/examples/torch/test_torch_hstu_backward_v1_autograd.py) 与回归用例 [test_hstu_autograd.py](../../hstu_backward_v1/test/pytest/test_hstu_autograd.py)。
+包装类定义位于 [hstu_v1_autograd.py](../../torch_extension/hstu_v1_autograd.py)，提供 dense / jagged（equal、delta）三种布局的自动微分。该包装可被 dynamo 正常追踪（forward 走 Meta 构图），`torch.compile` 训练同样可用。完整校验样例见 [test_torch_hstu_backward_v1_autograd.py](../../hstu_backward_v1/examples/torch/test_torch_hstu_backward_v1_autograd.py) 与回归用例 [test_hstu_autograd.py](../../hstu_backward_v1/test/pytest/test_hstu_autograd.py)。
 
 ## 安装方式
 

@@ -31,6 +31,7 @@ import pytest
 import torch
 
 import ops_rec
+from ops_rec.autograd.hstu_v1_autograd import HstuDenseAutograd, HstuJaggedAutograd
 
 from test_common_utils import allclose, MaskType
 
@@ -42,137 +43,6 @@ def torch_compiled(model, **kwargs):
     if sys.version_info < (3, 12, 0):
         return torch.compile(model, **kwargs)
     return model
-
-
-# ---------------------------------------------------------------------------
-# Python 侧自动微分包装（与 examples/torch/test_torch_hstu_backward_v1_autograd.py 中一致）
-# ---------------------------------------------------------------------------
-
-
-class HstuDenseAutograd(torch.autograd.Function):
-    """dense 布局 hstu_dense 的自动微分包装。"""
-
-    @staticmethod
-    def forward(ctx, q, k, v, mask, attn_bias, mask_type, max_seq_len, silu_scale):
-        ctx.save_for_backward(q, k, v, mask, attn_bias)
-        ctx.mask_type = mask_type
-        ctx.max_seq_len = max_seq_len
-        ctx.silu_scale = silu_scale
-        return ops_rec.ascendc.attention.hstu_dense(
-            q,
-            k,
-            v,
-            mask=mask,
-            attn_bias=attn_bias,
-            mask_type=mask_type,
-            max_seq_len=max_seq_len,
-            silu_scale=silu_scale,
-        )
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        q, k, v, mask, attn_bias = ctx.saved_tensors
-        q_grad, k_grad, v_grad, attn_bias_grad = ops_rec.ascendc.attention.hstu_dense_backward(
-            grad_output,
-            q,
-            k,
-            v,
-            mask,
-            attn_bias,
-            ctx.mask_type,
-            ctx.max_seq_len,
-            ctx.silu_scale,
-        )
-        return (
-            q_grad,
-            k_grad,
-            v_grad,
-            None,
-            attn_bias_grad if attn_bias is not None else None,
-            None,
-            None,
-            None,
-        )
-
-
-class HstuJaggedAutograd(torch.autograd.Function):
-    """jagged 布局 hstu_jagged.equal 的自动微分包装（q/k 等长）。"""
-
-    @staticmethod
-    def forward(
-        ctx,
-        q,
-        k,
-        v,
-        mask,
-        attn_bias,
-        mask_type,
-        max_seq_len,
-        silu_scale,
-        seq_offset,
-        num_context,
-        num_target,
-        target_group_size,
-        alpha,
-    ):
-        ctx.save_for_backward(q, k, v, mask, attn_bias, seq_offset, num_context, num_target)
-        ctx.mask_type = mask_type
-        ctx.max_seq_len = max_seq_len
-        ctx.silu_scale = silu_scale
-        ctx.target_group_size = target_group_size
-        ctx.alpha = alpha
-        return ops_rec.ascendc.attention.hstu_jagged.equal(
-            q,
-            k,
-            v,
-            mask=mask,
-            attn_bias=attn_bias,
-            mask_type=mask_type,
-            max_seq_len=max_seq_len,
-            silu_scale=silu_scale,
-            seq_offset=seq_offset,
-            num_context=num_context,
-            num_target=num_target,
-            target_group_size=target_group_size,
-            alpha=alpha,
-        )
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        q, k, v, mask, attn_bias, seq_offset, num_context, num_target = ctx.saved_tensors
-        q_grad, k_grad, v_grad, attn_bias_grad = ops_rec.ascendc.attention.hstu_jagged_backward(
-            grad_output,
-            q,
-            k,
-            v,
-            mask,
-            attn_bias,
-            ctx.mask_type,
-            ctx.max_seq_len,
-            ctx.max_seq_len,
-            ctx.silu_scale,
-            seq_offset,
-            seq_offset,
-            num_context,
-            num_target,
-            ctx.target_group_size,
-            ctx.alpha,
-        )
-        return (
-            q_grad,
-            k_grad,
-            v_grad,
-            None,
-            attn_bias_grad if attn_bias is not None else None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
 
 
 # ---------------------------------------------------------------------------

@@ -127,17 +127,19 @@ static bool SplitArgCheck(gert::TilingContext* context, const int64_t* split_arg
 }
 
 static bool GradShapeCheck(gert::TilingContext* context, int64_t seqLen, int64_t hiddenSize,
-                           const int64_t* split_arg_list)
+                           const int64_t* split_arg_list, bool isVardim)
 {
     const int gradIndexList[SPLIT_ARG_LIST_SIZE] = {INPUT_INDEX_T::USER_GRAD_INDEX, INPUT_INDEX_T::VALUE_GRAD_INDEX,
                                                     INPUT_INDEX_T::QUERY_GRAD_INDEX, INPUT_INDEX_T::KEY_GRAD_INDEX};
     for (uint64_t i = 0; i < SPLIT_ARG_LIST_SIZE; i++) {
         OPS_LOG_E_IF_NULL("gradShape", context->GetInputShape(gradIndexList[i]), return false);
         const gert::Shape gradShape = context->GetInputShape(gradIndexList[i])->GetStorageShape();
+        // isVardim=true 时四个梯度已按 [u,v,q,k] 拼接为一个 tensor 由 userGrad 传入，形状为 [seqLen, hiddenSize]
+        const int64_t expectDim = (isVardim && i == 0) ? hiddenSize : split_arg_list[i];
         OPS_LOG_E_IF(
-            gradShape.GetDimNum() != DIM_2 || gradShape.GetDim(0) != seqLen || gradShape.GetDim(1) != split_arg_list[i],
-            context, return false, "[ERROR]InLinearSilu grad tensor[%llu] shape should be [%lld, %lld]!", i, seqLen,
-            split_arg_list[i]);
+            gradShape.GetDimNum() != DIM_2 || gradShape.GetDim(0) != seqLen || gradShape.GetDim(1) != expectDim,
+            context, return false, "[ERROR]InLinearSilu grad tensor[%llu] shape should be [%lld, %lld]!", i,
+            seqLen, expectDim);
     }
     OPS_LOG_E_IF_NULL("linearOutputShape", context->GetInputShape(INPUT_INDEX_T::LINEAR_OUTPUT_INDEX), return false);
     const gert::Shape linearOutputShape = context->GetInputShape(INPUT_INDEX_T::LINEAR_OUTPUT_INDEX)->GetStorageShape();
@@ -207,6 +209,8 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
     OPS_LOG_E_IF_NULL("data", data, return ge::GRAPH_FAILED);
 
     uint32_t hiddenSize = wShape.GetDim(0);
+    bool isTrans = *context->GetAttrs()->GetBool(1);
+    bool isVardim = *context->GetAttrs()->GetBool(2);
     // 有效范围校验
     if (!RangeCheck(context, seqLen, embedDim, hiddenSize, data)) {
         return ge::GRAPH_FAILED;
@@ -214,7 +218,7 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
     if (!SplitArgCheck(context, data)) {
         return ge::GRAPH_FAILED;
     }
-    if (!GradShapeCheck(context, seqLen, hiddenSize, data)) {
+    if (!GradShapeCheck(context, seqLen, hiddenSize, data, isVardim)) {
         return ge::GRAPH_FAILED;
     }
     OPS_LOG_E_IF(wShape.GetDim(1) != embedDim, context, return ge::GRAPH_FAILED,
@@ -240,9 +244,6 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
     tiling.set_kDim(data[3]);
     tiling.set_blockM(blockM);
     tiling.set_blockK(blockK);
-    bool isTrans = *context->GetAttrs()->GetBool(1);
-    bool isVardim = *context->GetAttrs()->GetBool(2);
-
     TilingKeySetImpl(context, tiling, isTrans, isVardim);
     if (ge::GRAPH_FAILED == TilingMatmulImpl(context, BLOCK_HEIGHT, embedDim, blockK, false, tiling.LW_MM)) {
         return ge::GRAPH_FAILED;

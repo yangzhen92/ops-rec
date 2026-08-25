@@ -44,7 +44,9 @@ import ops_rec
 # ---------------------------------------------------------------------------
 
 
-def _dense_setup_context(ctx, inputs):
+def _dense_setup_context(ctx, inputs, output=None):
+    # 签名为 (ctx, inputs, output) 三参数形式（与 fbgemm-ascend 及当前
+    # PyTorch 官方文档一致）；output 默认值兼容仅传两参的旧版本。
     q, k, v, mask, attn_bias, mask_type, max_seq_len, silu_scale = inputs
     ctx.save_for_backward(q, k, v, mask, attn_bias)
     ctx.mask_type = mask_type
@@ -78,7 +80,7 @@ def _dense_backward(ctx, grad):
 # ---------------------------------------------------------------------------
 
 
-def _jagged_equal_setup_context(ctx, inputs):
+def _jagged_equal_setup_context(ctx, inputs, output=None):
     (q, k, v, mask, attn_bias, mask_type, max_seq_len, silu_scale, seq_offset, num_context, num_target,
      target_group_size, alpha, deterministic) = inputs
     ctx.save_for_backward(q, k, v, mask, attn_bias, seq_offset, num_context, num_target)
@@ -137,7 +139,7 @@ def _jagged_equal_backward(ctx, grad):
 # ---------------------------------------------------------------------------
 
 
-def _jagged_delta_setup_context(ctx, inputs):
+def _jagged_delta_setup_context(ctx, inputs, output=None):
     (q, k, v, mask, attn_bias, mask_type, max_seq_len, max_seq_len_k, silu_scale, seq_offset, seq_offset_k,
      num_context, num_target, target_group_size, alpha, deterministic) = inputs
     ctx.save_for_backward(q, k, v, mask, attn_bias, seq_offset, seq_offset_k, num_context, num_target)
@@ -199,31 +201,33 @@ def register_autograd():
     前向算子保持干净注册路径（PrivateUse1 + Meta），自动微分公式通过
     torch.library.register_autograd 注册在 Autograd dispatch key 上，
     eager 与 torch.compile 训练均可直接使用前向算子 + loss.backward()。
-    注册重复（如进程内二次调用）仅告警不抛错，与 fbgemm-ascend
-    register_python_autograd() 的容错行为一致。
+
+    注册传入 OpOverload 对象（而非 "ns::op" 字符串 + overload_name 参数）:
+    overload_name 仅存在于部分 torch 版本（2.5 起已移除），而 OpOverload
+    形式自 2.1 起各版本均支持，可精确指定 hstu_jagged 的 equal/delta
+    两个 overload。注册失败（含跨版本 API 差异导致的 TypeError）仅告警
+    不抛错，与 fbgemm-ascend register_python_autograd() 的容错行为一致。
     """
     global _registered
     if _registered:
         return
     try:
         torch.library.register_autograd(
-            "ops_rec::hstu_dense",
+            torch.ops.ops_rec.hstu_dense,
             _dense_backward,
             setup_context=_dense_setup_context,
         )
         torch.library.register_autograd(
-            "ops_rec::hstu_jagged",
+            torch.ops.ops_rec.hstu_jagged.equal,
             _jagged_equal_backward,
             setup_context=_jagged_equal_setup_context,
-            overload_name="equal",
         )
         torch.library.register_autograd(
-            "ops_rec::hstu_jagged",
+            torch.ops.ops_rec.hstu_jagged.delta,
             _jagged_delta_backward,
             setup_context=_jagged_delta_setup_context,
-            overload_name="delta",
         )
-    except RuntimeError as e:
+    except (RuntimeError, TypeError) as e:
         logging.warning("ops_rec.autograd.hstu_v1: autograd registration skipped: %s", e)
         return
     _registered = True

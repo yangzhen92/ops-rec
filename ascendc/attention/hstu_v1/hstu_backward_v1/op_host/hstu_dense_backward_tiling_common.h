@@ -1,0 +1,164 @@
+/* Copyright (c) Huawei Technologies Co., Ltd. 2025. All rights reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+        limitations under the License.
+==============================================================================*/
+
+#ifndef HSTU_DENSE_BACKWARD_TILING_COMMON_H
+#define HSTU_DENSE_BACKWARD_TILING_COMMON_H
+
+#include <cstdint>
+#include <cctype>
+#include <cstdio>
+#include <string>
+
+#include "register/tilingdata_base.h"
+#include "tiling/tiling_api.h"
+#include "ops_log.h"
+
+constexpr int MAX_BATCH_SIZE = 2048;
+constexpr int MIN_BATCH_SIZE = 1;
+constexpr int MAX_SEQ_LENS = 20480;
+constexpr int MIN_SEQ_LENS = 1;
+constexpr int MAX_HEAD_NUM = 16;
+constexpr int MIN_HEAD_NUM = 1;
+constexpr int MAX_HEAD_DIM = 512;
+constexpr int MIN_HEAD_DIM_QK = 1;
+constexpr int MIN_HEAD_DIM_V = 16;
+constexpr int NO_INT_MULT_REQUIRE = 1;
+constexpr int MULT_OF_16 = 16;
+
+constexpr int JAGGED_FLOAT_TILING_KEY = 5;
+constexpr int JAGGED_BF16_TILING_KEY = 4;
+constexpr int JAGGED_FLOAT16_TILING_KEY = 3;
+constexpr int FLOAT_TILING_KEY = 2;
+constexpr int BF16_TILING_KEY = 1;
+constexpr int FLOAT16_TILING_KEY = 0;
+constexpr int MAX_AIV_NUM = 48;
+
+constexpr int GRAD_DIM_NUM = 4;
+constexpr int JAGGED_GRAD_DIM_NUM = 3;
+constexpr int MASK_DIM_NUM = 4;
+constexpr int BIAS_DIM_NUM = 4;
+constexpr int MID_USE_TIMES = 2;
+
+constexpr int DATA_TYPE_FLOAT = 32;
+constexpr int DATA_TYPE_FLOAT16 = 16;
+constexpr int DATA_TYPE_LENGTH_FLOAT = 4;
+constexpr int DATA_TYPE_LENGTH_FLOAT16 = 2;
+constexpr int64_t DATA_ALIGN_BYTES = 32;
+
+constexpr int BLOCK_128 = 128;
+constexpr int BLOCK_256 = 256;
+constexpr int BFLOAT16_DEPTH_MAX_DIM = 128;
+
+constexpr int VCORE_NUM_IN_ONE_AIC = 2;
+
+constexpr int L1_BUFFER_SIZE = 512 * 1024;  // 512K
+
+enum class InputLayout {
+    NORMAL = 0,
+    JAGGED = 1
+};
+enum class MaskType {
+    MASK_TRIL = 0,
+    MASK_TRIU = 1,
+    MASK_NONE = 2,
+    MASK_CUSTOM = 3
+};
+
+namespace INDEX_T {
+constexpr int INDEX_0 = 0;
+constexpr int INDEX_1 = 1;
+constexpr int INDEX_2 = 2;
+constexpr int INDEX_3 = 3;
+constexpr int INDEX_4 = 4;
+constexpr int INDEX_5 = 5;
+constexpr int INDEX_6 = 6;
+constexpr int INDEX_7 = 7;
+}  // namespace INDEX_T
+
+namespace INPUT_INDEX_T {
+constexpr int GRAD_INDEX = 0;
+constexpr int Q_INDEX = 1;
+constexpr int K_INDEX = 2;
+constexpr int V_INDEX = 3;
+constexpr int MASK_INDEX = 4;
+constexpr int ATTN_BIAS_INDEX = 5;
+constexpr int SEQ_OFFSET_Q_INDEX = 6;
+constexpr int SEQ_OFFSET_K_INDEX = 7;
+constexpr int NUM_CONTEXT_INDEX = 8;
+constexpr int NUM_TARGET_INDEX = 9;
+}  // namespace INPUT_INDEX_T
+
+namespace OUTPUT_INDEX_T {
+constexpr int Q_GRAD_INDEX = 0;
+constexpr int K_GRAD_INDEX = 1;
+constexpr int V_GRAD_INDEX = 2;
+constexpr int ATTN_BIAS_GRAD_INDEX = 3;
+}  // namespace OUTPUT_INDEX_T
+
+namespace ATTR_INDEX_T {
+constexpr int LAYOUT_INDEX = 0;
+constexpr int MASK_TYPE_INDEX = 1;
+constexpr int MAX_SEQLEN_Q_INDEX = 2;
+constexpr int MAX_SEQLEN_K_INDEX = 3;
+constexpr int SILU_SCALE_INDEX = 4;
+constexpr int TARGET_GROUP_SIZE_INDEX = 5;
+constexpr int REAL_ALPHA_INDEX = 6;
+}  // namespace ATTR_INDEX_T
+
+struct ShapeRange {
+public:
+    int64_t lbound{0};    // shape下限
+    int64_t ubound{0};    // shape上限
+    int64_t multiple{0};  // 倍数
+    const char* name{nullptr};
+    ShapeRange(int64_t lbound, int64_t ubound, int64_t multiple, const char* name);
+    bool Check(int64_t val) const;
+};
+
+inline ge::graphStatus GetInputLayout(const gert::RuntimeAttrs* attrs, InputLayout& layout)
+{
+    OPS_CHECK_PTR_NULL(attrs, return ge::GRAPH_FAILED);
+
+    const char* inputLayout = attrs->GetAttrPointer<char>(ATTR_INDEX_T::LAYOUT_INDEX);
+    OPS_CHECK_PTR_NULL(inputLayout, return ge::GRAPH_FAILED);
+
+    std::string inputLayoutStr = std::string(inputLayout);
+    for (auto& c : inputLayoutStr) {
+        c = tolower(c);
+    }
+
+    if (inputLayoutStr == "normal") {
+        layout = InputLayout::NORMAL;
+    } else if (inputLayoutStr == "jagged") {
+        layout = InputLayout::JAGGED;
+    } else {
+        OPS_LOG_E("", "the input layout should be normal/jagged");
+        return ge::GRAPH_FAILED;
+    }
+
+    return ge::GRAPH_SUCCESS;
+}
+
+bool IfMask(const int32_t& maskType, MaskType maskTypeEnum);
+
+bool IsSameShape(const gert::Shape& shape0, const gert::Shape& shape1, int dim);
+
+template <typename T>
+constexpr auto AlignUp(T a, T b) -> decltype(a + b)
+{
+    return (b == 0) ? 0 : (((a + b - 1) / b) * b);
+}
+
+#endif

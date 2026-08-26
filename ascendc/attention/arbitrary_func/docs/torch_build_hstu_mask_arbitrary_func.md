@@ -24,6 +24,9 @@
 其中 `seq_start=offsets[seq_id]`，`base=seq_start+hist_end`，`hist_end=ctx_len+hist_len`，
 `hist_len=seq_len-ctx_len-tgt_len`。
 
+### 编码示意图
+![build_hstu_mask_arbitrary_func af编码与注意力mask对应关系](build_hstu_mask_arbitrary_func示意图.svg)
+
 ## 接口原型
 
 ```python
@@ -50,6 +53,7 @@ ops_rec.ascendc.attention.build_hstu_mask_arbitrary_func(offsets, ctx_lens, tgt_
 
 - 仅支持 INT32 数据类型
 - `offsets`、`ctx_lens`、`tgt_lens` 必须为 1D
+- `offsets` / `ctx_lens` / `tgt_lens` 的维度须满足 `[batch_size+1]` / `[batch_size]` / `[batch_size]`（`batch_size = offsets.size(0)-1`），不满足时算子直接报错返回
 - `total_seqlen` 须等于 `offsets[-1]`
 - 该算子需要在 NPU 设备上运行
 - `target_group_size` 须大于 0
@@ -60,6 +64,8 @@ ops_rec.ascendc.attention.build_hstu_mask_arbitrary_func(offsets, ctx_lens, tgt_
 
 - 输入 tensor 必须已定义且非空
 - 所有输入 tensor 必须位于同一 NPU 设备
+- `offsets` / `ctx_lens` / `tgt_lens` 的 shape 须满足 `[batch_size+1]` / `[batch_size]` / `[batch_size]`（`batch_size = offsets.size(0)-1`）
+- `total_seqlen` 必须等于 `offsets[-1]`（读取 device 数据显式校验）
 - 需要安装 `torch_npu`
 
 ## 安装方式

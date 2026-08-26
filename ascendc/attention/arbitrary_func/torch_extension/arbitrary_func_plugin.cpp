@@ -45,6 +45,16 @@ at::Tensor build_hstu_mask_arbitrary_func_impl_npu(const at::Tensor& offsets, co
     TORCH_CHECK(target_group_size > 0, "target_group_size must > 0");
     TORCH_CHECK(total_seqlen >= 0, "total_seqlen must be non-negative");
 
+    const int64_t batch_size = offsets.size(0) - 1;
+    TORCH_CHECK(ctx_lens.size(0) == batch_size, "ctx_lens.size(0) (", ctx_lens.size(0),
+                ") must equal offsets.size(0)-1 (", batch_size, "), i.e. ctx_lens shape must be [batch_size]");
+    TORCH_CHECK(tgt_lens.size(0) == batch_size, "tgt_lens.size(0) (", tgt_lens.size(0),
+                ") must equal offsets.size(0)-1 (", batch_size, "), i.e. tgt_lens shape must be [batch_size]");
+
+    const int32_t offsets_last = offsets[-1].item<int32_t>();
+    TORCH_CHECK(total_seqlen == offsets_last, "total_seqlen (", total_seqlen, ") must equal offsets[-1] (",
+                offsets_last, ")");
+
     auto offsets_conti = offsets.contiguous();
     auto ctx_lens_conti = ctx_lens.contiguous();
     auto tgt_lens_conti = tgt_lens.contiguous();

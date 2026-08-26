@@ -164,5 +164,35 @@ def test_build_hstu_mask_arbitrary_func_large():
     run_compare(offsets, ctx, tgt, 4, total, use_graph=False)
 
 
+def test_build_hstu_mask_arbitrary_func_strong_checks():
+    torch.npu.set_device(DEVICE)
+    offsets = torch.tensor([0, 4, 9], dtype=torch.int32, device=DEVICE)  # [bs+1], bs=2
+    ctx = torch.tensor([1, 2], dtype=torch.int32, device=DEVICE)  # [2]
+    tgt = torch.tensor([1, 2], dtype=torch.int32, device=DEVICE)  # [2]
+    group = 4
+    total = 9
+
+    fn = ops_rec.ascendc.attention.build_hstu_mask_arbitrary_func
+
+    # ctx_lens 维度不满足 [bs]
+    with pytest.raises(RuntimeError):
+        fn(offsets, torch.cat([ctx, ctx[:1]], 0), tgt, group, total)
+    # tgt_lens 维度不满足 [bs]
+    with pytest.raises(RuntimeError):
+        fn(offsets, ctx, torch.cat([tgt, tgt[:1]], 0), group, total)
+    # offsets 非 1D
+    with pytest.raises(RuntimeError):
+        fn(offsets.unsqueeze(0), torch.cat([ctx, ctx[:1]], 0), tgt, group, total)
+    # total_seqlen 与 offsets[-1] 不一致
+    with pytest.raises(RuntimeError):
+        fn(offsets, ctx, tgt, group, total + 1)
+    with pytest.raises(RuntimeError):
+        fn(offsets, ctx, tgt, group, total - 1)
+
+    # 合法输入不报错
+    y = fn(offsets, ctx, tgt, group, total)
+    assert y.shape == (1, 1, total, 4)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-sv"])

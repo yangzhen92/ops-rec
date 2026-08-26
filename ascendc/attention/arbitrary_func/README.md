@@ -56,11 +56,11 @@ SIMT 内核由 `op_kernel/build_hstu_mask_arbitrary_func_kernel.h` 的 `SimtBuil
 ## 约束说明
 
 - 仅支持 INT32 数据类型
-- `offsets`、`ctx_lens`、`tgt_lens` 必须为 1D
+- `offsets`、`ctx_lens`、`tgt_lens` 必须为 1D，且维度须满足 `[batch_size+1]` / `[batch_size]` / `[batch_size]`（`batch_size = offsets.size(0)-1`），不满足时算子直接报错返回
 - `total_seqlen` 须等于 `offsets[-1]`
 - 该算子需要在 NPU 设备上运行
 
-> 通过 torch 接口调用时，扩展层还会额外校验：输入 tensor 必须已定义且非空、所有输入 tensor 必须位于同一 NPU 设备。详见 [build_hstu_mask_arbitrary_func 接口文档](./docs/torch_build_hstu_mask_arbitrary_func.md)。
+> 通过 torch 接口调用时，扩展层还会额外校验：输入 tensor 必须已定义且非空、所有输入 tensor 必须位于同一 NPU 设备、三个输入 shape 满足 `[batch_size+1]` / `[batch_size]` / `[batch_size]`、`total_seqlen` 等于 `offsets[-1]`。详见 [build_hstu_mask_arbitrary_func 接口文档](./docs/torch_build_hstu_mask_arbitrary_func.md)。
 
 ## 调用示例
 

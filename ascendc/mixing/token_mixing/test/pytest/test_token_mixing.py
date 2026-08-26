@@ -22,21 +22,17 @@
 - 调用改为 ops_rec.ascendc.mixing.token_mixing
 - 额外增加 graph（与 eager 同参）与 ci 冒烟
 
-本文件名为 test_token_mixing1.py，与既有 test_token_mixing.py 区分；验收可优先跑本文件。
 """
 
 import sys
-
 import numpy as np
 import pytest
 import torch
-
 import ops_rec
 
 torch.npu.config.allow_internal_format = False
 torch._dynamo.config.cache_size_limit = 256
 
-# 与 RecSDK 一致
 RECSDK_B = [1, 45, 256, 512, 1024]
 RECSDK_S = [128, 256, 338, 507, 512, 1024]
 DEFAULT_EPS = 1e-7

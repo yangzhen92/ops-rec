@@ -8,6 +8,10 @@ set(OPS_REC_OPS_ATLAS_950
     disentangle_attention
     block_sparse_func
     arbitrary_func
+    hstu_v1
+    hstu_v2
+    reverse_sequence
+    in_linear_silu
     token_mixing
 )
 
@@ -15,13 +19,18 @@ set(OPS_REC_OPS_ATLAS_950
 set(OPS_REC_OPS_ATLAS_A3
     ln_mul
     disentangle_attention
-    token_mixing
+    hstu_v1
+    reverse_sequence
+    in_linear_silu
 )
 
 # ================================ A2 ops ===================================
 set(OPS_REC_OPS_ATLAS_A2
     ln_mul
     disentangle_attention
+    hstu_v1
+    reverse_sequence
+    in_linear_silu
     token_mixing
 )
 

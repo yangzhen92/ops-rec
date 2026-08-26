@@ -1,4 +1,4 @@
-/* Copyright (c) Huawei Technologies Co., Ltd. 2025. All rights reserved.
+/* Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -12,8 +12,6 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
         limitations under the License.
 ==============================================================================*/
-
-#include <cstdio>
 
 #include <torch/csrc/autograd/custom_function.h>
 #include <torch/library.h>
@@ -43,15 +41,6 @@ constexpr int EXPECTED_DIM_1D = 1;
 at::Tensor token_mixing_impl_npu(const at::Tensor& x, const at::Tensor& gamma, const at::Tensor& beta,
                                  const double epsilon)
 {
-    // ========== [DEBUG_PRINT] BEGIN PTA (上库前整段删除，可 grep DEBUG_PRINT) ==========
-    fprintf(stderr,
-            "[DEBUG_PRINT][ops-rec][token_mixing][PTA] enter token_mixing_impl_npu "
-            "x=[%lld,%lld,%lld] gamma=[%lld] beta=[%lld] epsilon=%g\n",
-            static_cast<long long>(x.size(0)), static_cast<long long>(x.size(1)),
-            static_cast<long long>(x.size(2)), static_cast<long long>(gamma.size(0)),
-            static_cast<long long>(beta.size(0)), epsilon);
-    fflush(stderr);
-    // ========== [DEBUG_PRINT] END PTA ==========
 
     check_tensor_non_empty(x, "x");
     check_tensor_dim(x, EXPECTED_DIM_3D, "x");
@@ -73,22 +62,8 @@ at::Tensor token_mixing_impl_npu(const at::Tensor& x, const at::Tensor& gamma, c
     // 输出 shape [B, H, S]
     at::Tensor y = at::empty({x.size(0), x.size(2), x.size(1)}, x.options());
 
-    // ========== [DEBUG_PRINT] BEGIN PTA (上库前整段删除) ==========
-    fprintf(stderr,
-            "[DEBUG_PRINT][ops-rec][token_mixing][PTA] call EXEC_NPU_CMD(aclnnTokenMixing) "
-            "x_t=[%lld,%lld,%lld] y=[%lld,%lld,%lld] ns=ops_rec\n",
-            static_cast<long long>(x_t_conti.size(0)), static_cast<long long>(x_t_conti.size(1)),
-            static_cast<long long>(x_t_conti.size(2)), static_cast<long long>(y.size(0)),
-            static_cast<long long>(y.size(1)), static_cast<long long>(y.size(2)));
-    fflush(stderr);
-    // ========== [DEBUG_PRINT] END PTA ==========
 
     EXEC_NPU_CMD(aclnnTokenMixing, x_conti, x_t_conti, gamma_conti, beta_conti, epsilon, y);
-
-    // ========== [DEBUG_PRINT] BEGIN PTA (上库前整段删除) ==========
-    fprintf(stderr, "[DEBUG_PRINT][ops-rec][token_mixing][PTA] leave token_mixing_impl_npu ok\n");
-    fflush(stderr);
-    // ========== [DEBUG_PRINT] END PTA ==========
 
     return y;
 }
@@ -122,10 +97,6 @@ namespace {
 at::Tensor token_mixing_meta(const at::Tensor& x, const at::Tensor& gamma, const at::Tensor& beta,
                              const double /*epsilon*/)
 {
-    // ========== [DEBUG_PRINT] BEGIN PTA Meta (上库前整段删除) ==========
-    fprintf(stderr, "[DEBUG_PRINT][ops-rec][token_mixing][PTA-Meta] enter token_mixing_meta\n");
-    fflush(stderr);
-    // ========== [DEBUG_PRINT] END PTA Meta ==========
 
     TORCH_CHECK(x.dim() == EXPECTED_DIM_3D, "x must be 3D");
     TORCH_CHECK(gamma.dim() == EXPECTED_DIM_1D, "gamma must be 1D");

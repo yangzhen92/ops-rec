@@ -1,4 +1,4 @@
-/* Copyright (c) Huawei Technologies Co., Ltd. 2025. All rights reserved.
+/* Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@ See the License for the specific language governing permissions and
 
 #include "token_mixing_tiling.h"
 
-#include <cstdio>
 #include <limits>
 #include <map>
 
@@ -39,10 +38,6 @@ constexpr uint64_t MEM_ONE_SIZE = 3;
 
 static ge::graphStatus TilingFunc(gert::TilingContext* context)
 {
-    // ========== [DEBUG_PRINT] BEGIN HOST Tiling (上库前整段删除，可 grep DEBUG_PRINT) ==========
-    fprintf(stderr, "[DEBUG_PRINT][ops-rec][token_mixing][HOST] enter TilingFunc vendor=token_mixing\n");
-    fflush(stderr);
-    // ========== [DEBUG_PRINT] END HOST Tiling ==========
 
     // 入参校验与 32 字节对齐计
     OPS_LOG_E_IF_NULL("context", context, return ge::GRAPH_FAILED);
@@ -149,18 +144,6 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
     tilingData.SaveToBuffer(context->GetRawTilingData()->GetData(), context->GetRawTilingData()->GetCapacity());
     context->GetRawTilingData()->SetDataSize(tilingData.GetDataSize());
 
-    // ========== [DEBUG_PRINT] BEGIN HOST Tiling (上库前整段删除) ==========
-    fprintf(stderr,
-            "[DEBUG_PRINT][ops-rec][token_mixing][HOST] tiling done "
-            "x=[%llu,%llu,%llu] padH=%llu eps=%g coreNum=%u perCoreRows=%llu "
-            "formerRows=%llu tailRows=%llu\n",
-            static_cast<unsigned long long>(xShape[DIM0]), static_cast<unsigned long long>(xShape[DIM1]),
-            static_cast<unsigned long long>(xShape[DIM2]), static_cast<unsigned long long>(xDim2WithPadding),
-            static_cast<double>(*epsilon), static_cast<unsigned>(coreNum),
-            static_cast<unsigned long long>(perCoreComputeRows), static_cast<unsigned long long>(formerCoreRows),
-            static_cast<unsigned long long>(tailCoreRows));
-    fflush(stderr);
-    // ========== [DEBUG_PRINT] END HOST Tiling ==========
 
     return ge::GRAPH_SUCCESS;
 }
@@ -186,16 +169,6 @@ static ge::graphStatus InferShape(gert::InferShapeContext* context)
     yShape->SetDim(DIM0, xShape->GetDim(DIM0));
     yShape->SetDim(DIM1, xShape->GetDim(DIM2));
     yShape->SetDim(DIM2, xShape->GetDim(DIM1));
-
-    // ========== [DEBUG_PRINT] BEGIN HOST InferShape (上库前整段删除) ==========
-    fprintf(stderr,
-            "[DEBUG_PRINT][ops-rec][token_mixing][HOST] InferShape "
-            "x=[%lld,%lld,%lld] -> y=[%lld,%lld,%lld]\n",
-            static_cast<long long>(xShape->GetDim(DIM0)), static_cast<long long>(xShape->GetDim(DIM1)),
-            static_cast<long long>(xShape->GetDim(DIM2)), static_cast<long long>(yShape->GetDim(DIM0)),
-            static_cast<long long>(yShape->GetDim(DIM1)), static_cast<long long>(yShape->GetDim(DIM2)));
-    fflush(stderr);
-    // ========== [DEBUG_PRINT] END HOST InferShape ==========
 
     return GRAPH_SUCCESS;
 }

@@ -1,4 +1,4 @@
-/* Copyright (c) Huawei Technologies Co., Ltd. 2025. All rights reserved.
+/* Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -360,7 +360,4 @@ extern "C" __global__ __aicore__ void token_mixing(GM_ADDR x, GM_ADDR x_t, GM_AD
         // 调用执行接口，启动流水线计算
         kernel.Process();
     }
-    // 注意：不要在此用 AscendC printf。device printf 异步刷 dump 时，
-    // torch/aclnn 进程退出阶段会稳定 Segmentation fault（算子本身已算完）。
-    // 路径确认用 PTA/HOST 的 fprintf；kernel 是否进了看 PTA leave + 数值结果即可。
 }

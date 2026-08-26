@@ -121,8 +121,22 @@ def _dense_backward(ctx, grad):
 
 
 def _jagged_equal_setup_context(ctx, inputs, output=None):
-    (q, k, v, mask, attn_bias, mask_type, max_seq_len, silu_scale, seq_offset, num_context, num_target,
-     target_group_size, alpha, deterministic) = _unpack(inputs, _JAGGED_EQUAL_NARGS)
+    (
+        q,
+        k,
+        v,
+        mask,
+        attn_bias,
+        mask_type,
+        max_seq_len,
+        silu_scale,
+        seq_offset,
+        num_context,
+        num_target,
+        target_group_size,
+        alpha,
+        deterministic,
+    ) = _unpack(inputs, _JAGGED_EQUAL_NARGS)
     ctx.save_for_backward(q, k, v, mask, attn_bias, seq_offset, num_context, num_target)
     ctx.mask_type = mask_type
     ctx.max_seq_len = max_seq_len
@@ -183,8 +197,24 @@ def _jagged_equal_backward(ctx, grad):
 
 
 def _jagged_delta_setup_context(ctx, inputs, output=None):
-    (q, k, v, mask, attn_bias, mask_type, max_seq_len, max_seq_len_k, silu_scale, seq_offset, seq_offset_k,
-     num_context, num_target, target_group_size, alpha, deterministic) = _unpack(inputs, _JAGGED_DELTA_NARGS)
+    (
+        q,
+        k,
+        v,
+        mask,
+        attn_bias,
+        mask_type,
+        max_seq_len,
+        max_seq_len_k,
+        silu_scale,
+        seq_offset,
+        seq_offset_k,
+        num_context,
+        num_target,
+        target_group_size,
+        alpha,
+        deterministic,
+    ) = _unpack(inputs, _JAGGED_DELTA_NARGS)
     ctx.save_for_backward(q, k, v, mask, attn_bias, seq_offset, seq_offset_k, num_context, num_target)
     ctx.mask_type = mask_type
     ctx.max_seq_len = max_seq_len

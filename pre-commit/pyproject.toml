@@ -95,6 +95,11 @@ disable = [
     "wrong-import-order",
     "wrong-import-position",
     "import-error",
+
+    # duplicate-code（R0801）：similarities 检查器的消息绕过文件级
+    # disable 注释（无法用 "# pylint: disable=duplicate-code" 屏蔽），
+    # 且仓库测试/example 间天然存在参数化样板代码的相似片段，全局禁用。
+    "duplicate-code",
 ]
 
 # ==============================================

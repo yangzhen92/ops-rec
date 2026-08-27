@@ -91,7 +91,7 @@ aclnnStatus：返回状态码，成功返回 `ACLNN_SUCCESS`。
 ## 约束说明
 
 - 仅支持 INT32 数据类型
-- `offsets`、`ctxLens`、`tgtLens` 必须为 1D，且维度须满足 `[batch_size+1]` / `[batch_size]` / `[batch_size]`（`batch_size = offsets.size(0)-1`），否则算子执行（tiling 阶段）报错返回
+- `offsets`、`ctxLens`、`tgtLens` 必须为 1D，且`ctxLens` / `tgtLens`维度须满足 `[batch_size]` / `[batch_size]`（`batch_size = offsets.size(0)-1`），否则算子执行（tiling 阶段）报错返回
 - `totalSeqLen` 须等于 `offsets[-1]`
 - 该算子需要在 NPU 设备上运行
 - `targetGroupSize` 须大于 0

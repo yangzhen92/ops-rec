@@ -46,9 +46,9 @@ aclnnStatus aclnnTokenMixing(
 
 > 头文件名以编译 autogen 产物为准（通常为 `aclnn_token_mixing.h`）。属性 `epsilon` 的 C API 形参类型以生成头文件为准。
 
-## aclnnTokenMixingGetWorkspaceSize
+## aclnnTokenMixingGetWorkspaceSize 接口
 
-### 参数说明
+### aclnnTokenMixingGetWorkspaceSize 参数说明
 
 | 参数名 | 输入/输出 | 描述 | 数据类型 | 数据格式 |
 |--------|---------|------|---------|---------|
@@ -61,16 +61,16 @@ aclnnStatus aclnnTokenMixing(
 | workspaceSize（uint64_t*） | 输出 | Device 侧 workspace 字节数 | — | — |
 | executor（aclOpExecutor**） | 输出 | 算子执行器 | — | — |
 
-### 返回值
+### aclnnTokenMixingGetWorkspaceSize 返回值
 
 | 返回值 | 错误码 | 描述 |
 |--------|-------|------|
 | ACLNN_ERR_PARAM_NULLPTR | 161001 | 必选输入/输出为空指针 |
 | ACLNN_ERR_PARAM_INVALID | 161002 | 数据类型或格式不在支持范围 |
 
-## aclnnTokenMixing
+## aclnnTokenMixing 接口
 
-### 参数说明
+### aclnnTokenMixing 参数说明
 
 | 参数名 | 输入/输出 | 描述 |
 |--------|---------|------|
@@ -79,7 +79,7 @@ aclnnStatus aclnnTokenMixing(
 | executor | 输入 | 算子执行器 |
 | stream | 输入 | 执行 Stream |
 
-### 返回值
+### aclnnTokenMixing 返回值
 
 `aclnnStatus`：成功返回 `ACLNN_SUCCESS`。
 

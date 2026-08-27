@@ -37,8 +37,7 @@ def torch_compiled(model, **kwargs):
 
 def build_sla_mask_arbitrary_func_cpu(offsets, total_seqlen, sla_k1, sla_k2, contextual_seq_len,
                                       num_targets=None):
-    """CPU 参考（numpy，v2 布局 n_func=4），结构与 kernel 一致。语义见 agent_task_sla_mask.md §3。
-
+    """
     history token: c0=min(pos+1,effK2) / c1=max(effK2,pos-K1+1) / c2=pos+1
     target token : c0=c1=c2=H（只见 [0,H)，连自身不可见）
     af[q] = [S, S+c0, S+c1, S+c2]（全局坐标）

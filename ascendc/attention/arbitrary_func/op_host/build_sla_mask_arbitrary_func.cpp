@@ -26,6 +26,18 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
 {
     const gert::StorageShape* offsetsShape = context->GetInputShape(0);
     OPS_LOG_E_IF_NULL("offsetsShape", offsetsShape, return ge::GRAPH_FAILED);
+    const gert::StorageShape* numTargetsShape = context->GetInputShape(1);
+    OPS_LOG_E_IF_NULL("numTargetsShape", numTargetsShape, return ge::GRAPH_FAILED);
+
+    if (offsetsShape->GetStorageShape().GetDimNum() != 1) {
+        OPS_LOG_E("[ERROR]", "offsets must be 1D");
+        return ge::GRAPH_FAILED;
+    }
+    if (numTargetsShape->GetStorageShape().GetDimNum() != 1) {
+        OPS_LOG_E("[ERROR]", "numTargets must be 1D");
+        return ge::GRAPH_FAILED;
+    }
+
     int32_t batchSize = static_cast<int32_t>(offsetsShape->GetStorageShape().GetDim(0)) - 1;
 
     const gert::RuntimeAttrs* attrs = context->GetAttrs();

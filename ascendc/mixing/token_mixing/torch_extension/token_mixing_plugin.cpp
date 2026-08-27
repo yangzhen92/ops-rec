@@ -27,7 +27,6 @@ See the License for the specific language governing permissions and
 #define OPS_REC_CUST_VENDOR "token_mixing"
 #define OPS_REC_CUST_VENDORS "token_mixing"
 
-
 #include "pytorch_npu_helper.hpp"
 
 using torch::autograd::AutogradContext;
@@ -41,7 +40,6 @@ constexpr int EXPECTED_DIM_1D = 1;
 at::Tensor token_mixing_impl_npu(const at::Tensor& x, const at::Tensor& gamma, const at::Tensor& beta,
                                  const double epsilon)
 {
-
     check_tensor_non_empty(x, "x");
     check_tensor_dim(x, EXPECTED_DIM_3D, "x");
     check_tensor_non_empty(gamma, "gamma");
@@ -61,7 +59,6 @@ at::Tensor token_mixing_impl_npu(const at::Tensor& x, const at::Tensor& gamma, c
     auto beta_conti = beta.contiguous();
     // 输出 shape [B, H, S]
     at::Tensor y = at::empty({x.size(0), x.size(2), x.size(1)}, x.options());
-
 
     EXEC_NPU_CMD(aclnnTokenMixing, x_conti, x_t_conti, gamma_conti, beta_conti, epsilon, y);
 
@@ -97,7 +94,6 @@ namespace {
 at::Tensor token_mixing_meta(const at::Tensor& x, const at::Tensor& gamma, const at::Tensor& beta,
                              const double /*epsilon*/)
 {
-
     TORCH_CHECK(x.dim() == EXPECTED_DIM_3D, "x must be 3D");
     TORCH_CHECK(gamma.dim() == EXPECTED_DIM_1D, "gamma must be 1D");
     TORCH_CHECK(beta.dim() == EXPECTED_DIM_1D, "beta must be 1D");

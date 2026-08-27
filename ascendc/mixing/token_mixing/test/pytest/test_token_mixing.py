@@ -89,9 +89,7 @@ def test_token_mixing_eager(B, S, device):
 @pytest.mark.parametrize("device", ["npu:0"])
 def test_token_mixing_graph(B, S, device):
     """graph：与 eager 完全相同的 B/S/device/精度。"""
-    compiled_fn = torch_compiled(
-        ops_rec.ascendc.mixing.token_mixing, dynamic=None, fullgraph=False, backend="inductor"
-    )
+    compiled_fn = torch_compiled(ops_rec.ascendc.mixing.token_mixing, dynamic=None, fullgraph=False, backend="inductor")
     _run_recsdk_case(B, S, device, compiled_fn=compiled_fn)
 
 

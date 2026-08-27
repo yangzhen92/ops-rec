@@ -93,7 +93,7 @@ public:
         this->pipe = pipe;
         bshLength_ = args->perCoreComputeRows *
                      (args->xDim2WithPadding);  // 满载情况下，单次搬运的元素总数（行数 * 对齐后的列数）
-        bsLength_ = args->perCoreComputeRows;   // 满载情况下，单次搬运的行数
+        bsLength_ = args->perCoreComputeRows;  // 满载情况下，单次搬运的行数
 
         // 当前核的index
         int64_t blockIdx = GetBlockIdx();                   // 当前ai core 的硬件索引id
@@ -244,7 +244,7 @@ private:
         }
         // (x-mean) * (x-mean)
         Sub(tmpLocal, addTmpLocal, tmpLocal, rowCount * args->xDim2WithPadding);  // 计算 x - mean存入tmpLocal
-        Mul(yLocal, tmpLocal, tmpLocal, rowCount * args->xDim2WithPadding);       // 计算 (x-mean) * (x-mean)存入yLocal
+        Mul(yLocal, tmpLocal, tmpLocal, rowCount * args->xDim2WithPadding);  // 计算 (x-mean) * (x-mean)存入yLocal
         // 计算var
         Muls(yLocal, yLocal, 1.0f / args->xDim2, bshLength_);
         ReduceSum<float, Pattern::Reduce::AR, false>(rstdLocal, yLocal, shape, true);

@@ -91,12 +91,13 @@ public:
         // 入参指针保存
         this->args = args;
         this->pipe = pipe;
-        bshLength_ = args->perCoreComputeRows * (args->xDim2WithPadding); // 满载情况下，单次搬运的元素总数（行数 * 对齐后的列数）
-        bsLength_ = args->perCoreComputeRows; // 满载情况下，单次搬运的行数
+        bshLength_ = args->perCoreComputeRows *
+                     (args->xDim2WithPadding);  // 满载情况下，单次搬运的元素总数（行数 * 对齐后的列数）
+        bsLength_ = args->perCoreComputeRows;   // 满载情况下，单次搬运的行数
 
         // 当前核的index
-        int64_t blockIdx = GetBlockIdx(); // 当前ai core 的硬件索引id
-        bool isTailCore = (blockIdx == args->coreNum - 1); // 判断当前核是否为尾核
+        int64_t blockIdx = GetBlockIdx();                   // 当前ai core 的硬件索引id
+        bool isTailCore = (blockIdx == args->coreNum - 1);  // 判断当前核是否为尾核
         // 根据是否是尾核，从 args 中认领当前核需要处理的总行数、满载循环次数、剩余不足满载的行数
         coreRows_ = isTailCore ? args->tailCoreRows : args->formerCoreRows;
         loopCount_ = isTailCore ? args->tailLoopCount : args->formerLoopCount;
@@ -130,7 +131,7 @@ public:
         pipe->InitBuffer(oneQueue, 1, bsLength_ * sizeof(T));
     }
 
-    __aicore__ inline void Process() // 流水线控制
+    __aicore__ inline void Process()  // 流水线控制
     {
         // 如果当前核没有分到任务，直接退出（处理极小数据的情况）
         if (coreRows_ == 0) {
@@ -138,9 +139,9 @@ public:
         }
         // 满载循环处理
         for (uint64_t i = 0; i < loopCount_; ++i) {
-            CopyIn(i, args->perCoreComputeRows);  // 搬入满载行数的数据到 UB
-            Compute(args->perCoreComputeRows);    // 在 UB 内进行计算
-            CopyOut(i, args->perCoreComputeRows); // 把计算结果从 UB 搬回 GM
+            CopyIn(i, args->perCoreComputeRows);   // 搬入满载行数的数据到 UB
+            Compute(args->perCoreComputeRows);     // 在 UB 内进行计算
+            CopyOut(i, args->perCoreComputeRows);  // 把计算结果从 UB 搬回 GM
         }
         // 处理最后剩下的不足一次满载的剩余行数据
         if (remainRows_ > 0) {
@@ -151,7 +152,7 @@ public:
     }
 
 private:
-    __aicore__ inline void CopyIn(uint64_t iterIdx, uint64_t rowCount) //数据搬入
+    __aicore__ inline void CopyIn(uint64_t iterIdx, uint64_t rowCount)  // 数据搬入
     {
         // 核内偏移
         // 计算当前循环在 Global Memory 中的绝对起步偏移量：
@@ -161,9 +162,9 @@ private:
 
         // 从队列中分配本地 (UB) 张量空间
         LocalTensor<T> xLocal = inQueue.AllocTensor<T>();
-        Duplicate(xLocal, 0.0f, bshLength_); // 初始化为0   
+        Duplicate(xLocal, 0.0f, bshLength_);  // 初始化为0
         LocalTensor<T> xTLocal = inTQueue.AllocTensor<T>();
-        Duplicate(xTLocal, 0.0f, bshLength_); // 初始化为0
+        Duplicate(xTLocal, 0.0f, bshLength_);  // 初始化为0
         LocalTensor<T> gammaLocal = inQueueGamma.AllocTensor<T>();
         LocalTensor<T> betaLocal = inQueueBeta.AllocTensor<T>();
         // 同步所有核，确保所有核都完成本地张量的分配
@@ -176,9 +177,9 @@ private:
             CpGm2Local(xTLocal, xTGT[offsetInCore], copyLen);
         } else {
             // 如果不对齐，必须按行搬运，并在每行的末尾补齐 Padding 零
-            uint64_t xDataLen = args->xDim2 * sizeof(float); // 每行的实际字节数
+            uint64_t xDataLen = args->xDim2 * sizeof(float);  // 每行的实际字节数
             DataCopyExtParams params{1, static_cast<uint32_t>(xDataLen), 0, 0, 0};
-            DataCopyPadExtParams<float> padParams{true, 0, 0, 0}; // padding
+            DataCopyPadExtParams<float> padParams{true, 0, 0, 0};  // padding
             for (uint64_t i = 0; i < rowCount; ++i) {
                 // 逐行搬运：目标地址跳跃 xDim2WithPadding，源地址跳跃原始 xDim2
                 DataCopyPad(xLocal[i * args->xDim2WithPadding], xGT[offsetInCore + i * args->xDim2], params, padParams);
@@ -196,14 +197,14 @@ private:
         inQueueBeta.EnQue(betaLocal);
     }
 
-    __aicore__ inline void Compute(uint64_t rowCount) //计算阶段
+    __aicore__ inline void Compute(uint64_t rowCount)  // 计算阶段
     {
         // 输入队列出队， 从队列中获取本地 (UB) 张量
         LocalTensor<T> xLocal = inQueue.DeQue<T>();
         LocalTensor<T> xTLocal = inTQueue.DeQue<T>();
         LocalTensor<T> gammaLocal = inQueueGamma.DeQue<T>();
         LocalTensor<T> betaLocal = inQueueBeta.DeQue<T>();
-        //分配临时计算张量和输出张量
+        // 分配临时计算张量和输出张量
         LocalTensor<T> yLocal = outQueue.AllocTensor<T>();
         LocalTensor<float> meanLocal = outQueueMean.AllocTensor<float>();
         LocalTensor<float> rstdLocal = outQueueRstd.AllocTensor<float>();
@@ -211,10 +212,10 @@ private:
         LocalTensor<T> tmpLocal = tmpQueue.AllocTensor<T>();
         LocalTensor<T> tmpMulLocal = tmpMulQueue.AllocTensor<T>();
         LocalTensor<T> oneLocal = oneQueue.AllocTensor<T>();
-        Duplicate(oneLocal, 1.0f, rowCount); // 全为 1 的向量，用于后续 1/sqrt(x) 的被除数
+        Duplicate(oneLocal, 1.0f, rowCount);  // 全为 1 的向量，用于后续 1/sqrt(x) 的被除数
 
         // 第一步：向量加法 addTmpLocal = x + x_t
-        Add(addTmpLocal, xLocal, xTLocal, bshLength_); // 计算 x + x_t
+        Add(addTmpLocal, xLocal, xTLocal, bshLength_);  // 计算 x + x_t
         // shape定义
         uint32_t meanShape[2] = {static_cast<uint32_t>(rowCount), 1};
 #ifdef SUPPORT_950
@@ -225,7 +226,7 @@ private:
         // layerNorm拆分
         // 计算平均值mean
         Muls(tmpMulLocal, addTmpLocal, 1.0f / args->xDim2, bshLength_);
-        PipeBarrier<PIPE_V>(); // 矢量计算同步屏障
+        PipeBarrier<PIPE_V>();  // 矢量计算同步屏障
         // 沿行方向进行 ReduceSum，得到每一行的 mean
         ReduceSum<float, Pattern::Reduce::AR, false>(meanLocal, tmpMulLocal, shape, true);
         PipeBarrier<PIPE_V>();
@@ -242,8 +243,8 @@ private:
             }
         }
         // (x-mean) * (x-mean)
-        Sub(tmpLocal, addTmpLocal, tmpLocal, rowCount * args->xDim2WithPadding); // 计算 x - mean存入tmpLocal
-        Mul(yLocal, tmpLocal, tmpLocal, rowCount * args->xDim2WithPadding); // 计算 (x-mean) * (x-mean)存入yLocal
+        Sub(tmpLocal, addTmpLocal, tmpLocal, rowCount * args->xDim2WithPadding);  // 计算 x - mean存入tmpLocal
+        Mul(yLocal, tmpLocal, tmpLocal, rowCount * args->xDim2WithPadding);       // 计算 (x-mean) * (x-mean)存入yLocal
         // 计算var
         Muls(yLocal, yLocal, 1.0f / args->xDim2, bshLength_);
         ReduceSum<float, Pattern::Reduce::AR, false>(rstdLocal, yLocal, shape, true);
@@ -263,7 +264,7 @@ private:
         Broadcast<float, 2, 0>(tmpLocal, betaLocal, trueShape, gammaShape);
         Add(yLocal, yLocal, tmpLocal, rowCount * args->xDim2WithPadding);
 
-        outQueue.EnQue<T>(yLocal); // 将计算结果推入输出队列，供 CopyOut 阶段使用
+        outQueue.EnQue<T>(yLocal);  // 将计算结果推入输出队列，供 CopyOut 阶段使用
 
         // 释放输入和临时张量的 UB 空间，给下一轮循环复用
         inQueue.FreeTensor(xLocal);
@@ -284,7 +285,7 @@ private:
         // 计算写入 GM 的起始绝对偏移量
         uint64_t offsetInCore = startRow_ * args->xDim2 + iterIdx * args->perCoreComputeRows * args->xDim2;
         uint64_t copyLen = rowCount * args->xDim2;
-        LocalTensor<T> yLocal = outQueue.DeQue<T>(); // 从输出队列中取出包含最终结果的张量
+        LocalTensor<T> yLocal = outQueue.DeQue<T>();  // 从输出队列中取出包含最终结果的张量
         // 根据是否做了 32 字节补齐，决定连续写回还是跳跃式按行写回
         if (args->xDim2 == args->xDim2WithPadding) {
             // 若对齐，直接整块数据拷贝回 GM
@@ -324,10 +325,11 @@ private:
 };
 }  // namespace TokenMixing_Kernel
 
-// 内核入口函数 参数全部是物理内存地址 
+// 内核入口函数 参数全部是物理内存地址
 // 把 Host 存入共享内存的 Tiling 数据解包，实例化计算类，并启动流水线
 extern "C" __global__ __aicore__ void token_mixing(GM_ADDR x, GM_ADDR x_t, GM_ADDR gamma, GM_ADDR beta, GM_ADDR y,
-                                                   GM_ADDR workspace, GM_ADDR tiling) //运行于 AI Core 上的全局内核函数
+                                                   GM_ADDR workspace,
+                                                   GM_ADDR tiling)  // 运行于 AI Core 上的全局内核函数
 {
     // 从 tiling 物理地址中，反序列化提取出 Host 端计算好的排班表数据
     GET_TILING_DATA(tiling_data, tiling);
@@ -351,8 +353,8 @@ extern "C" __global__ __aicore__ void token_mixing(GM_ADDR x, GM_ADDR x_t, GM_AD
                                              tiling_data.tailCoreRows,
                                              tiling_data.tailLoopCount,
                                              tiling_data.tailRemainRows};
-    TPipe pipe; // 实例化同步管道，用于控制异步数据搬运和计算之间的同步
-    if (TILING_KEY_IS(0)) { // 对应 Host 端设置的 TilingKey（当前只支持 float32，即 0
+    TPipe pipe;              // 实例化同步管道，用于控制异步数据搬运和计算之间的同步
+    if (TILING_KEY_IS(0)) {  // 对应 Host 端设置的 TilingKey（当前只支持 float32，即 0
         // 实例化具体的 TokenMixing 算子类，模板参数为 float
         TokenMixing_Kernel::TokenMixing<float> kernel;
         // 调用初始化接口，传入参数和管道指针

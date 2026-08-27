@@ -38,7 +38,6 @@ constexpr uint64_t MEM_ONE_SIZE = 3;
 
 static ge::graphStatus TilingFunc(gert::TilingContext* context)
 {
-
     // 入参校验与 32 字节对齐计
     OPS_LOG_E_IF_NULL("context", context, return ge::GRAPH_FAILED);
     OPS_LOG_E_IF_NULL("xShape", context->GetInputShape(INPUT_X_INDEX), return ge::GRAPH_FAILED);
@@ -81,14 +80,15 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
     OPS_LOG_E_IF_NULL("currentWorkspace", currentWorkspace, return ge::GRAPH_FAILED);
     size_t systemWorkspacesSize = ascendPlatform.GetLibApiWorkSpaceSize();
     currentWorkspace[0] = systemWorkspacesSize;
-    size_t coreNum = ascendPlatform.GetCoreNumAiv(); // 获取当前npu 的 core核数
-    OPS_LOG_E_IF(coreNum == 0, context, return ge::GRAPH_FAILED, "[ERROR] TokenMixing coreNum is invaild");
+    size_t coreNum = ascendPlatform.GetCoreNumAiv();  // 获取当前npu 的 core核数
+    OPS_LOG_E_IF(coreNum == 0, context, return ge::GRAPH_FAILED, "[ERROR] TokenMixing coreNum is invalid");
     // ub
     uint64_t ubCanUsed;
     ascendPlatform.GetCoreMemSize(platform_ascendc::CoreMemType::UB, ubCanUsed);
-    ubCanUsed -= RESERVERD_UB_SIZE; // 获取 UB 物理总大小，并扣除 20KB 的预留安全空间
+    ubCanUsed -= RESERVERD_UB_SIZE;  // 获取 UB 物理总大小，并扣除 20KB 的预留安全空间
 
-    // 计算每行结果需要的字节数, x(H) + transpose(H) + add(H) + Mul(H) + gamma(H) + beta(H) + tmp(H) + mean(1) + rstd(1) + one(1)
+    // 计算每行结果需要的字节数, x(H) + transpose(H) + add(H) + Mul(H) + gamma(H) + beta(H) + tmp(H) + mean(1) + rstd(1)
+    // + one(1)
     // + output(H)
     // 算单行数据在 UB 里的内存占用    (8 个矢量向量 + 3 个标量) * 对齐后的长度 * 4 字节
     uint64_t perRowMemory = (MEM_XDIM2_SIZE * xDim2WithPadding + MEM_ONE_SIZE) * sizeof(float);
@@ -119,7 +119,7 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
     // 校验数据是否回绕, 最大偏移地址为xShape[DIM0] * xShape[DIM1] * xDim2WithPadding, xShape[DIM1] *
     // xDim2WithPadding 不会超过uint32最大值
     OPS_LOG_E_IF((std::numeric_limits<uint64_t>::max() / xShape[DIM0] <= xShape[DIM1] * xDim2WithPadding) ||
-                 (std::numeric_limits<uint64_t>::max() / perCoreComputeRows <= xDim2WithPadding),
+                     (std::numeric_limits<uint64_t>::max() / perCoreComputeRows <= xDim2WithPadding),
                  context, return ge::GRAPH_FAILED, "[ERROR] TokenMixing shape out of range");
 
     // 收尾封包与下发阶段
@@ -143,7 +143,6 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
     OPS_LOG_E_IF_NULL("raw tilingData", context->GetRawTilingData(), return ge::GRAPH_FAILED);
     tilingData.SaveToBuffer(context->GetRawTilingData()->GetData(), context->GetRawTilingData()->GetCapacity());
     context->GetRawTilingData()->SetDataSize(tilingData.GetDataSize());
-
 
     return ge::GRAPH_SUCCESS;
 }

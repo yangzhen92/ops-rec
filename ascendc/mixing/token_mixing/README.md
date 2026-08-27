@@ -20,6 +20,7 @@ x_t = permute(x, [0, 2, 1])          # [B, S, H] -> [B, H, S]
 y   = LayerNorm(x + x_t)             # 沿最后一维
 LayerNorm(z) = rstd * (z - mean) * gamma + beta
 ```
+
 ![token_mixing 示意图](./docs/token_mixing示意图.png)
 
 对应接口：
@@ -27,13 +28,12 @@ LayerNorm(z) = rstd * (z - mean) * gamma + beta
 - aclnn 接口：`aclnnTokenMixing`
 - torch 接口：`ops_rec.ascendc.mixing.token_mixing`
 
-# 算子实现原理
+## 算子实现原理
 
 1. 输入张量x是一个三维张量(B,S,H)其中S与H相同
-2. 输入张量x_t为x后两维转置的转置矩阵
+2. 输入张量x_t为x后两维转置后的矩阵
 3. 算子将x与x_t相加得到tmp
 4. 输出张量y为对tmp最后一维归一化的结果(layernorm)
-
 
 ## 参数说明
 
@@ -43,7 +43,7 @@ LayerNorm(z) = rstd * (z - mean) * gamma + beta
 | gamma | 输入 | Tensor | FLOAT32 | ND | [H] | LayerNorm 权重，仅支持一维张量 |
 | beta | 输入 | Tensor | FLOAT32 | ND | [H] | LayerNorm 偏置，仅支持一维张量 |
 | epsilon | 输入 (属性) | float | — | — | — |极小数，防除零，默认 `1e-7` |
-| y | 输出 | Tensor | FLOAT32 | ND | [B, H, S] | 输出数据，融合算子归一化结果张量 |
+| y | 输出 | Tensor | FLOAT32 | ND | [B, H, S] | 输出数据，融合算子归一化结果张量。与 `x_t` 同形；约束 `S == H`，故与 `x` 的 `[B, S, H]` 尺寸相同 |
 
 ## 约束说明
 

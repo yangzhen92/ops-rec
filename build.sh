@@ -280,6 +280,12 @@ build_one_kernel() {
             "${CMAKEOP_COMMON[@]}" -DCMAKE_INSTALL_PREFIX="${stage}" || return 1
 
     cmake --build "${bdir}" -j"${INNER_JOBS}" || return 1
+
+    if cmake --build "${bdir}" --target help 2>/dev/null | grep -q '^\.\.\. binary$'; then
+        echo "[INFO] ${soc}/${op}: building 'binary' hub target (RUN kernel)"
+        cmake --build "${bdir}" --target binary -j"${INNER_JOBS}" || return 1
+    fi
+
     cmake --install "${bdir}" || return 1
 
     echo "[INFO] Built ${soc}/${op} -> ${stage}"
@@ -473,6 +479,15 @@ main() {
                 cp -a "${vend}/." "${vend_pkg}/"
                 echo "[INFO] Collected ${soc}/${op} -> ${variant}/vendors/${vname}"
                 collected=1
+
+                # RUN 模式（npu_op_package TYPE RUN）下 op_api（aclnn 头 + libcust_opapi.so）
+                # 由 framework 只装到 packages/vendors/<vendor>/op_api，不进 OPP 布局；
+                # 这里统一归并补拷到 OPP 布局，避免每个算子各自写 install(CODE) 复制逻辑。
+                local pkg_opapi="${sstage}/packages/vendors/${vname}/op_api"
+                if [ -d "${pkg_opapi}" ]; then
+                    cp -a "${pkg_opapi}/." "${vend_pkg}/op_api/"
+                    echo "[INFO] Collected ${soc}/${op} op_api -> ${variant}/vendors/${vname}/op_api"
+                fi
             done
             if [ "${collected}" -eq 0 ]; then
                 die "${soc}/${op}: no vendor dirs under ${oppdir}; refusing to produce a wheel missing this op"

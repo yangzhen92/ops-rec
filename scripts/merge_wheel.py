@@ -108,7 +108,7 @@ def build_final_wheel(merge_dir: str, out_dir: str, version: str | None = None) 
         if final_out_path.exists():
             final_out_path.unlink()
 
-        with zipfile.ZipFile(final_out_path, "w", zipfile.ZIP_DEFLATED) as z:
+        with zipfile.ZipFile(final_out_path, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
             for filepath in tmp_path.rglob("*"):
                 if filepath.is_file():
                     z.write(filepath, filepath.relative_to(tmp_path).as_posix())

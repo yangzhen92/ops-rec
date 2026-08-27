@@ -25,8 +25,36 @@ namespace optiling {
 static ge::graphStatus TilingFunc(gert::TilingContext* context)
 {
     const gert::StorageShape* offsetsShape = context->GetInputShape(0);
+    const gert::StorageShape* ctxLensShape = context->GetInputShape(1);
+    const gert::StorageShape* tgtLensShape = context->GetInputShape(2);
     OPS_LOG_E_IF_NULL("offsetsShape", offsetsShape, return ge::GRAPH_FAILED);
-    int32_t batchSize = static_cast<int32_t>(offsetsShape->GetStorageShape().GetDim(0)) - 1;
+    OPS_LOG_E_IF_NULL("ctxLensShape", ctxLensShape, return ge::GRAPH_FAILED);
+    OPS_LOG_E_IF_NULL("tgtLensShape", tgtLensShape, return ge::GRAPH_FAILED);
+
+    const gert::Shape& offsetsStorage = offsetsShape->GetStorageShape();
+    const gert::Shape& ctxLensStorage = ctxLensShape->GetStorageShape();
+    const gert::Shape& tgtLensStorage = tgtLensShape->GetStorageShape();
+    if (offsetsStorage.GetDimNum() != 1 || ctxLensStorage.GetDimNum() != 1 || tgtLensStorage.GetDimNum() != 1) {
+        OPS_LOG_E("[ERROR]", "offsets / ctx_lens / tgt_lens must all be 1D, actual ranks: ", offsetsStorage.GetDimNum(),
+                  " / ", ctxLensStorage.GetDimNum(), " / ", tgtLensStorage.GetDimNum());
+        return ge::GRAPH_FAILED;
+    }
+    int32_t batchSize = static_cast<int32_t>(offsetsStorage.GetDim(0)) - 1;
+    if (batchSize < 0) {
+        OPS_LOG_E("[ERROR]", "offsets.size(0) must be >= 1, i.e. offsets shape must be [batch_size+1] with "
+                             "batch_size >= 0");
+        return ge::GRAPH_FAILED;
+    }
+    if (ctxLensStorage.GetDim(0) != batchSize) {
+        OPS_LOG_E("[ERROR]", "ctx_lens must have shape [batch_size], actual dim0 = ", ctxLensStorage.GetDim(0),
+                  ", batch_size = ", batchSize);
+        return ge::GRAPH_FAILED;
+    }
+    if (tgtLensStorage.GetDim(0) != batchSize) {
+        OPS_LOG_E("[ERROR]", "tgt_lens must have shape [batch_size], actual dim0 = ", tgtLensStorage.GetDim(0),
+                  ", batch_size = ", batchSize);
+        return ge::GRAPH_FAILED;
+    }
 
     const gert::RuntimeAttrs* attrs = context->GetAttrs();
     OPS_LOG_E_IF_NULL("attrs", attrs, return ge::GRAPH_FAILED);

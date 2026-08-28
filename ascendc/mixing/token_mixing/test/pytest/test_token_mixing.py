@@ -14,8 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""token_mixing pytest（对齐 RecSDK cust_op/test/token_mixing/test_token_mixing.py）。
-"""
+"""token_mixing pytest（对齐 RecSDK cust_op/test/token_mixing/test_token_mixing.py）。"""
 
 import sys
 import numpy as np

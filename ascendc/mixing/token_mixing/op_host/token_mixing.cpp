@@ -160,14 +160,27 @@ static ge::graphStatus InferShape(gert::InferShapeContext* context)
     OPS_LOG_E_IF_NULL("context", context, return ge::GRAPH_FAILED);
     const gert::Shape* xShape = context->GetInputShape(0);
     gert::Shape* yShape = context->GetOutputShape(0);
+    gert::Shape* meanShape = context->GetOutputShape(1);
+    gert::Shape* rstdShape = context->GetOutputShape(2);
     OPS_LOG_E_IF_NULL("xShape", xShape, return ge::GRAPH_FAILED);
     OPS_LOG_E_IF_NULL("yShape", yShape, return ge::GRAPH_FAILED);
+    OPS_LOG_E_IF_NULL("meanShape", meanShape, return ge::GRAPH_FAILED);
+    OPS_LOG_E_IF_NULL("rstdShape", rstdShape, return ge::GRAPH_FAILED);
 
     // 输出 y：[B, S, H] -> [B, H, S]
     yShape->SetDimNum(DIM3);
     yShape->SetDim(DIM0, xShape->GetDim(DIM0));
     yShape->SetDim(DIM1, xShape->GetDim(DIM2));
     yShape->SetDim(DIM2, xShape->GetDim(DIM1));
+
+    // mean / rstd：[B, S]
+    meanShape->SetDimNum(DIM2);
+    meanShape->SetDim(DIM0, xShape->GetDim(DIM0));
+    meanShape->SetDim(DIM1, xShape->GetDim(DIM1));
+
+    rstdShape->SetDimNum(DIM2);
+    rstdShape->SetDim(DIM0, xShape->GetDim(DIM0));
+    rstdShape->SetDim(DIM1, xShape->GetDim(DIM1));
 
     return GRAPH_SUCCESS;
 }
@@ -176,6 +189,8 @@ static ge::graphStatus InferDtype(gert::InferDataTypeContext* context)
 {
     OPS_LOG_E_IF_NULL("context", context, return ge::GRAPH_FAILED);
     context->SetOutputDataType(0, context->GetInputDataType(0));
+    context->SetOutputDataType(1, context->GetInputDataType(0));
+    context->SetOutputDataType(2, context->GetInputDataType(0));
     return GRAPH_SUCCESS;
 }
 }  // namespace ge

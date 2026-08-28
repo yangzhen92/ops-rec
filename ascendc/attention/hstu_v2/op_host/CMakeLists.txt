@@ -76,17 +76,3 @@ npu_op_package_add(${VENDOR_NAME}
         cust_opapi
         cust_op_proto
 )
-
-# CANN 自动生成的 tiling target 名为 <PACKAGE>_ascendc_cust_optiling
-set(TILING_TARGET ${VENDOR_NAME}_ascendc_cust_optiling)
-
-# 要求 tiling 库独立安装到 op_tiling/ 路径
-install(FILES $<TARGET_FILE:${TILING_TARGET}>
-        DESTINATION ${CMAKE_INSTALL_PREFIX}/op_impl/ai_core/tbe/op_tiling
-        RENAME liboptiling.so
-        PERMISSIONS OWNER_READ OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
-)
-install(FILES $<TARGET_FILE:${TILING_TARGET}>
-        DESTINATION ${CMAKE_INSTALL_PREFIX}/op_impl/ai_core/tbe/op_tiling/lib/linux/${CMAKE_SYSTEM_PROCESSOR}
-        RENAME libcust_opmaster_rt2.0.so
-)

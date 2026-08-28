@@ -66,13 +66,16 @@ typedef int (*_aclDestroyTensorList)(const aclTensorList* array);
 constexpr int kHashBufSize = 8192;
 constexpr int kHashBufMaxSize = kHashBufSize + 1024;
 
-// 兼容旧版本 ACL 头文件：尚未声明 Float8 系列枚举时回退到 ACL_DT_UNDEFINED。
-// ACL 升级支持后会自动选用真实枚举值，无需再调整。
+// 兼容旧版本 ACL 头文件（如 torch_npu 打包的 third_party/acl/inc 未声明 Float8 枚举）：
+// 按 CANN aclDataType 标准数值补齐，保证 kATenScalarTypeToAclDataTypeTable 在
+// 编译与运行期始终拿到真实枚举值（回退 ACL_DT_UNDEFINED 会导致 fp8 输入在
+// torch 适配层 ConvertType 处抛 "Float8_e4m3fn has not been supported"）。
+// 头文件已声明该枚举的环境会自动选用头文件中的真实枚举值（数值一致），无需调整。
 #ifndef ACL_FLOAT8_E5M2
-#define ACL_FLOAT8_E5M2 ACL_DT_UNDEFINED
+#define ACL_FLOAT8_E5M2 35
 #endif
 #ifndef ACL_FLOAT8_E4M3FN
-#define ACL_FLOAT8_E4M3FN ACL_DT_UNDEFINED
+#define ACL_FLOAT8_E4M3FN 36
 #endif
 
 #ifdef SUPPORT_950
@@ -125,6 +128,8 @@ constexpr int kHashBufMaxSize = kHashBufSize + 1024;
     _(at::ScalarType::NumOptions, ACL_DT_UNDEFINED)
 
 #else
+// 非 950 架构同样需要完整覆盖 at::ScalarType 全枚举（表按枚举值索引，
+// 条目缺失会导致 Float8_e4m3fn(24) 等索引越界读、返回垃圾值）。
 #define AT_ALL_SCALAR_TYPE_AND_ACL_DATATYPE_PAIR(_)  \
     _(at::ScalarType::Byte, ACL_UINT8)               \
     _(at::ScalarType::Char, ACL_INT8)                \
@@ -144,7 +149,33 @@ constexpr int kHashBufMaxSize = kHashBufSize + 1024;
     _(at::ScalarType::BFloat16, ACL_BF16)            \
     _(at::ScalarType::QUInt4x2, ACL_DT_UNDEFINED)    \
     _(at::ScalarType::QUInt2x4, ACL_DT_UNDEFINED)    \
-    _(at::ScalarType::Undefined, ACL_DT_UNDEFINED)   \
+    _(at::ScalarType::Bits1x8, ACL_DT_UNDEFINED)     \
+    _(at::ScalarType::Bits2x4, ACL_DT_UNDEFINED)     \
+    _(at::ScalarType::Bits4x2, ACL_DT_UNDEFINED)     \
+    _(at::ScalarType::Bits8, ACL_DT_UNDEFINED)       \
+    _(at::ScalarType::Bits16, ACL_DT_UNDEFINED)      \
+    _(at::ScalarType::Float8_e5m2, ACL_FLOAT8_E5M2)      \
+    _(at::ScalarType::Float8_e4m3fn, ACL_FLOAT8_E4M3FN)  \
+    _(at::ScalarType::Float8_e5m2fnuz, ACL_DT_UNDEFINED) \
+    _(at::ScalarType::Float8_e4m3fnuz, ACL_DT_UNDEFINED) \
+    _(at::ScalarType::UInt16, ACL_UINT16)                \
+    _(at::ScalarType::UInt32, ACL_UINT32)                \
+    _(at::ScalarType::UInt64, ACL_UINT64)                \
+    _(at::ScalarType::UInt1, ACL_DT_UNDEFINED)           \
+    _(at::ScalarType::UInt2, ACL_DT_UNDEFINED)           \
+    _(at::ScalarType::UInt3, ACL_DT_UNDEFINED)           \
+    _(at::ScalarType::UInt4, ACL_DT_UNDEFINED)           \
+    _(at::ScalarType::UInt5, ACL_DT_UNDEFINED)           \
+    _(at::ScalarType::UInt6, ACL_DT_UNDEFINED)           \
+    _(at::ScalarType::UInt7, ACL_DT_UNDEFINED)           \
+    _(at::ScalarType::Int1, ACL_DT_UNDEFINED)            \
+    _(at::ScalarType::Int2, ACL_DT_UNDEFINED)            \
+    _(at::ScalarType::Int3, ACL_DT_UNDEFINED)            \
+    _(at::ScalarType::Int4, ACL_DT_UNDEFINED)            \
+    _(at::ScalarType::Int5, ACL_DT_UNDEFINED)            \
+    _(at::ScalarType::Int6, ACL_DT_UNDEFINED)            \
+    _(at::ScalarType::Int7, ACL_DT_UNDEFINED)            \
+    _(at::ScalarType::Undefined, ACL_DT_UNDEFINED)       \
     _(at::ScalarType::NumOptions, ACL_DT_UNDEFINED)
 
 #endif

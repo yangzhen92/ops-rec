@@ -12,6 +12,7 @@ set(OPS_REC_OPS_ATLAS_950
     hstu_v2
     reverse_sequence
     in_linear_silu
+    fa_infer_with_arbitrary_func
 )
 
 # ================================ A3 ops ===================================

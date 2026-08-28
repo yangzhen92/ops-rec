@@ -37,9 +37,9 @@ __simt_vf__ __aicore__ LAUNCH_BOUND(BLOCK_THREAD_NUM_256) inline void SimtBuildS
     const __gm__ int32_t* __restrict__ offsets,  // [batchSize + 1]
     const __gm__ int32_t* __restrict__ numTargets,  // [batchSize]
     int32_t slaK1, int32_t slaK2, int32_t contextualSeqLen, int32_t totalSeqLen, int32_t batchSize,
-    const uint32_t blockId, const uint32_t totalThread)
+    const uint32_t totalThread)
 {
-    int32_t pos = blockId * blockDim.x + threadIdx.x;
+    int32_t pos = blockIdx.x * blockDim.x + threadIdx.x;
     if (pos >= totalSeqLen)
         return;
 
@@ -67,29 +67,21 @@ __simt_vf__ __aicore__ LAUNCH_BOUND(BLOCK_THREAD_NUM_256) inline void SimtBuildS
         const int32_t posLocal = pos - seqStart;
         const int32_t H = (seqLen - numTargets[seqId] < 0) ? 0 : (seqLen - numTargets[seqId]);
 
-        int32_t c0, c1, c2;
-        if (posLocal < H) {
-            // history token：Global [0,c0) ∪ Local [c1,c2)（c1/c2 已与 Global 裁剪不重叠）
-            c0 = posLocal + 1;
-            if (c0 > effK2)
-                c0 = effK2;  // min(pos+1, effK2)
-            c1 = posLocal - slaK1 + 1;
-            if (c1 < effK2)
-                c1 = effK2;  // max(effK2, pos-K1+1)
-            c2 = posLocal + 1;
-        } else {
-            // target token：只见 [0, H)，连自身不可见；interval1 为空区间
-            c0 = H;
-            c1 = H;
-            c2 = H;
-        }
-
         const int32_t s = seqStart;
-        int4 v;  // af[q] = [S, S+c0, S+c1, S+c2]（全局坐标）
+        const int32_t pos1 = posLocal + 1;
+        int4 v;  // af[q] = [S, S+c0, S+c1, S+c2]
         v.x = s;
-        v.y = s + c0;
-        v.z = s + c1;
-        v.w = s + c2;
+        if (posLocal < H) {
+            // history: c0=min(pos+1, effK2), c1=max(effK2, pos-K1+1), c2=pos+1
+            v.y = s + ((pos1 < effK2) ? pos1 : effK2);
+            v.z = s + (((pos1 - slaK1) > effK2) ? (pos1 - slaK1) : effK2);
+            v.w = s + pos1;
+        } else {
+            // target: 只见 [0, H)，连自身不可见；interval1 为空区间
+            v.y = s + H;
+            v.z = s + H;
+            v.w = s + H;
+        }
         *reinterpret_cast<__gm__ int4*>(af + pos * N_FUNC) = v;
     }
 }

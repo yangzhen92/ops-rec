@@ -32,5 +32,5 @@ extern "C" __global__ __aicore__ void build_sla_mask_arbitrary_func(GM_ADDR offs
         AscendC::Simt::Dim3{BuildSlaMaskArbitraryFunc::BLOCK_THREAD_NUM_256, 1, 1},
         reinterpret_cast<__gm__ int*>(arbitraryFunc), reinterpret_cast<const __gm__ int*>(offsets),
         reinterpret_cast<const __gm__ int*>(numTargets), slaK1, slaK2, contextualSeqLen, totalSeqLen, batchSize,
-        AscendC::GetBlockIdx(), totalThread);
+        totalThread);
 }

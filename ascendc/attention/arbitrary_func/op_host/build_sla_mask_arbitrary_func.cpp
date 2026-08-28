@@ -20,6 +20,9 @@
 #include "tiling/platform/platform_ascendc.h"
 #include "ops_log.h"
 
+constexpr uint32_t ARBITRARY_FUNC_DIM = 4;
+constexpr uint32_t N_FUNC = 4;
+
 namespace optiling {
 
 static ge::graphStatus TilingFunc(gert::TilingContext* context)
@@ -39,6 +42,11 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
     }
 
     int32_t batchSize = static_cast<int32_t>(offsetsShape->GetStorageShape().GetDim(0)) - 1;
+    if (batchSize < 0) {
+        OPS_LOG_E("[ERROR]", "offsets.size(0) must be >= 1, i.e. offsets shape must be [batch_size+1] with "
+                             "batch_size >= 0");
+        return ge::GRAPH_FAILED;
+    }
 
     const gert::RuntimeAttrs* attrs = context->GetAttrs();
     OPS_LOG_E_IF_NULL("attrs", attrs, return ge::GRAPH_FAILED);
@@ -50,8 +58,11 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
     OPS_LOG_E_IF_NULL("contextualSeqLenPtr", contextualSeqLenPtr, return ge::GRAPH_FAILED);
     const int64_t* totalSeqLenPtr = attrs->GetAttrPointer<int64_t>(3);
     OPS_LOG_E_IF_NULL("totalSeqLenPtr", totalSeqLenPtr, return ge::GRAPH_FAILED);
-    if (*slaK1Ptr < 0 || *slaK2Ptr < 0 || *contextualSeqLenPtr < 0 || *totalSeqLenPtr < 0) {
-        OPS_LOG_E("[ERROR]", "slaK1/slaK2/contextualSeqLen/totalSeqLen must be non-negative");
+    if (*slaK1Ptr < 0 || *slaK1Ptr > INT32_MAX || *slaK2Ptr < 0 || *slaK2Ptr > INT32_MAX ||
+        *contextualSeqLenPtr < 0 || *contextualSeqLenPtr > INT32_MAX ||
+        *totalSeqLenPtr < 0 || *totalSeqLenPtr > INT32_MAX) {
+        OPS_LOG_E("[ERROR]",
+                  "slaK1/slaK2/contextualSeqLen/totalSeqLen must be in [0, INT32_MAX] to fit in int32 tiling");
         return ge::GRAPH_FAILED;
     }
 
@@ -70,6 +81,7 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
     tiling.set_batchSize(batchSize);
 
     context->SetBlockDim(blockDim);
+    OPS_LOG_E_IF_NULL("raw tilingData", context->GetRawTilingData(), return ge::GRAPH_FAILED);
     tiling.SaveToBuffer(context->GetRawTilingData()->GetData(), context->GetRawTilingData()->GetCapacity());
     context->GetRawTilingData()->SetDataSize(tiling.GetDataSize());
     return ge::GRAPH_SUCCESS;
@@ -91,11 +103,11 @@ static ge::graphStatus InferShape(gert::InferShapeContext* context)
 
     gert::Shape* arbitraryFuncShape = context->GetOutputShape(0);
     OPS_LOG_E_IF_NULL("arbitraryFuncShape", arbitraryFuncShape, return ge::GRAPH_FAILED);
-    arbitraryFuncShape->SetDimNum(4);
+    arbitraryFuncShape->SetDimNum(ARBITRARY_FUNC_DIM);
     arbitraryFuncShape->SetDim(0, 1);
     arbitraryFuncShape->SetDim(1, 1);
     arbitraryFuncShape->SetDim(2, totalSeqLen);
-    arbitraryFuncShape->SetDim(3, 4);
+    arbitraryFuncShape->SetDim(3, N_FUNC);
     return GRAPH_SUCCESS;
 }
 }  // namespace ge
@@ -134,10 +146,7 @@ public:
             .ExtendCfgInfo("prebuildPattern.value", "Opaque");
 
         this->AICore().SetTiling(optiling::TilingFunc);
-
-#ifdef SUPPORT_950
         this->AICore().AddConfig("ascend950", aicore_config);
-#endif
     }
 };
 

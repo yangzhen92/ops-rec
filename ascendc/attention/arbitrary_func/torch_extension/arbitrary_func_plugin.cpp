@@ -78,10 +78,11 @@ at::Tensor build_sla_mask_arbitrary_func_impl_npu(
 
     TORCH_CHECK(offsets.scalar_type() == at::kInt, "offsets must be int32");
     TORCH_CHECK(offsets.dim() == 1, "offsets must be 1D");
-    TORCH_CHECK(total_seqlen >= 0, "total_seqlen must be non-negative");
-    TORCH_CHECK(sla_k1 >= 0, "sla_k1 must be non-negative");
-    TORCH_CHECK(sla_k2 >= 0, "sla_k2 must be non-negative");
-    TORCH_CHECK(contextual_seq_len >= 0, "contextual_seq_len must be non-negative");
+    TORCH_CHECK(total_seqlen >= 0 && total_seqlen <= INT32_MAX, "total_seqlen must be in [0, INT32_MAX]");
+    TORCH_CHECK(sla_k1 >= 0 && sla_k1 <= INT32_MAX, "sla_k1 must be in [0, INT32_MAX]");
+    TORCH_CHECK(sla_k2 >= 0 && sla_k2 <= INT32_MAX, "sla_k2 must be in [0, INT32_MAX]");
+    TORCH_CHECK(contextual_seq_len >= 0 && contextual_seq_len <= INT32_MAX,
+                "contextual_seq_len must be in [0, INT32_MAX]");
 
     auto offsets_conti = offsets.contiguous();
 

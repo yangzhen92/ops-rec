@@ -22,6 +22,7 @@ set(OPS_REC_OPS_ATLAS_A3
     hstu_v1
     reverse_sequence
     in_linear_silu
+    token_mixing
 )
 
 # ================================ A2 ops ===================================

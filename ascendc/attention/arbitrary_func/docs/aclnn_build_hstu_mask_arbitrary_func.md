@@ -24,6 +24,10 @@
 其中 `seq_start=offsets[seq_id]`，`base=seq_start+hist_end`，`hist_end=ctx_len+hist_len`，
 `hist_len=seq_len-ctx_len-tgt_len`。
 
+### 编码示意图
+
+![build_hstu_mask_arbitrary_func af编码与注意力mask对应关系](build_hstu_mask_arbitrary_func示意图.svg)
+
 ## 函数原型
 
 两段式接口，必须先调用 `aclnnBuildHstuMaskArbitraryFuncGetWorkspaceSize` 接口获取 workspace 大小和执行器，
@@ -87,7 +91,7 @@ aclnnStatus：返回状态码，成功返回 `ACLNN_SUCCESS`。
 ## 约束说明
 
 - 仅支持 INT32 数据类型
-- `offsets`、`ctxLens`、`tgtLens` 必须为 1D
+- `offsets`、`ctxLens`、`tgtLens` 必须为 1D，且`ctxLens` / `tgtLens`维度须满足 `[batch_size]` / `[batch_size]`（`batch_size = offsets.size(0)-1`），否则算子执行（tiling 阶段）报错返回
 - `totalSeqLen` 须等于 `offsets[-1]`
 - 该算子需要在 NPU 设备上运行
 - `targetGroupSize` 须大于 0

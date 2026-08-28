@@ -54,7 +54,7 @@ def build_sla_mask_arbitrary_func_mask_cpu(offsets, total_seqlen, sla_k1, sla_k2
             c0 = min(pos_local + 1, eff_k2)
             c1 = max(eff_k2, pos_local - sla_k1 + 1)
             c2 = pos_local + 1
-        else:              # target：只见 [0,h)，连自身不可见
+        else:  # target：只见 [0,h)，连自身不可见
             c0 = c1 = c2 = h
         af[0, 0, pos, 0] = seq_start
         af[0, 0, pos, 1] = seq_start + c0
@@ -80,8 +80,7 @@ def test_build_sla_mask_arbitrary_func_with_target():
     )
 
     y_np = y.cpu().numpy()
-    cpu = build_sla_mask_arbitrary_func_mask_cpu(
-        offsets, total_seqlen, sla_k1, sla_k2, contextual_seq_len, num_targets)
+    cpu = build_sla_mask_arbitrary_func_mask_cpu(offsets, total_seqlen, sla_k1, sla_k2, contextual_seq_len, num_targets)
     assert y_np.shape == (1, 1, total_seqlen, 4), f"shape {y_np.shape}"
     assert np.array_equal(y_np, cpu), "build_sla_mask_arbitrary_func result mismatch with CPU reference"
 
@@ -98,11 +97,11 @@ def test_build_sla_mask_arbitrary_func_default_nt():
     num_targets = np.zeros(len(offsets) - 1, dtype=np.int32)
 
     y = ops_rec.ascendc.attention.build_sla_mask_arbitrary_func(
-        torch.from_numpy(offsets).npu(), total_seqlen, sla_k1, sla_k2, contextual_seq_len)  # 不传 num_targets
+        torch.from_numpy(offsets).npu(), total_seqlen, sla_k1, sla_k2, contextual_seq_len
+    )  # 不传 num_targets
 
     y_np = y.cpu().numpy()
-    cpu = build_sla_mask_arbitrary_func_mask_cpu(
-        offsets, total_seqlen, sla_k1, sla_k2, contextual_seq_len, num_targets)
+    cpu = build_sla_mask_arbitrary_func_mask_cpu(offsets, total_seqlen, sla_k1, sla_k2, contextual_seq_len, num_targets)
     assert np.array_equal(y_np, cpu), "default num_targets example mismatch with CPU reference"
     print("[torch] build_sla_mask_arbitrary_func (default num_targets) example PASSED")
 

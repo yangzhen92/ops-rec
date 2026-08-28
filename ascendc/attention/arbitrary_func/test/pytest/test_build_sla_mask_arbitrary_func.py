@@ -35,8 +35,7 @@ def torch_compiled(model, **kwargs):
     return model
 
 
-def build_sla_mask_arbitrary_func_cpu(offsets, total_seqlen, sla_k1, sla_k2, contextual_seq_len,
-                                      num_targets=None):
+def build_sla_mask_arbitrary_func_cpu(offsets, total_seqlen, sla_k1, sla_k2, contextual_seq_len, num_targets=None):
     """
     history token: c0=min(pos+1,effK2) / c1=max(effK2,pos-K1+1) / c2=pos+1
     target token : c0=c1=c2=H（只见 [0,H)，连自身不可见）
@@ -82,8 +81,7 @@ def make_sequences(seq_lens):
 
 def run_compare(offsets, sla_k1, sla_k2, contextual_seq_len, num_targets, total_seqlen, use_graph=False):
     torch.npu.set_device(DEVICE)
-    cpu = build_sla_mask_arbitrary_func_cpu(offsets, total_seqlen, sla_k1, sla_k2, contextual_seq_len,
-                                            num_targets)
+    cpu = build_sla_mask_arbitrary_func_cpu(offsets, total_seqlen, sla_k1, sla_k2, contextual_seq_len, num_targets)
     offsets_t = torch.from_numpy(offsets).to(DEVICE)
     nt_t = torch.from_numpy(num_targets).to(DEVICE) if num_targets is not None else None
 
@@ -123,16 +121,16 @@ CASES = [
 @pytest.mark.parametrize("name,seq_lens,k1,k2,ctx,nt", CASES)
 def test_build_sla_mask_arbitrary_func_eager(name, seq_lens, k1, k2, ctx, nt):
     offsets, total = make_sequences(seq_lens)
-    run_compare(offsets, k1, k2, ctx, np.asarray(nt, dtype=np.int32) if nt is not None else None, total,
-                use_graph=False)
+    run_compare(
+        offsets, k1, k2, ctx, np.asarray(nt, dtype=np.int32) if nt is not None else None, total, use_graph=False
+    )
 
 
 @pytest.mark.graph
 @pytest.mark.parametrize("name,seq_lens,k1,k2,ctx,nt", CASES)
 def test_build_sla_mask_arbitrary_func_graph(name, seq_lens, k1, k2, ctx, nt):
     offsets, total = make_sequences(seq_lens)
-    run_compare(offsets, k1, k2, ctx, np.asarray(nt, dtype=np.int32) if nt is not None else None, total,
-                use_graph=True)
+    run_compare(offsets, k1, k2, ctx, np.asarray(nt, dtype=np.int32) if nt is not None else None, total, use_graph=True)
 
 
 @pytest.mark.parametrize("bs", [2, 4, 8, 16])
@@ -152,8 +150,7 @@ def test_build_sla_mask_arbitrary_func_random(bs, seed):
 def test_build_sla_mask_arbitrary_func_empty():
     offsets = np.array([0], dtype=np.int32)
     cpu = np.zeros((1, 1, 0, 4), dtype=np.int32)
-    y = ops_rec.ascendc.attention.build_sla_mask_arbitrary_func(
-        torch.from_numpy(offsets).to(DEVICE), 0, 3, 4, 0, None)
+    y = ops_rec.ascendc.attention.build_sla_mask_arbitrary_func(torch.from_numpy(offsets).to(DEVICE), 0, 3, 4, 0, None)
     assert y.shape == (1, 1, 0, 4)
     assert np.array_equal(y.cpu().numpy(), cpu)
 

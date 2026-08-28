@@ -58,9 +58,8 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
     OPS_LOG_E_IF_NULL("contextualSeqLenPtr", contextualSeqLenPtr, return ge::GRAPH_FAILED);
     const int64_t* totalSeqLenPtr = attrs->GetAttrPointer<int64_t>(3);
     OPS_LOG_E_IF_NULL("totalSeqLenPtr", totalSeqLenPtr, return ge::GRAPH_FAILED);
-    if (*slaK1Ptr < 0 || *slaK1Ptr > INT32_MAX || *slaK2Ptr < 0 || *slaK2Ptr > INT32_MAX ||
-        *contextualSeqLenPtr < 0 || *contextualSeqLenPtr > INT32_MAX ||
-        *totalSeqLenPtr < 0 || *totalSeqLenPtr > INT32_MAX) {
+    if (*slaK1Ptr < 0 || *slaK1Ptr > INT32_MAX || *slaK2Ptr < 0 || *slaK2Ptr > INT32_MAX || *contextualSeqLenPtr < 0 ||
+        *contextualSeqLenPtr > INT32_MAX || *totalSeqLenPtr < 0 || *totalSeqLenPtr > INT32_MAX) {
         OPS_LOG_E("[ERROR]",
                   "slaK1/slaK2/contextualSeqLen/totalSeqLen must be in [0, INT32_MAX] to fit in int32 tiling");
         return ge::GRAPH_FAILED;

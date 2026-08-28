@@ -25,16 +25,9 @@ namespace BuildSlaMaskArbitraryFunc {
 constexpr uint32_t BLOCK_THREAD_NUM_256 = 1024;
 constexpr uint32_t N_FUNC = 4;
 
-// SLA（Semi-Local Attention）mask：架构 A 公式推导，O(1)/pos，无内层循环。
-// 每个 pos_global 一行：二分定位 batch → pos_local → 闭式求 c0/c1/c2 → 写 af[q]。
-// 语义见 agent_task_sla_mask.md §3.2/§3.3：
-//   history: c0=min(pos+1,effK2), c1=max(effK2,pos-K1+1), c2=pos+1
-//   target : c0=c1=c2=H（连自身不可见）
-// 输出 af[q] = [S, S+c0, S+c1, S+c2]，全局坐标（§4）。
-// 与 Python 基准 build_sla_mask_v2 唯一写法差异：用 if 合并 min/max，无分支下统一求值，等价。
 __simt_vf__ __aicore__ LAUNCH_BOUND(BLOCK_THREAD_NUM_256) inline void SimtBuildSlaMaskArbitraryFunc(
-    __gm__ int32_t* __restrict__ af,             // [total_q, 4], row-major
-    const __gm__ int32_t* __restrict__ offsets,  // [batchSize + 1]
+    __gm__ int32_t* __restrict__ af,                // [total_q, 4], row-major
+    const __gm__ int32_t* __restrict__ offsets,     // [batchSize + 1]
     const __gm__ int32_t* __restrict__ numTargets,  // [batchSize]
     int32_t slaK1, int32_t slaK2, int32_t contextualSeqLen, int32_t totalSeqLen, int32_t batchSize,
     const uint32_t totalThread)
@@ -47,7 +40,7 @@ __simt_vf__ __aicore__ LAUNCH_BOUND(BLOCK_THREAD_NUM_256) inline void SimtBuildS
     const int32_t effK2 = (slaK2 > contextualSeqLen) ? slaK2 : contextualSeqLen;
 
     for (; pos < totalSeqLen; pos += totalThread) {
-        // 二分查找该位置所属 batch（与既有 hstu kernel 一致，O(log B)/pos）
+        // 二分查找该位置所属 batch
         int32_t seqId = 0;
         {
             int32_t lo = 0, hi = batchSize;

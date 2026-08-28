@@ -15,13 +15,6 @@
 # limitations under the License.
 # ==============================================================================
 """token_mixing pytest（对齐 RecSDK cust_op/test/token_mixing/test_token_mixing.py）。
-
-相对旧仓：
-- 用例 shape / gamma=ones / beta=zeros / golden=torch.nn.LayerNorm / atol=1e-6 保持一致
-  （np.allclose 未传 rtol 时使用 numpy 默认 rtol=1e-5）
-- 调用改为 ops_rec.ascendc.mixing.token_mixing
-- 额外增加 graph（与 eager 同参）与 ci 冒烟
-
 """
 
 import sys

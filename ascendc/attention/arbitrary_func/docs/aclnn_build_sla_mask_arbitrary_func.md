@@ -26,6 +26,7 @@
 输出 shape `[1, 1, total_seqlen, 4]`，每个 query 可见 key 集合 = `[col0, col1) ∪ [col2, col3)`（全局索引）。
 
 ### 编码示意图
+
 ![build_sla_mask_arbitrary_func af编码与注意力mask对应关系](build_sla_mask_arbitrary_func示意图.svg)
 
 ## 函数原型

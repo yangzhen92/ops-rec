@@ -26,6 +26,7 @@
 输出 shape `[1, 1, total_seqlen, 4]`，head 维恒 1（所有 head 广播共享同一 mask）。
 
 ### 编码示意图
+
 ![build_sla_mask_arbitrary_func af编码与注意力mask对应关系](build_sla_mask_arbitrary_func示意图.svg)
 
 ## 接口原型

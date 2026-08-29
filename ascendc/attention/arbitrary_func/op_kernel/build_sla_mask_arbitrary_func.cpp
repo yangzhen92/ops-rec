@@ -26,7 +26,7 @@ extern "C" __global__ __aicore__ void build_sla_mask_arbitrary_func(GM_ADDR offs
     int32_t contextualSeqLen = tilingData.contextualSeqLen;
     int32_t totalSeqLen = tilingData.totalSeqLen;
     int32_t batchSize = tilingData.batchSize;
-    
+
     const uint32_t totalThread = BuildSlaMaskArbitraryFunc::BLOCK_THREAD_NUM_1024 * AscendC::GetBlockNum();
     AscendC::Simt::VF_CALL<BuildSlaMaskArbitraryFunc::SimtBuildSlaMaskArbitraryFunc>(
         AscendC::Simt::Dim3{BuildSlaMaskArbitraryFunc::BLOCK_THREAD_NUM_1024, 1, 1},

@@ -42,6 +42,7 @@
 """
 
 import logging
+import warnings
 
 import torch
 
@@ -54,12 +55,20 @@ _DENSE_NARGS = 8
 _JAGGED_EQUAL_NARGS = 14
 _JAGGED_DELTA_NARGS = 16
 
+# 各算子 schema 缺失槽位的补齐默认值（与 schema 声明一致）：
+# 标量槽位（mask_type/max_seq_len/max_seq_len_k/silu_scale/target_group_size/
+# alpha/deterministic）按 schema 默认值补齐（None 会触发 C++ 边界 TypeError），
+# Tensor? 槽位（mask/attn_bias/num_context/num_target）才补 None。
+_DENSE_DEFAULTS = (None, None, None, None, None, 0, 0, 0.0)
+_JAGGED_EQUAL_DEFAULTS = (None, None, None, None, None, 0, 0, 0.0, None, None, None, 0, 1.0, False)
+_JAGGED_DELTA_DEFAULTS = (None, None, None, None, None, 0, 0, 0, 0.0, None, None, None, None, 0, 1.0, False)
 
-def _unpack(inputs, n):
-    """按 schema 前 n 个输入防御性解包（inputs 长度不足时以 None 补齐）。"""
+
+def _unpack(inputs, n, defaults):
+    """按 schema 前 n 个输入防御性解包（inputs 长度不足时按 defaults 补齐槽位）。"""
     vals = list(inputs)
     if len(vals) < n:
-        vals.extend([None] * (n - len(vals)))
+        vals.extend(defaults[len(vals):n])
     return tuple(vals[:n])
 
 
@@ -84,7 +93,13 @@ def _fit_grads(grads, ctx):
 
 
 def _dense_setup_context(ctx, inputs, output=None):
-    q, k, v, mask, attn_bias, mask_type, max_seq_len, silu_scale = _unpack(inputs, _DENSE_NARGS)
+    q, k, v, mask, attn_bias, mask_type, max_seq_len, silu_scale = _unpack(inputs, _DENSE_NARGS, _DENSE_DEFAULTS)
+    # mask 为不可导输入（backward 无 mask 梯度输出），requires_grad 的 mask 会被
+    # autograd 静默丢弃梯度，这里显式拒绝以暴露问题
+    if mask is not None and mask.requires_grad:
+        raise NotImplementedError(
+            "hstu_dense 的 mask 为不可导输入（backward 无 mask 梯度输出），请勿传入 requires_grad=True 的 mask"
+        )
     ctx.save_for_backward(q, k, v, mask, attn_bias)
     ctx.mask_type = mask_type
     ctx.max_seq_len = max_seq_len
@@ -92,6 +107,11 @@ def _dense_setup_context(ctx, inputs, output=None):
 
 
 def _dense_backward(ctx, grad):
+    """hstu_dense 反向公式。
+
+    mask 为不可导输入（setup_context 已拒绝 requires_grad 的 mask），
+    其梯度位置固定返回 None。
+    """
     q, k, v, mask, attn_bias = ctx.saved_tensors
     q_grad, k_grad, v_grad, attn_bias_grad = ops_rec.ascendc.attention.hstu_dense_backward(
         grad, q, k, v, mask, attn_bias, ctx.mask_type, ctx.max_seq_len, ctx.silu_scale
@@ -136,7 +156,14 @@ def _jagged_equal_setup_context(ctx, inputs, output=None):
         target_group_size,
         alpha,
         deterministic,
-    ) = _unpack(inputs, _JAGGED_EQUAL_NARGS)
+    ) = _unpack(inputs, _JAGGED_EQUAL_NARGS, _JAGGED_EQUAL_DEFAULTS)
+    # mask 为不可导输入（backward 无 mask 梯度输出），requires_grad 的 mask 会被
+    # autograd 静默丢弃梯度，这里显式拒绝以暴露问题
+    if mask is not None and mask.requires_grad:
+        raise NotImplementedError(
+            "hstu_jagged.equal 的 mask 为不可导输入（backward 无 mask 梯度输出），"
+            "请勿传入 requires_grad=True 的 mask"
+        )
     ctx.save_for_backward(q, k, v, mask, attn_bias, seq_offset, num_context, num_target)
     ctx.mask_type = mask_type
     ctx.max_seq_len = max_seq_len
@@ -146,6 +173,11 @@ def _jagged_equal_setup_context(ctx, inputs, output=None):
 
 
 def _jagged_equal_backward(ctx, grad):
+    """hstu_jagged.equal 反向公式。
+
+    mask 为不可导输入（setup_context 已拒绝 requires_grad 的 mask），
+    其梯度位置固定返回 None。
+    """
     q, k, v, mask, attn_bias, seq_offset, num_context, num_target = ctx.saved_tensors
     q_grad, k_grad, v_grad, attn_bias_grad = ops_rec.ascendc.attention.hstu_jagged_backward(
         grad,
@@ -214,7 +246,14 @@ def _jagged_delta_setup_context(ctx, inputs, output=None):
         target_group_size,
         alpha,
         deterministic,
-    ) = _unpack(inputs, _JAGGED_DELTA_NARGS)
+    ) = _unpack(inputs, _JAGGED_DELTA_NARGS, _JAGGED_DELTA_DEFAULTS)
+    # mask 为不可导输入（backward 无 mask 梯度输出），requires_grad 的 mask 会被
+    # autograd 静默丢弃梯度，这里显式拒绝以暴露问题
+    if mask is not None and mask.requires_grad:
+        raise NotImplementedError(
+            "hstu_jagged.delta 的 mask 为不可导输入（backward 无 mask 梯度输出），"
+            "请勿传入 requires_grad=True 的 mask"
+        )
     ctx.save_for_backward(q, k, v, mask, attn_bias, seq_offset, seq_offset_k, num_context, num_target)
     ctx.mask_type = mask_type
     ctx.max_seq_len = max_seq_len
@@ -225,6 +264,11 @@ def _jagged_delta_setup_context(ctx, inputs, output=None):
 
 
 def _jagged_delta_backward(ctx, grad):
+    """hstu_jagged.delta 反向公式。
+
+    mask 为不可导输入（setup_context 已拒绝 requires_grad 的 mask），
+    其梯度位置固定返回 None。
+    """
     q, k, v, mask, attn_bias, seq_offset, seq_offset_k, num_context, num_target = ctx.saved_tensors
     q_grad, k_grad, v_grad, attn_bias_grad = ops_rec.ascendc.attention.hstu_jagged_backward(
         grad,
@@ -268,7 +312,7 @@ def _jagged_delta_backward(ctx, grad):
     )
 
 
-# 注册状态（供诊断）：成功注册的 op 名与失败原因
+# 注册状态（供诊断）：是否已尝试注册（幂等标志）；失败原因逐算子记录
 _registered = False
 _registration_errors = {}
 
@@ -293,13 +337,17 @@ def register_autograd():
     eager 与 torch.compile 训练均可直接使用前向算子 + loss.backward()。
 
     注册入参为显式 OpOverload（.default/.equal/.delta），逐算子独立注册、
-    互不影响；失败仅告警并记录到 _registration_errors（可通过
-    ops_rec.autograd.hstu_v1_autograd._registration_errors 查询诊断），
-    与 fbgemm-ascend register_python_autograd() 的容错行为一致。
+    互不影响；失败项记录到 _registration_errors 并以 warnings.warn 汇总告警
+    （可通过 ops_rec.autograd.hstu_v1_autograd._registration_errors 查询
+    诊断），与 fbgemm-ascend register_python_autograd() 的容错行为一致。
     """
     global _registered
     if _registered:
         return
+    # "已尝试"语义的幂等标志：首次进入即置位。若部分算子失败，不会在下次
+    # 调用中对已注册算子重复 register_autograd（会抛 RuntimeError 被再次吞掉）
+    # 或产生重复告警；失败项仅保留在 _registration_errors 中供查询。
+    _registered = True
     ok = True
     ok &= _register_one(
         "hstu_dense",
@@ -319,5 +367,10 @@ def register_autograd():
         _jagged_delta_backward,
         setup_context=_jagged_delta_setup_context,
     )
-    if ok:
-        _registered = True
+    if not ok:
+        warnings.warn(
+            "ops_rec.autograd.hstu_v1: 部分算子 autograd 注册失败，"
+            "失败详情见 ops_rec.autograd.hstu_v1_autograd._registration_errors: "
+            f"{_registration_errors}",
+            stacklevel=2,
+        )

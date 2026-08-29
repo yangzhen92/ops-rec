@@ -93,6 +93,35 @@ def generate_jagged_tensor(batch_size, max_seq_len, head_num_q, head_dim_qk, hea
     return grad, q, k, v, bias, mask, seq_offset, seq_offset
 
 
+def generate_jagged_delta_tensor(batch_size, max_seq_len, head_num_q, head_dim_qk, head_dim_v, mask_type, data_type):
+    """生成变长序列数据（delta 语义：q/k 可不等长，seq_offset_q/seq_offset_k 独立）。"""
+    min_seq_len = 1
+    seq_lens_q = torch.randint(min_seq_len, max_seq_len + 1, (batch_size,), dtype=torch.int32)
+    seq_lens_k = torch.randint(min_seq_len, max_seq_len + 1, (batch_size,), dtype=torch.int32)
+    # q 侧长度不超过 k 侧（q 对 k 做 attention，k 可更长），保证 q/k 长度独立可不同
+    seq_lens_q = torch.where(seq_lens_k < seq_lens_q, seq_lens_k, seq_lens_q)
+    seq_offset_q = torch.concat((torch.zeros((1,), dtype=torch.int32), torch.cumsum(seq_lens_q, axis=0)))
+    seq_offset_k = torch.concat((torch.zeros((1,), dtype=torch.int32), torch.cumsum(seq_lens_k, axis=0)))
+    total_len_q = torch.sum(seq_lens_q).item()
+    total_len_k = torch.sum(seq_lens_k).item()
+
+    grad = torch.rand(total_len_q, head_num_q, head_dim_v, dtype=data_type).uniform_(-1, 1)
+    q = torch.rand(total_len_q, head_num_q, head_dim_qk, dtype=data_type).uniform_(-1, 1)
+    k = torch.rand(total_len_k, head_num_q, head_dim_qk, dtype=data_type).uniform_(-1, 1)
+    v = torch.rand(total_len_k, head_num_q, head_dim_v, dtype=data_type).uniform_(-1, 1)
+
+    bias = torch.rand(batch_size, head_num_q, max_seq_len, max_seq_len, dtype=data_type).uniform_(-1, 1)
+
+    if mask_type == MaskType.TRIL:
+        mask = torch.tril(torch.ones(batch_size, max_seq_len, max_seq_len, dtype=data_type))
+    elif mask_type == MaskType.NONE:
+        mask = None
+    else:
+        mask = torch.rand(batch_size, head_num_q, max_seq_len, max_seq_len, dtype=data_type).uniform_(-1, 1)
+
+    return grad, q, k, v, bias, mask, seq_offset_q, seq_offset_k
+
+
 def check_grads(grads, grads_ref, label, loss):
     """逐个对比 autograd 梯度与直接调用 backward 算子的输出。"""
     names = ("q", "k", "v", "attn_bias")
@@ -342,6 +371,94 @@ class TestHstuAutograd:
             ("v_grad", vg_eager, vg_compiled),
         ):
             assert allclose(eager, compiled, 5e-3, 1e-4), f"jagged autograd graph: {name} 不一致"
+
+    # ────────────────── jagged（delta）──────────────────
+
+    def execute_jagged_delta(
+        self, batch_size, max_seq_len, head_num, head_dim_qk, head_dim_v, mask_type, silu_scale, enable_bias, data_type
+    ):
+        grad, q, k, v, bias, mask, seq_offset_q, seq_offset_k = generate_jagged_delta_tensor(
+            batch_size, max_seq_len, head_num, head_dim_qk, head_dim_v, mask_type, data_type
+        )
+        grad_npu = grad.to("npu")
+        q_npu = q.to("npu")
+        k_npu = k.to("npu")
+        v_npu = v.to("npu")
+        bias_npu = bias.to("npu") if enable_bias else None
+        mask_npu = mask.to("npu") if mask_type in (MaskType.TRIL, MaskType.CUSTOM) else None
+        seq_offset_q = seq_offset_q.to("npu")
+        seq_offset_k = seq_offset_k.to("npu")
+
+        # 参照：直接调用 backward 算子（delta 语义：q/k 可不等长，offset/长度独立）
+        grads_ref = ops_rec.ascendc.attention.hstu_jagged_backward.delta(
+            grad_npu,
+            q_npu,
+            k_npu,
+            v_npu,
+            mask_npu,
+            bias_npu,
+            mask_type,
+            max_seq_len,
+            max_seq_len,
+            silu_scale,
+            seq_offset_q,
+            seq_offset_k,
+            None,
+            None,
+            None,
+            1.0,
+        )
+        if not enable_bias:
+            grads_ref = grads_ref[:3] + (None,)
+
+        q_ = q_npu.detach().clone().requires_grad_(True)
+        k_ = k_npu.detach().clone().requires_grad_(True)
+        v_ = v_npu.detach().clone().requires_grad_(True)
+        b_ = bias_npu.detach().clone().requires_grad_(True) if enable_bias else None
+
+        # autograd 公式已由 ops_rec.autograd 注册，直接调用前向算子即可训练
+        # （delta overload：q/k 独立 offset，显式传 max_seq_len_k）
+        y = ops_rec.ascendc.attention.hstu_jagged.delta(
+            q_,
+            k_,
+            v_,
+            mask_npu,
+            b_,
+            mask_type,
+            max_seq_len,
+            max_seq_len,
+            silu_scale,
+            seq_offset_q,
+            seq_offset_k,
+            None,
+            None,
+            None,
+            1.0,
+            False,
+        )
+        (y * grad_npu).sum().backward()
+        torch.npu.synchronize()
+
+        grads = (q_.grad, k_.grad, v_.grad, b_.grad if b_ is not None else None)
+        loss_tol = 1e-4 if data_type == torch.float32 else 5e-3
+        check_grads(grads, grads_ref, "jagged delta autograd", loss_tol)
+
+    @pytest.mark.parametrize("batch_size", [1, 4])  # 范围: [1, 2048]
+    @pytest.mark.parametrize("max_seq_len", [64, 512])  # 范围: [1, 20480]
+    @pytest.mark.parametrize("head_num", [4])  # 范围: [1, 16]
+    @pytest.mark.parametrize("head_dim_qk", [32])  # 范围: [1, 512]
+    @pytest.mark.parametrize("head_dim_v", [32])  # 范围: [16, 512]，必须是16的倍数
+    @pytest.mark.parametrize("mask_type", [MaskType.TRIL, MaskType.NONE, MaskType.CUSTOM])
+    @pytest.mark.parametrize("silu_scale", [1.0 / 256])
+    @pytest.mark.parametrize("enable_bias", [True, False])
+    @pytest.mark.parametrize("data_type", [torch.float32, torch.float16])
+    def test_jagged_delta_autograd(
+        self, batch_size, max_seq_len, head_num, head_dim_qk, head_dim_v, mask_type, silu_scale, enable_bias, data_type
+    ):
+        """eager：y.backward() 梯度与直接调用 hstu_jagged_backward.delta 一致。"""
+        self.execute_jagged_delta(
+            batch_size, max_seq_len, head_num, head_dim_qk, head_dim_v, mask_type, silu_scale, enable_bias, data_type
+        )
 
 
 if __name__ == "__main__":

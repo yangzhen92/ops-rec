@@ -18,15 +18,18 @@
 hstu_v1 训练自动微分（autograd）使用样例
 
 背景:
-    hstu_v1 前向算子（hstu_dense / hstu_jagged.equal|delta）在 torch_extension 中不注册
-    C++ AutogradPrivateUse1——autograd Function 黑盒会导致 inductor 图模式数值错误，
+    hstu_v1 前向算子（hstu_dense / hstu_jagged）在 torch_extension 中不注册
+    C++ AutogradPrivateUse1--C++ autograd Function 黑盒会导致 inductor 图模式数值错误，
     图模式仅走 PrivateUse1 + Meta 干净路径（与 paged/ln_mul/disentangle_attention
     已验证模式一致）。反向梯度由独立算子 hstu_dense_backward / hstu_jagged_backward 提供。
 
-    如需训练自动微分（loss.backward()），请在 Python 侧用 torch.autograd.Function 包装：
-        forward  -> 调用前向算子
-        backward -> 调用对应的 backward 算子
-    本样例演示 dense 与 jagged（equal）两种布局的包装方法，并校验 y.backward() 得到的
+    训练自动微分（loss.backward()）由 ops_rec.autograd.hstu_v1_autograd 通过
+    torch.library.register_autograd 将 backward 算子绑定到前向算子，
+    import ops_rec 后自动生效--直接调用前向算子即可训练，无需任何显式包装：
+        y = ops_rec.ascendc.attention.hstu_dense(q, k, v, ...)
+        loss = criterion(y, target)
+        loss.backward()
+    本样例演示 dense 与 jagged（equal）两种布局，并校验 loss.backward() 得到的
     q/k/v/bias 梯度与直接调用 backward 算子结果一致。
 
 用法:
@@ -52,149 +55,6 @@ def set_seed(seed):
     torch_npu.npu.manual_seed_all(seed)  # 如果使用多GPU
     torch.backends.cudnn.deterministic = True  # 确保CuDNN使用确定性算法
     torch.backends.cudnn.benchmark = False  # 关闭CuDNN自动优化
-
-
-# ---------------------------------------------------------------------------
-# Python 侧自动微分包装（训练场景核心用法，可直接复制到训练代码中）
-# ---------------------------------------------------------------------------
-
-
-class HstuDenseAutograd(torch.autograd.Function):
-    """dense 布局 hstu_dense 的自动微分包装。
-
-    forward 调用 ops_rec.ascendc.attention.hstu_dense（PrivateUse1 + Meta 注册），
-    backward 调用 ops_rec.ascendc.attention.hstu_dense_backward。
-    """
-
-    @staticmethod
-    def forward(ctx, q, k, v, mask, attn_bias, mask_type, max_seq_len, silu_scale):
-        ctx.save_for_backward(q, k, v, mask, attn_bias)
-        ctx.mask_type = mask_type
-        ctx.max_seq_len = max_seq_len
-        ctx.silu_scale = silu_scale
-        return ops_rec.ascendc.attention.hstu_dense(
-            q,
-            k,
-            v,
-            mask=mask,
-            attn_bias=attn_bias,
-            mask_type=mask_type,
-            max_seq_len=max_seq_len,
-            silu_scale=silu_scale,
-        )
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        q, k, v, mask, attn_bias = ctx.saved_tensors
-        q_grad, k_grad, v_grad, attn_bias_grad = ops_rec.ascendc.attention.hstu_dense_backward(
-            grad_output,
-            q,
-            k,
-            v,
-            mask,
-            attn_bias,
-            ctx.mask_type,
-            ctx.max_seq_len,
-            ctx.silu_scale,
-        )
-        # 返回值顺序与 forward 入参一一对应：q, k, v, mask, attn_bias, mask_type, max_seq_len, silu_scale
-        return (
-            q_grad,
-            k_grad,
-            v_grad,
-            None,
-            attn_bias_grad if attn_bias is not None else None,
-            None,
-            None,
-            None,
-        )
-
-
-class HstuJaggedAutograd(torch.autograd.Function):
-    """jagged 布局 hstu_jagged 的自动微分包装（equal 语义，q/k 等长，seq_offset 共用）。
-
-    forward 直接调用 ops_rec.ascendc.attention.hstu_jagged（不传 max_seq_len_k /
-    seq_offset_k，torch 重载自动识别为 equal 语义；delta 语义多传两个参数即可），
-    backward 调用 ops_rec.ascendc.attention.hstu_jagged_backward（equal 语义：
-    max_seq_len_k = max_seq_len，seq_offset_k = seq_offset）。
-    """
-
-    @staticmethod
-    def forward(
-        ctx,
-        q,
-        k,
-        v,
-        mask,
-        attn_bias,
-        mask_type,
-        max_seq_len,
-        silu_scale,
-        seq_offset,
-        num_context,
-        num_target,
-        target_group_size,
-        alpha,
-    ):
-        ctx.save_for_backward(q, k, v, mask, attn_bias, seq_offset, num_context, num_target)
-        ctx.mask_type = mask_type
-        ctx.max_seq_len = max_seq_len
-        ctx.silu_scale = silu_scale
-        ctx.target_group_size = target_group_size
-        ctx.alpha = alpha
-        return ops_rec.ascendc.attention.hstu_jagged(
-            q,
-            k,
-            v,
-            mask=mask,
-            attn_bias=attn_bias,
-            mask_type=mask_type,
-            max_seq_len=max_seq_len,
-            silu_scale=silu_scale,
-            seq_offset=seq_offset,
-            num_context=num_context,
-            num_target=num_target,
-            target_group_size=target_group_size,
-            alpha=alpha,
-        )
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        q, k, v, mask, attn_bias, seq_offset, num_context, num_target = ctx.saved_tensors
-        q_grad, k_grad, v_grad, attn_bias_grad = ops_rec.ascendc.attention.hstu_jagged_backward(
-            grad_output,
-            q,
-            k,
-            v,
-            mask,
-            attn_bias,
-            ctx.mask_type,
-            ctx.max_seq_len,
-            ctx.max_seq_len,
-            ctx.silu_scale,
-            seq_offset,
-            seq_offset,
-            num_context,
-            num_target,
-            ctx.target_group_size,
-            ctx.alpha,
-        )
-        # 返回值顺序与 forward 入参一一对应（13 个入参）
-        return (
-            q_grad,
-            k_grad,
-            v_grad,
-            None,
-            attn_bias_grad if attn_bias is not None else None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -242,13 +102,14 @@ def check_dense_autograd(mask_type, enable_bias, silu_scale=0.0):
     if bias is None:
         grads_ref = grads_ref[:3] + (None,)
 
-    # 训练链路：y = autograd(q, k, v, ...) -> loss = sum(y * grad) -> loss.backward()
+    # 训练链路：y = hstu_dense(...) -> loss = sum(y * grad) -> loss.backward()
+    # （autograd 公式已由 ops_rec.autograd 注册，直接调用前向算子即可）
     q_ = q.detach().clone().requires_grad_(True)
     k_ = k.detach().clone().requires_grad_(True)
     v_ = v.detach().clone().requires_grad_(True)
     b_ = bias.detach().clone().requires_grad_(True) if bias is not None else None
 
-    y = HstuDenseAutograd.apply(q_, k_, v_, mask, b_, mask_type, max_seq_len, silu_scale)
+    y = ops_rec.ascendc.attention.hstu_dense(q_, k_, v_, mask, b_, mask_type, max_seq_len, silu_scale)
     loss = (y * grad).sum()
     loss.backward()
     torch.npu.synchronize()
@@ -313,13 +174,13 @@ def check_jagged_autograd(mask_type, enable_bias, silu_scale=0.0):
     if bias is None:
         grads_ref = grads_ref[:3] + (None,)
 
-    # 训练链路
+    # 训练链路（autograd 公式已由 ops_rec.autograd 注册，直接调用前向算子即可）
     q_ = q.detach().clone().requires_grad_(True)
     k_ = k.detach().clone().requires_grad_(True)
     v_ = v.detach().clone().requires_grad_(True)
     b_ = bias.detach().clone().requires_grad_(True) if bias is not None else None
 
-    y = HstuJaggedAutograd.apply(
+    y = ops_rec.ascendc.attention.hstu_jagged(
         q_,
         k_,
         v_,

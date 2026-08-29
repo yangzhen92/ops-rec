@@ -66,16 +66,20 @@ typedef int (*_aclDestroyTensorList)(const aclTensorList* array);
 constexpr int kHashBufSize = 8192;
 constexpr int kHashBufMaxSize = kHashBufSize + 1024;
 
-// 兼容旧版本 ACL 头文件：尚未声明 Float8 系列枚举时回退到 ACL_DT_UNDEFINED。
-// ACL 升级支持后会自动选用真实枚举值，无需再调整。
+#ifdef SUPPORT_950
+// 兼容旧版本 ACL 头文件（如 torch_npu 打包的 third_party/acl/inc 未声明 Float8 枚举）：
+// 按 CANN aclDataType 标准数值补齐，保证 kATenScalarTypeToAclDataTypeTable 在
+// 编译与运行期始终拿到真实枚举值（回退 ACL_DT_UNDEFINED 会导致 fp8 输入在
+// torch 适配层 ConvertType 处抛 "Float8_e4m3fn has not been supported"）。
+// 头文件已声明该枚举的环境会自动选用头文件中的真实枚举值（数值一致），无需调整。
+// 仅 A5(950) 生效；A2/A3 分支不引用这两个宏，行为不受影响。
 #ifndef ACL_FLOAT8_E5M2
-#define ACL_FLOAT8_E5M2 ACL_DT_UNDEFINED
+#define ACL_FLOAT8_E5M2 static_cast<aclDataType>(35)
 #endif
 #ifndef ACL_FLOAT8_E4M3FN
-#define ACL_FLOAT8_E4M3FN ACL_DT_UNDEFINED
+#define ACL_FLOAT8_E4M3FN static_cast<aclDataType>(36)
 #endif
 
-#ifdef SUPPORT_950
 #define AT_ALL_SCALAR_TYPE_AND_ACL_DATATYPE_PAIR(_)      \
     _(at::ScalarType::Byte, ACL_UINT8)                   \
     _(at::ScalarType::Char, ACL_INT8)                    \

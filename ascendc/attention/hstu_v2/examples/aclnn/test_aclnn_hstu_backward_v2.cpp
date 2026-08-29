@@ -28,7 +28,7 @@ See the License for the specific language governing permissions and
 #include <vector>
 #include "acl/acl.h"
 #include "aclnn/opdev/fp16_t.h"
-#include "aclnnop/aclnn_hstu_backward_v2.h"
+#include "aclnn_hstu_backward_v2.h"
 
 #define CHECK_RET(cond, return_expr) \
     do {                             \

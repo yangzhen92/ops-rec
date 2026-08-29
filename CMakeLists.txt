@@ -107,7 +107,6 @@ endif()
 foreach(_bv ${OPS_REC_BUILD_VENDORS})
     # 若指定了 OPS_REC_TARGET_OP，只编译该 vendor（逐 vendor 独立 configure）
     if(OPS_REC_TARGET_OP AND NOT _bv STREQUAL OPS_REC_TARGET_OP)
-        message(STATUS "ops-rec: skipping vendor '${_bv}' (not target ${OPS_REC_TARGET_OP})")
         continue()
     endif()
     ops_rec_vendor_dir("${_bv}" _bv_dir)

@@ -1,0 +1,352 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="880" viewBox="0 0 1000 880">
+  <defs>
+    <style>
+      .title { font-family: Arial, sans-serif; font-size: 20px; font-weight: bold; fill: #2c3e50; }
+      .subtitle { font-family: Arial, sans-serif; font-size: 16px; font-weight: bold; fill: #34495e; }
+      .label { font-family: Arial, sans-serif; font-size: 13px; fill: #2c3e50; }
+      .small { font-family: Arial, sans-serif; font-size: 11px; fill: #7f8c8d; }
+      .global { fill: #3498db; }
+      .hist { fill: #2ecc71; }
+      .tgt { fill: #e74c3c; }
+      .hidden { fill: #ecf0f1; }
+      .grid { stroke: #bdc3c7; stroke-width: 1; }
+      .arrow { stroke: #34495e; stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+      .region-box { stroke: #2c3e50; stroke-width: 2; fill: none; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#34495e"/>
+    </marker>
+  </defs>
+
+  <!-- 白色背景 -->
+  <rect width="100%" height="100%" fill="white"/>
+
+  <!-- 标题 -->
+  <text x="500" y="35" text-anchor="middle" class="title">build_sla_mask_arbitrary_func: af编码 与 注意力mask对应关系示例</text>
+  <text x="500" y="58" text-anchor="middle" class="small">示例: batch=1, seq_len=8, num_targets=2, H=6, sla_k1=2, sla_k2=2, contextual_seq_len=2, eff_k2=2</text>
+
+  <!-- ========== 第一部分：序列区域划分 ========== -->
+  <text x="50" y="90" class="subtitle">1. 序列区域划分 (位置 0~7)</text>
+  
+  <!-- 位置坐标条，每个位置宽75px，总宽600px，x从100开始 -->
+  <g transform="translate(100,105)">
+    <!-- 位置标签 -->
+    <text x="37" y="-5" text-anchor="middle" class="label">0</text>
+    <text x="112" y="-5" text-anchor="middle" class="label">1</text>
+    <text x="187" y="-5" text-anchor="middle" class="label">2</text>
+    <text x="262" y="-5" text-anchor="middle" class="label">3</text>
+    <text x="337" y="-5" text-anchor="middle" class="label">4</text>
+    <text x="412" y="-5" text-anchor="middle" class="label">5</text>
+    <text x="487" y="-5" text-anchor="middle" class="label">6</text>
+    <text x="562" y="-5" text-anchor="middle" class="label">7</text>
+
+    <!-- History 区域 (pos 0-5，绿色) -->
+    <rect x="0" y="0" width="450" height="25" class="hist" rx="3"/>
+    <text x="225" y="17" text-anchor="middle" fill="white" font-weight="bold" font-size="12">History (H=6, pos 0~5)</text>
+    
+    <!-- Target 区域 (pos 6-7，红色) -->
+    <rect x="450" y="0" width="150" height="25" class="tgt" rx="3"/>
+    <text x="525" y="17" text-anchor="middle" fill="white" font-weight="bold" font-size="12">Target (pos 6~7)</text>
+
+    <!-- 边框 -->
+    <rect x="0" y="0" width="600" height="25" class="region-box" rx="3"/>
+  </g>
+
+  <!-- ========== 第二部分：af编码表 ========== -->
+  <text x="50" y="175" class="subtitle">2. af (arbitrary function) 编码表: af[pos] = [col0, col1, col2, col3]</text>
+  <text x="50" y="195" class="small">每个位置编码1~2个可见区间: [col0, col1) ∪ (col2 &lt; col3 ? [col2, col3) : ∅)</text>
+
+  <g transform="translate(50,210)">
+    <!-- 表头 -->
+    <rect x="0" y="0" width="70" height="30" fill="#34495e"/>
+    <text x="35" y="20" text-anchor="middle" fill="white" font-weight="bold" class="label">pos</text>
+    <rect x="70" y="0" width="70" height="30" fill="#34495e"/>
+    <text x="105" y="20" text-anchor="middle" fill="white" font-weight="bold" class="label">col0</text>
+    <rect x="140" y="0" width="70" height="30" fill="#34495e"/>
+    <text x="175" y="20" text-anchor="middle" fill="white" font-weight="bold" class="label">col1</text>
+    <rect x="210" y="0" width="70" height="30" fill="#34495e"/>
+    <text x="245" y="20" text-anchor="middle" fill="white" font-weight="bold" class="label">col2</text>
+    <rect x="280" y="0" width="70" height="30" fill="#34495e"/>
+    <text x="315" y="20" text-anchor="middle" fill="white" font-weight="bold" class="label">col3</text>
+    <rect x="350" y="0" width="550" height="30" fill="#34495e"/>
+    <text x="625" y="20" text-anchor="middle" fill="white" font-weight="bold" class="label">可见区间说明</text>
+
+    <!-- 行0: History pos0 -->
+    <rect x="0" y="30" width="70" height="30" class="hist" opacity="0.3"/>
+    <text x="35" y="50" text-anchor="middle" class="label">0</text>
+    <rect x="70" y="30" width="70" height="30" fill="#f8f9fa"/>
+    <text x="105" y="50" text-anchor="middle" class="label">0</text>
+    <rect x="140" y="30" width="70" height="30" fill="#f8f9fa"/>
+    <text x="175" y="50" text-anchor="middle" class="label">1</text>
+    <rect x="210" y="30" width="70" height="30" fill="#f8f9fa"/>
+    <text x="245" y="50" text-anchor="middle" class="label">2</text>
+    <rect x="280" y="30" width="70" height="30" fill="#f8f9fa"/>
+    <text x="315" y="50" text-anchor="middle" class="label">1</text>
+    <rect x="350" y="30" width="550" height="30" fill="#f8f9fa"/>
+    <text x="625" y="50" text-anchor="middle" class="label">[0,1) → 可见key: 0 (区间2为空，只有全局前缀)</text>
+
+    <!-- 行1: History pos1 -->
+    <rect x="0" y="60" width="70" height="30" class="hist" opacity="0.3"/>
+    <text x="35" y="80" text-anchor="middle" class="label">1</text>
+    <rect x="70" y="60" width="70" height="30" fill="#f8f9fa"/>
+    <text x="105" y="80" text-anchor="middle" class="label">0</text>
+    <rect x="140" y="60" width="70" height="30" fill="#f8f9fa"/>
+    <text x="175" y="80" text-anchor="middle" class="label">2</text>
+    <rect x="210" y="60" width="70" height="30" fill="#f8f9fa"/>
+    <text x="245" y="80" text-anchor="middle" class="label">2</text>
+    <rect x="280" y="60" width="70" height="30" fill="#f8f9fa"/>
+    <text x="315" y="80" text-anchor="middle" class="label">2</text>
+    <rect x="350" y="60" width="550" height="30" fill="#f8f9fa"/>
+    <text x="625" y="80" text-anchor="middle" class="label">[0,2) → 可见key: 0,1 (区间2为空，全局前缀满)</text>
+
+    <!-- 行2: History pos2 -->
+    <rect x="0" y="90" width="70" height="30" class="hist" opacity="0.3"/>
+    <text x="35" y="110" text-anchor="middle" class="label">2</text>
+    <rect x="70" y="90" width="70" height="30" fill="#f8f9fa"/>
+    <text x="105" y="110" text-anchor="middle" class="label">0</text>
+    <rect x="140" y="90" width="70" height="30" fill="#f8f9fa"/>
+    <text x="175" y="110" text-anchor="middle" class="label">2</text>
+    <rect x="210" y="90" width="70" height="30" fill="#f8f9fa"/>
+    <text x="245" y="110" text-anchor="middle" class="label">2</text>
+    <rect x="280" y="90" width="70" height="30" fill="#f8f9fa"/>
+    <text x="315" y="110" text-anchor="middle" class="label">3</text>
+    <rect x="350" y="90" width="550" height="30" fill="#f8f9fa"/>
+    <text x="625" y="110" text-anchor="middle" class="label">[0,2) ∪ [2,3) → 可见key: 0,1,2 (区间端点相连)</text>
+
+    <!-- 行3: History pos3 -->
+    <rect x="0" y="120" width="70" height="30" class="hist" opacity="0.3"/>
+    <text x="35" y="140" text-anchor="middle" class="label">3</text>
+    <rect x="70" y="120" width="70" height="30" fill="#f8f9fa"/>
+    <text x="105" y="140" text-anchor="middle" class="label">0</text>
+    <rect x="140" y="120" width="70" height="30" fill="#f8f9fa"/>
+    <text x="175" y="140" text-anchor="middle" class="label">2</text>
+    <rect x="210" y="120" width="70" height="30" fill="#f8f9fa"/>
+    <text x="245" y="140" text-anchor="middle" class="label">2</text>
+    <rect x="280" y="120" width="70" height="30" fill="#f8f9fa"/>
+    <text x="315" y="140" text-anchor="middle" class="label">4</text>
+    <rect x="350" y="120" width="550" height="30" fill="#f8f9fa"/>
+    <text x="625" y="140" text-anchor="middle" class="label">[0,2) ∪ [2,4) → 可见key: 0,1,2,3 (区间端点相连)</text>
+
+    <!-- 行4: History pos4 → 缺口! -->
+    <rect x="0" y="150" width="70" height="30" class="hist" opacity="0.3"/>
+    <text x="35" y="170" text-anchor="middle" class="label">4</text>
+    <rect x="70" y="150" width="70" height="30" fill="#f8f9fa"/>
+    <text x="105" y="170" text-anchor="middle" class="label">0</text>
+    <rect x="140" y="150" width="70" height="30" fill="#f8f9fa"/>
+    <text x="175" y="170" text-anchor="middle" class="label">2</text>
+    <rect x="210" y="150" width="70" height="30" fill="#f8f9fa"/>
+    <text x="245" y="170" text-anchor="middle" class="label">3</text>
+    <rect x="280" y="150" width="70" height="30" fill="#f8f9fa"/>
+    <text x="315" y="170" text-anchor="middle" class="label">5</text>
+    <rect x="350" y="150" width="550" height="30" fill="#f8f9fa"/>
+    <text x="625" y="170" text-anchor="middle" class="label">[0,2) ∪ [3,5) → 可见key: 0,1,3,4 (key=2不可见，缺口!)</text>
+
+    <!-- 行5: History pos5 → 双缺口! -->
+    <rect x="0" y="180" width="70" height="30" class="hist" opacity="0.3"/>
+    <text x="35" y="200" text-anchor="middle" class="label">5</text>
+    <rect x="70" y="180" width="70" height="30" fill="#f8f9fa"/>
+    <text x="105" y="200" text-anchor="middle" class="label">0</text>
+    <rect x="140" y="180" width="70" height="30" fill="#f8f9fa"/>
+    <text x="175" y="200" text-anchor="middle" class="label">2</text>
+    <rect x="210" y="180" width="70" height="30" fill="#f8f9fa"/>
+    <text x="245" y="200" text-anchor="middle" class="label">4</text>
+    <rect x="280" y="180" width="70" height="30" fill="#f8f9fa"/>
+    <text x="315" y="200" text-anchor="middle" class="label">6</text>
+    <rect x="350" y="180" width="550" height="30" fill="#f8f9fa"/>
+    <text x="625" y="200" text-anchor="middle" class="label">[0,2) ∪ [4,6) → 可见key: 0,1,4,5 (key=2,3不可见，双缺口!)</text>
+
+    <!-- 行6: Target pos6 -->
+    <rect x="0" y="210" width="70" height="30" class="tgt" opacity="0.3"/>
+    <text x="35" y="230" text-anchor="middle" class="label">6</text>
+    <rect x="70" y="210" width="70" height="30" fill="#f8f9fa"/>
+    <text x="105" y="230" text-anchor="middle" class="label">0</text>
+    <rect x="140" y="210" width="70" height="30" fill="#f8f9fa"/>
+    <text x="175" y="230" text-anchor="middle" class="label">6</text>
+    <rect x="210" y="210" width="70" height="30" fill="#f8f9fa"/>
+    <text x="245" y="230" text-anchor="middle" class="label">6</text>
+    <rect x="280" y="210" width="70" height="30" fill="#f8f9fa"/>
+    <text x="315" y="230" text-anchor="middle" class="label">6</text>
+    <rect x="350" y="210" width="550" height="30" fill="#f8f9fa"/>
+    <text x="625" y="230" text-anchor="middle" class="label">[0,6) → 可见key: 0-5，连自身(6)都不可见</text>
+
+    <!-- 行7: Target pos7 -->
+    <rect x="0" y="240" width="70" height="30" class="tgt" opacity="0.3"/>
+    <text x="35" y="260" text-anchor="middle" class="label">7</text>
+    <rect x="70" y="240" width="70" height="30" fill="#f8f9fa"/>
+    <text x="105" y="260" text-anchor="middle" class="label">0</text>
+    <rect x="140" y="240" width="70" height="30" fill="#f8f9fa"/>
+    <text x="175" y="260" text-anchor="middle" class="label">6</text>
+    <rect x="210" y="240" width="70" height="30" fill="#f8f9fa"/>
+    <text x="245" y="260" text-anchor="middle" class="label">6</text>
+    <rect x="280" y="240" width="70" height="30" fill="#f8f9fa"/>
+    <text x="315" y="260" text-anchor="middle" class="label">6</text>
+    <rect x="350" y="240" width="550" height="30" fill="#f8f9fa"/>
+    <text x="625" y="260" text-anchor="middle" class="label">[0,6) → 可见key: 0-5，所有target都不可见</text>
+
+    <!-- 网格线 -->
+    <rect x="0" y="0" width="900" height="270" class="region-box"/>
+    <line x1="70" y1="0" x2="70" y2="270" class="grid"/>
+    <line x1="140" y1="0" x2="140" y2="270" class="grid"/>
+    <line x1="210" y1="0" x2="210" y2="270" class="grid"/>
+    <line x1="280" y1="0" x2="280" y2="270" class="grid"/>
+    <line x1="350" y1="0" x2="350" y2="270" class="grid"/>
+    <line x1="0" y1="30" x2="900" y2="30" class="grid"/>
+    <line x1="0" y1="60" x2="900" y2="60" class="grid"/>
+    <line x1="0" y1="90" x2="900" y2="90" class="grid"/>
+    <line x1="0" y1="120" x2="900" y2="120" class="grid"/>
+    <line x1="0" y1="150" x2="900" y2="150" class="grid"/>
+    <line x1="0" y1="180" x2="900" y2="180" class="grid"/>
+    <line x1="0" y1="210" x2="900" y2="210" class="grid"/>
+    <line x1="0" y1="240" x2="900" y2="240" class="grid"/>
+  </g>
+
+  <!-- ========== 第三部分：注意力Mask矩阵 ========== -->
+  <text x="50" y="520" class="subtitle">3. 对应的注意力Mask矩阵 (query行 × key列, 绿色=History可见, 红色=Target可见, 灰色=不可见; 可见双区间缺口)</text>
+  
+  <g transform="translate(120,560)">
+    <!-- 坐标轴标签 -->
+    <text x="-30" y="100" text-anchor="middle" class="label" transform="rotate(-90, -30, 100)">query (pos)</text>
+    <text x="100" y="-25" text-anchor="middle" class="label">key (pos)</text>
+
+    <!-- key 轴标签 -->
+    <g>
+      <text x="12.5" y="-10" text-anchor="middle" class="label">0</text>
+      <text x="37.5" y="-10" text-anchor="middle" class="label">1</text>
+      <text x="62.5" y="-10" text-anchor="middle" class="label">2</text>
+      <text x="87.5" y="-10" text-anchor="middle" class="label">3</text>
+      <text x="112.5" y="-10" text-anchor="middle" class="label">4</text>
+      <text x="137.5" y="-10" text-anchor="middle" class="label">5</text>
+      <text x="162.5" y="-10" text-anchor="middle" class="label" fill="#e74c3c">6</text>
+      <text x="187.5" y="-10" text-anchor="middle" class="label" fill="#e74c3c">7</text>
+    </g>
+
+    <!-- query 轴标签 -->
+    <g>
+      <text x="-10" y="18" text-anchor="end" class="label">0</text>
+      <text x="-10" y="43" text-anchor="end" class="label">1</text>
+      <text x="-10" y="68" text-anchor="end" class="label">2</text>
+      <text x="-10" y="93" text-anchor="end" class="label">3</text>
+      <text x="-10" y="118" text-anchor="end" class="label">4</text>
+      <text x="-10" y="143" text-anchor="end" class="label">5</text>
+      <text x="-10" y="168" text-anchor="end" class="label" fill="#e74c3c">6</text>
+      <text x="-10" y="193" text-anchor="end" class="label" fill="#e74c3c">7</text>
+    </g>
+
+    <!-- 矩阵内容: History行可见全绿色，Target行可见全红色，和HSTU风格一致 -->
+    <!-- query 0 (hist): [0,1) → key0 绿色可见 -->
+    <rect x="0" y="0" width="25" height="25" class="hist"/>
+    <rect x="25" y="0" width="25" height="25" class="hidden"/>
+    <rect x="50" y="0" width="25" height="25" class="hidden"/>
+    <rect x="75" y="0" width="25" height="25" class="hidden"/>
+    <rect x="100" y="0" width="25" height="25" class="hidden"/>
+    <rect x="125" y="0" width="25" height="25" class="hidden"/>
+    <rect x="150" y="0" width="25" height="25" class="hidden"/>
+    <rect x="175" y="0" width="25" height="25" class="hidden"/>
+
+    <!-- query 1 (hist): [0,2) → key0,1 绿色可见 -->
+    <rect x="0" y="25" width="25" height="25" class="hist"/>
+    <rect x="25" y="25" width="25" height="25" class="hist"/>
+    <rect x="50" y="25" width="25" height="25" class="hidden"/>
+    <rect x="75" y="25" width="25" height="25" class="hidden"/>
+    <rect x="100" y="25" width="25" height="25" class="hidden"/>
+    <rect x="125" y="25" width="25" height="25" class="hidden"/>
+    <rect x="150" y="25" width="25" height="25" class="hidden"/>
+    <rect x="175" y="25" width="25" height="25" class="hidden"/>
+
+    <!-- query 2 (hist): [0,3) → key0-2 绿色可见 -->
+    <rect x="0" y="50" width="25" height="25" class="hist"/>
+    <rect x="25" y="50" width="25" height="25" class="hist"/>
+    <rect x="50" y="50" width="25" height="25" class="hist"/>
+    <rect x="75" y="50" width="25" height="25" class="hidden"/>
+    <rect x="100" y="50" width="25" height="25" class="hidden"/>
+    <rect x="125" y="50" width="25" height="25" class="hidden"/>
+    <rect x="150" y="50" width="25" height="25" class="hidden"/>
+    <rect x="175" y="50" width="25" height="25" class="hidden"/>
+
+    <!-- query 3 (hist): [0,4) → key0-3 绿色可见 -->
+    <rect x="0" y="75" width="25" height="25" class="hist"/>
+    <rect x="25" y="75" width="25" height="25" class="hist"/>
+    <rect x="50" y="75" width="25" height="25" class="hist"/>
+    <rect x="75" y="75" width="25" height="25" class="hist"/>
+    <rect x="100" y="75" width="25" height="25" class="hidden"/>
+    <rect x="125" y="75" width="25" height="25" class="hidden"/>
+    <rect x="150" y="75" width="25" height="25" class="hidden"/>
+    <rect x="175" y="75" width="25" height="25" class="hidden"/>
+
+    <!-- query 4 (hist): [0,2) ∪ [3,5) → key0-1,3-4 绿色可见，key2灰缺口! -->
+    <rect x="0" y="100" width="25" height="25" class="hist"/>
+    <rect x="25" y="100" width="25" height="25" class="hist"/>
+    <rect x="50" y="100" width="25" height="25" class="hidden"/>
+    <rect x="75" y="100" width="25" height="25" class="hist"/>
+    <rect x="100" y="100" width="25" height="25" class="hist"/>
+    <rect x="125" y="100" width="25" height="25" class="hidden"/>
+    <rect x="150" y="100" width="25" height="25" class="hidden"/>
+    <rect x="175" y="100" width="25" height="25" class="hidden"/>
+
+    <!-- query 5 (hist): [0,2) ∪ [4,6) → key0-1,4-5 绿色可见，key2-3灰双缺口! -->
+    <rect x="0" y="125" width="25" height="25" class="hist"/>
+    <rect x="25" y="125" width="25" height="25" class="hist"/>
+    <rect x="50" y="125" width="25" height="25" class="hidden"/>
+    <rect x="75" y="125" width="25" height="25" class="hidden"/>
+    <rect x="100" y="125" width="25" height="25" class="hist"/>
+    <rect x="125" y="125" width="25" height="25" class="hist"/>
+    <rect x="150" y="125" width="25" height="25" class="hidden"/>
+    <rect x="175" y="125" width="25" height="25" class="hidden"/>
+
+    <!-- query 6 (tgt): [0,6) → key0-5 红色可见，key6-7灰不可见(自身不可见) -->
+    <rect x="0" y="150" width="25" height="25" class="tgt"/>
+    <rect x="25" y="150" width="25" height="25" class="tgt"/>
+    <rect x="50" y="150" width="25" height="25" class="tgt"/>
+    <rect x="75" y="150" width="25" height="25" class="tgt"/>
+    <rect x="100" y="150" width="25" height="25" class="tgt"/>
+    <rect x="125" y="150" width="25" height="25" class="tgt"/>
+    <rect x="150" y="150" width="25" height="25" class="hidden"/>
+    <rect x="175" y="150" width="25" height="25" class="hidden"/>
+
+    <!-- query 7 (tgt): [0,6) → key0-5 红色可见，key6-7灰不可见(所有target不可见) -->
+    <rect x="0" y="175" width="25" height="25" class="tgt"/>
+    <rect x="25" y="175" width="25" height="25" class="tgt"/>
+    <rect x="50" y="175" width="25" height="25" class="tgt"/>
+    <rect x="75" y="175" width="25" height="25" class="tgt"/>
+    <rect x="100" y="175" width="25" height="25" class="tgt"/>
+    <rect x="125" y="175" width="25" height="25" class="tgt"/>
+    <rect x="150" y="175" width="25" height="25" class="hidden"/>
+    <rect x="175" y="175" width="25" height="25" class="hidden"/>
+
+    <!-- 网格边框 -->
+    <rect x="0" y="0" width="200" height="200" class="region-box"/>
+    <line x1="25" y1="0" x2="25" y2="200" class="grid"/>
+    <line x1="50" y1="0" x2="50" y2="200" class="grid"/>
+    <line x1="75" y1="0" x2="75" y2="200" class="grid"/>
+    <line x1="100" y1="0" x2="100" y2="200" class="grid"/>
+    <line x1="125" y1="0" x2="125" y2="200" class="grid"/>
+    <line x1="150" y1="0" x2="150" y2="200" class="grid"/>
+    <line x1="175" y1="0" x2="175" y2="200" class="grid"/>
+    <line x1="0" y1="25" x2="200" y2="25" class="grid"/>
+    <line x1="0" y1="50" x2="200" y2="50" class="grid"/>
+    <line x1="0" y1="75" x2="200" y2="75" class="grid"/>
+    <line x1="0" y1="100" x2="200" y2="100" class="grid"/>
+    <line x1="0" y1="125" x2="200" y2="125" class="grid"/>
+    <line x1="0" y1="150" x2="200" y2="150" class="grid"/>
+    <line x1="0" y1="175" x2="200" y2="175" class="grid"/>
+  </g>
+
+  <!-- 图例 -->
+  <g transform="translate(350,560)">
+    <rect x="0" y="0" width="20" height="20" class="hist" rx="2"/>
+    <text x="30" y="15" class="label">History token</text>
+    <rect x="0" y="30" width="20" height="20" class="tgt" rx="2"/>
+    <text x="30" y="45" class="label">Target token</text>
+    <rect x="0" y="70" width="20" height="20" class="hidden" rx="2"/>
+    <text x="30" y="85" class="label">不可见</text>
+  </g>
+
+  <!-- 规则说明 -->
+  <g transform="translate(600,560)">
+    <text x="0" y="0" class="subtitle" font-size="14">编码规则:</text>
+    <text x="0" y="25" class="small">• <tspan fill="#2ecc71" font-weight="bold">History</tspan>: 双区间=全局前缀[0,eff_k2) ∪ 局部窗口[pos-sla_k1+1, pos+1)</text>
+    <text x="0" y="45" class="small">  - 两个区间不重叠时中间出现灰色缺口，是SLA的核心特点</text>
+    <text x="0" y="65" class="small">• <tspan fill="#e74c3c" font-weight="bold">Target</tspan>: 仅可见完整history区间[0,H)，所有target不可见</text>
+  </g>
+
+</svg>

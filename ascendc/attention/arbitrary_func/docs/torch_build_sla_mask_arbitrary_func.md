@@ -25,7 +25,6 @@
 
 输出 shape `[1, 1, total_seqlen, 4]`，head 维恒 1（所有 head 广播共享同一 mask）。
 
-
 ## 接口原型
 
 ```python
@@ -53,8 +52,8 @@ ops_rec.ascendc.attention.build_sla_mask_arbitrary_func(
 ### 算子约束
 
 - 仅支持 INT32 数据类型
-- `offsets`、`num_targets` 必须为 1D
-- `num_targets` shape 须为 `[batch_size]`（batch_size = offsets.size(0) - 1）
+- `offsets` 必须为 1D, `offsets[0]` 必须为 0、`offsets` 严格单调递增
+- `num_targets` 必须为 1D, `num_targets` shape 须为 `[batch_size]`（batch_size = offsets.size(0) - 1）
 - `total_seqlen` 须等于 `offsets[-1]`
 - `sla_k1`、`sla_k2`、`contextual_seq_len` 须大于等于 0
 - 该算子需要在 NPU 设备上运行

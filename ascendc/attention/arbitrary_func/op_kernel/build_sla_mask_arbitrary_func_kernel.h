@@ -22,10 +22,10 @@
 
 namespace BuildSlaMaskArbitraryFunc {
 
-constexpr uint32_t BLOCK_THREAD_NUM_256 = 1024;
+constexpr uint32_t BLOCK_THREAD_NUM_1024 = 1024;
 constexpr uint32_t N_FUNC = 4;
 
-__simt_vf__ __aicore__ LAUNCH_BOUND(BLOCK_THREAD_NUM_256) inline void SimtBuildSlaMaskArbitraryFunc(
+__simt_vf__ __aicore__ LAUNCH_BOUND(BLOCK_THREAD_NUM_1024) inline void SimtBuildSlaMaskArbitraryFunc(
     __gm__ int32_t* __restrict__ af,                // [total_q, 4], row-major
     const __gm__ int32_t* __restrict__ offsets,     // [batchSize + 1]
     const __gm__ int32_t* __restrict__ numTargets,  // [batchSize]

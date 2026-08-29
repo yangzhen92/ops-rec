@@ -12,7 +12,7 @@
 
 根据 SLA（Semi-Local Attention）规则构造 arbitrary function 掩码编码（af 编码）：对每个全局位置 `pos`，
 二分查找 `offsets` 定位所属序列 `seq_id`，计算局部位置与 history 边界后按 history / target 情况写出
-`af[pos][0..3]` 四个列（全局坐标，半开区间 `[col0, col1) ∪ [col2, col3)`，`col3 ≤ col0` 视为空区间）。
+`af[pos][0..3]` 四个列（全局坐标，半开区间 `[col0, col1) ∪ [col2, col3)`，`col1 ≤ col0 时第一区间为空、col3 ≤ col2 时第二区间为空`）。
 
 设 `seq_start=offsets[seq_id]`、`seq_len=offsets[seq_id+1]-seq_start`、`pos_local=pos-seq_start`，
 `eff_k2=max(sla_k2, contextual_seq_len)`、`H=max(seq_len-num_targets[seq_id], 0)`：
@@ -90,8 +90,8 @@ aclnnStatus：返回状态码，成功返回 `ACLNN_SUCCESS`。
 ## 约束说明
 
 - 仅支持 INT32 数据类型
-- `offsets`、`numTargets` 必须为 1D
-- `numTargets` shape 须为 `[batch_size]`（batch_size = offsets.shape[0] - 1），长度不匹配会报错
+- `offsets` 必须为 1D, `offsets[0]` 必须为 0、`offsets` 严格单调递增
+- `numTargets` 必须为 1D, `numTargets` shape 须为 `[batch_size]`（batch_size = offsets.shape[0] - 1），长度不匹配会报错
 - `totalSeqLen` 须等于 `offsets[-1]`
 - `slaK1`、`slaK2`、`contextualSeqLen` 须大于等于 0
 - 该算子需要在 NPU 设备上运行

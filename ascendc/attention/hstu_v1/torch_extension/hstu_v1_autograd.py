@@ -68,7 +68,7 @@ def _unpack(inputs, n, defaults):
     """按 schema 前 n 个输入防御性解包（inputs 长度不足时按 defaults 补齐槽位）。"""
     vals = list(inputs)
     if len(vals) < n:
-        vals.extend(defaults[len(vals):n])
+        vals.extend(defaults[len(vals) : n])
     return tuple(vals[:n])
 
 
@@ -161,8 +161,7 @@ def _jagged_equal_setup_context(ctx, inputs, output=None):
     # autograd 静默丢弃梯度，这里显式拒绝以暴露问题
     if mask is not None and mask.requires_grad:
         raise NotImplementedError(
-            "hstu_jagged.equal 的 mask 为不可导输入（backward 无 mask 梯度输出），"
-            "请勿传入 requires_grad=True 的 mask"
+            "hstu_jagged.equal 的 mask 为不可导输入（backward 无 mask 梯度输出），请勿传入 requires_grad=True 的 mask"
         )
     ctx.save_for_backward(q, k, v, mask, attn_bias, seq_offset, num_context, num_target)
     ctx.mask_type = mask_type
@@ -251,8 +250,7 @@ def _jagged_delta_setup_context(ctx, inputs, output=None):
     # autograd 静默丢弃梯度，这里显式拒绝以暴露问题
     if mask is not None and mask.requires_grad:
         raise NotImplementedError(
-            "hstu_jagged.delta 的 mask 为不可导输入（backward 无 mask 梯度输出），"
-            "请勿传入 requires_grad=True 的 mask"
+            "hstu_jagged.delta 的 mask 为不可导输入（backward 无 mask 梯度输出），请勿传入 requires_grad=True 的 mask"
         )
     ctx.save_for_backward(q, k, v, mask, attn_bias, seq_offset, seq_offset_k, num_context, num_target)
     ctx.mask_type = mask_type

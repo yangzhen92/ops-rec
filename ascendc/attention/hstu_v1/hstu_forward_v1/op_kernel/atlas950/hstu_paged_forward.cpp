@@ -15,7 +15,7 @@ See the License for the specific language governing permissions and
 
 #include "kernel_operator.h"
 #include "hstu_paged_forward_kernel.h"
-#include "hstu_kernel_tiling_key.h"
+#include "hstu_kernel_tiling_key_paged.h"
 
 template <typename T>
 __aicore__ inline void InvokeHstuOpImpl(const HstuDenseForward::Args& args)

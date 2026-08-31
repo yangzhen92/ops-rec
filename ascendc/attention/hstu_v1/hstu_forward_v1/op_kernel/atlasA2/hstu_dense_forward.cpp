@@ -32,7 +32,7 @@ __aicore__ inline void InvokeHstuOpImpl(const HstuDenseForward::DenseArgs& args)
 }
 
 #include "kernel_operator.h"
-#include "hstu_kernel_tiling_key.h"
+#include "hstu_kernel_tiling_key_dense.h"
 
 template <int maskedType, bool enableBias, int typeTilingKey, bool deterministic, int blockM, int blockN, int blockK>
 __global__ __aicore__ void hstu_dense_forward(GM_ADDR q, GM_ADDR k, GM_ADDR v, GM_ADDR mask, GM_ADDR attnBias,

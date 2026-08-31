@@ -13,20 +13,11 @@ See the License for the specific language governing permissions and
         limitations under the License.
 ==============================================================================*/
 
+#define OPS_REC_CUST_VENDORS "token_mixing"
 #include <torch/csrc/autograd/custom_function.h>
 #include <torch/library.h>
 
 #include "common_utils.h"
-
-// 显式指定 EXEC_NPU_CMD 查找 aclnn 符号时使用的 vendor 目录名
-// （对应安装产物 opp/<variant>/vendors/token_mixing/）。
-// 不依赖根 CMakeLists 按 torch_extension 父目录注入 OPS_REC_CUST_VENDOR。
-#ifdef OPS_REC_CUST_VENDOR
-#undef OPS_REC_CUST_VENDOR
-#endif
-#define OPS_REC_CUST_VENDOR "token_mixing"
-#define OPS_REC_CUST_VENDORS "token_mixing"
-
 #include "pytorch_npu_helper.hpp"
 
 using torch::autograd::AutogradContext;

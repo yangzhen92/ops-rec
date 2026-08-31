@@ -113,10 +113,16 @@ int main()
     std::vector<int64_t> yShape = {B, H, S};
     std::vector<int64_t> vecShape = {H};
 
-    void *xDeviceAddr = nullptr, *xTDeviceAddr = nullptr;
-    void *gammaDeviceAddr = nullptr, *betaDeviceAddr = nullptr;
+    void* xDeviceAddr = nullptr;
+    void* xTDeviceAddr = nullptr;
+    void* gammaDeviceAddr = nullptr;
+    void* betaDeviceAddr = nullptr;
     void* outDeviceAddr = nullptr;
-    aclTensor *x = nullptr, *xT = nullptr, *gamma = nullptr, *beta = nullptr, *out = nullptr;
+    aclTensor* x = nullptr;
+    aclTensor* xT = nullptr;
+    aclTensor* gamma = nullptr;
+    aclTensor* beta = nullptr;
+    aclTensor* out = nullptr;
 
     ret = CreateAclTensor(xHostData, xShape, &xDeviceAddr, aclDataType::ACL_FLOAT, &x);
     CHECK_RET(ret == ACL_SUCCESS, return ret);

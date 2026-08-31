@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""token_mixing pytest（对齐 RecSDK cust_op/test/token_mixing/test_token_mixing.py）。"""
+"""token_mixing pytest。"""
 
 import sys
 import numpy as np
@@ -25,8 +25,8 @@ import ops_rec
 torch.npu.config.allow_internal_format = False
 torch._dynamo.config.cache_size_limit = 256
 
-RECSDK_B = [1, 45, 256, 512, 1024]
-RECSDK_S = [128, 256, 338, 507, 512, 1024]
+TEST_B = [1, 45, 256, 512, 1024]
+TEST_S = [128, 256, 338, 507, 512, 1024]
 DEFAULT_EPS = 1e-7
 
 
@@ -37,7 +37,7 @@ def torch_compiled(model, **kwargs):
 
 
 def get_global_loss(x):
-    """CPU golden：与 RecSDK 相同，用 torch.nn.LayerNorm(eps=1e-7)。"""
+    """CPU golden：LayerNorm(x + x^T)，eps=1e-7。"""
     input_tensor = torch.from_numpy(x)
     transpose_tensor = torch.from_numpy(x).permute(0, 2, 1)
     add = torch.add(input_tensor, transpose_tensor)
@@ -47,7 +47,7 @@ def get_global_loss(x):
 
 
 def get_fused_loss_op(x, gamma, beta, device, compiled_fn=None):
-    """NPU 调用：对齐 RecSDK get_fused_loss_op，改走 ops_rec。"""
+    """NPU 调用 ops_rec.ascendc.mixing.token_mixing。"""
     torch.npu.set_device(device)
     x_t = torch.from_numpy(x).to(device)
     gamma_t = torch.from_numpy(gamma).to(device)
@@ -57,38 +57,37 @@ def get_fused_loss_op(x, gamma, beta, device, compiled_fn=None):
     return result.cpu().detach().numpy()
 
 
-def _run_recsdk_case(B, S, device="npu:0", compiled_fn=None):
+def _run_case(B, S, device="npu:0", compiled_fn=None):
     tensor = np.random.randn(B, S, S).astype(np.float32)
     gamma = np.ones(S, dtype=np.float32)
     beta = np.zeros(S, dtype=np.float32)
     result = get_global_loss(tensor)
     result1 = get_fused_loss_op(tensor, gamma, beta, device, compiled_fn=compiled_fn)
-    # 与 RecSDK 完全一致：只传 atol=1e-6，rtol 用 numpy 默认 1e-5
     assert np.allclose(result, result1, atol=1e-6)
 
 
-@pytest.mark.parametrize("B", RECSDK_B)
-@pytest.mark.parametrize("S", RECSDK_S)
+@pytest.mark.parametrize("B", TEST_B)
+@pytest.mark.parametrize("S", TEST_S)
 @pytest.mark.parametrize("device", ["npu:0"])
 def test_token_mixing_eager(B, S, device):
-    """eager：用例与精度对齐 RecSDK test_token_mixing。"""
-    _run_recsdk_case(B, S, device)
+    """eager：按 B/S 组合校验精度。"""
+    _run_case(B, S, device)
 
 
 @pytest.mark.graph
-@pytest.mark.parametrize("B", RECSDK_B)
-@pytest.mark.parametrize("S", RECSDK_S)
+@pytest.mark.parametrize("B", TEST_B)
+@pytest.mark.parametrize("S", TEST_S)
 @pytest.mark.parametrize("device", ["npu:0"])
 def test_token_mixing_graph(B, S, device):
-    """graph：与 eager 完全相同的 B/S/device/精度。"""
+    """graph：与 eager 相同的 B/S/device/精度。"""
     compiled_fn = torch_compiled(ops_rec.ascendc.mixing.token_mixing, dynamic=None, fullgraph=False, backend="inductor")
-    _run_recsdk_case(B, S, device, compiled_fn=compiled_fn)
+    _run_case(B, S, device, compiled_fn=compiled_fn)
 
 
 @pytest.mark.ci
 def test_token_mixing_ci():
-    """CI 快速冒烟：小 shape，精度仍用 RecSDK 的 allclose(atol=1e-6)。"""
-    _run_recsdk_case(2, 16, "npu:0")
+    """CI 冒烟：小 shape，allclose(atol=1e-6)。"""
+    _run_case(2, 16, "npu:0")
 
 
 if __name__ == "__main__":

@@ -23,11 +23,12 @@ ASCENDC_TPL_ARGS_DECL(HstuDenseForward,  // 算子OpType
                       ASCENDC_TPL_UINT_DECL(blockN, 13, ASCENDC_TPL_UI_LIST, 32, 64, 128, 256, 512, 1024),
                       ASCENDC_TPL_UINT_DECL(blockK, 10, ASCENDC_TPL_UI_LIST, 64, 128, 256, 512), );
 
-// dense格式：固定 256×256×512，仅 typeTilingKey=0
+// dense格式：固定 256×256×512，仅 typeTilingKey=0；deterministic 仅 0
+// （host 侧 tiling_policy_dense.cpp 写死 deterministic=false，det=1 为死实例化）
 ASCENDC_TPL_SEL(ASCENDC_TPL_ARGS_SEL(ASCENDC_TPL_UINT_SEL(maskedType, ASCENDC_TPL_UI_LIST, 0, 2, 3),
                                      ASCENDC_TPL_BOOL_SEL(enableBias, 0, 1),
                                      ASCENDC_TPL_UINT_SEL(typeTilingKey, ASCENDC_TPL_UI_LIST, 0),
-                                     ASCENDC_TPL_BOOL_SEL(deterministic, 0, 1),
+                                     ASCENDC_TPL_BOOL_SEL(deterministic, 0),
                                      ASCENDC_TPL_UINT_SEL(blockM, ASCENDC_TPL_UI_LIST, 256),
                                      ASCENDC_TPL_UINT_SEL(blockN, ASCENDC_TPL_UI_LIST, 256),
                                      ASCENDC_TPL_UINT_SEL(blockK, ASCENDC_TPL_UI_LIST, 512), ), );

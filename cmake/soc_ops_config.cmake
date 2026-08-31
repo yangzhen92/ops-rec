@@ -12,6 +12,7 @@ set(OPS_REC_OPS_ATLAS_950
     hstu_v2
     reverse_sequence
     in_linear_silu
+    token_mixing
     fa_infer_with_arbitrary_func
 )
 
@@ -22,6 +23,7 @@ set(OPS_REC_OPS_ATLAS_A3
     hstu_v1
     reverse_sequence
     in_linear_silu
+    token_mixing
 )
 
 # ================================ A2 ops ===================================
@@ -31,6 +33,7 @@ set(OPS_REC_OPS_ATLAS_A2
     hstu_v1
     reverse_sequence
     in_linear_silu
+    token_mixing
 )
 
 

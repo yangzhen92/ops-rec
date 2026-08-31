@@ -255,10 +255,12 @@ TORCH_LIBRARY_IMPL(ops_rec, PrivateUse1, m)
     m.impl("hstu_jagged_backward.delta", TORCH_FN(hstu_deltaq_backward));
 }
 
-// 注意：forward 不注册 AutogradPrivateUse1（autograd Function 黑盒会导致 inductor 图模式
-// 数值错误——graph 模式仅走 PrivateUse1 + Meta 干净路径，与 paged/ln_mul/disentangle_attention
-// 已验证模式一致）。backward 由独立算子 hstu_jagged_backward.equal/delta 提供，调用方直接使用。
-// 如需训练自动微分，请在 Python 侧包装 autograd.Function。
+// 注意：forward 不注册 AutogradPrivateUse1（C++ autograd Function 黑盒会导致 inductor
+// 图模式数值错误--graph 模式仅走 PrivateUse1 + Meta 干净路径，与 paged/ln_mul/
+// disentangle_attention 已验证模式一致）。训练自动微分由 Python 侧
+// torch.library.register_autograd 将 hstu_jagged_backward 绑定为 hstu_jagged
+// （equal/delta 两个 overload）的 autograd 公式（见 torch_extension/hstu_v1_autograd.py，
+// import ops_rec 后自动生效）；hstu_jagged_backward.equal/delta 亦可直接调用。
 
 namespace {
 

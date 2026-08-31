@@ -280,7 +280,32 @@ build_one_kernel() {
             "${CMAKEOP_COMMON[@]}" -DCMAKE_INSTALL_PREFIX="${stage}" || return 1
 
     cmake --build "${bdir}" -j"${INNER_JOBS}" || return 1
+
+    local RUN_KERNEL_BUILT=""
+    if cmake --build "${bdir}" --target help 2>/dev/null | grep -q '^\.\.\. binary$'; then
+        RUN_KERNEL_BUILT=1
+        echo "[INFO] ${soc}/${op}: building 'binary' hub target (RUN kernel)"
+        cmake --build "${bdir}" --target binary -j"${INNER_JOBS}" || return 1
+    fi
+
     cmake --install "${bdir}" || return 1
+
+    if [ -n "${RUN_KERNEL_BUILT}" ]; then
+        # RUN 模式（探测到 binary 目标的算子）下，内核 op_impl 由 install 阶段受
+        # binary 产物是否存在决定；若上面 binary 探测失配（CANN 目标名或 help
+        # 排版变化），install 不会产出 op_impl，最终只会被 collect 阶段报成笼统的
+        # "no vendor dirs"，与真实原因脱节。这里在 install 后直接断言 RUN kernel
+        # 结构确实落盘（RUN 的 op_impl 位于 packages/ 而非 opp/），缺则显式失败。
+        # 非 RUN 型算子（无 binary 目标）不做此检查。
+        local vendors_pkg="${stage}/packages/vendors"
+        if [ ! -d "${vendors_pkg}" ] \
+           || ! find "${vendors_pkg}" -type d \
+               -path '*op_impl/ai_core/tbe/op_tiling' 2>/dev/null | grep -q .; then
+            echo "[ERROR] ${soc}/${op}: RUN kernel op_impl missing after install " \
+                 "('binary' target build failed or was not run)" >&2
+            return 1
+        fi
+    fi
 
     echo "[INFO] Built ${soc}/${op} -> ${stage}"
 }
@@ -473,6 +498,27 @@ main() {
                 cp -a "${vend}/." "${vend_pkg}/"
                 echo "[INFO] Collected ${soc}/${op} -> ${variant}/vendors/${vname}"
                 collected=1
+
+                local vdir="${sstage}/packages/vendors/${vname}"
+                if [ -d "${vdir}" ]; then
+                    local sub
+                    for sub in op_api op_proto op_impl/ai_core/tbe/op_tiling; do
+                        if [ -d "${vdir}/${sub}" ]; then
+                            cp -a "${vdir}/${sub}/." "${vend_pkg}/${sub}/" 2>/dev/null
+                            echo "[INFO] Collected ${soc}/${op} ${sub} -> ${variant}/vendors/${vname}/${sub}"
+                        fi
+                    done
+                    # RUN 模式（产出的 packages/vendors 目录）下，op_api（aclnn 头 +
+                    # libcust_opapi.so）由框架只装到 packages/vendors/<vendor>/op_api，
+                    # 是 aclnn/torch 适配层 dlopen 的必需产物；缺失说明 install 阶段
+                    # 没把 vendor 的 op_api 装上，直接失败，避免 wheel 打包成功却缺
+                    # op_api、运行时才报错且难以定位。
+                    if [ ! -d "${vdir}/op_api/lib" ] \
+                       || [ ! -f "${vdir}/op_api/lib/libcust_opapi.so" ]; then
+                        die "${soc}/${op}: RUN package missing op_api/lib/libcust_opapi.so " \
+                            "under packages/vendors/${vname}; refusing to package a wheel missing op_api"
+                    fi
+                fi
             done
             if [ "${collected}" -eq 0 ]; then
                 die "${soc}/${op}: no vendor dirs under ${oppdir}; refusing to produce a wheel missing this op"

@@ -111,9 +111,9 @@ _example_paths() {
         -path "*/${2}/examples/${1}/test_${1}_*${3}" 2>/dev/null | sort
 }
 
-# 从 example 路径里提取 op 名（取路径里 <op>/examples/<kind>/test_<kind>_<op>.<ext> 的 op 段）
+# 从 example 路径里提取 op 名
 _op_from_example_path() {
-    awk -F/ '{gsub(/\.[^.]+$/, "", $NF); sub(/^test_(aclnn|torch)_/, "", $NF); print $NF}'
+    awk -F/ '{ for (i=1;i<=NF;i++) if ($i=="examples") { print $(i-1); break } }'
 }
 
 # 查询聚合 vendor 在 soc_ops_config.cmake 中展开后的真实子 vendor 列表。

@@ -68,12 +68,15 @@ file(GLOB group_proto_src ${ASCEND_AUTOGEN_PATH}/group_op_proto/*.cc)
 file(GLOB proto_src ${ASCEND_AUTOGEN_PATH}/op_proto.cc)
 set_source_files_properties(${group_proto_src} PROPERTIES GENERATED TRUE)
 set_source_files_properties(${proto_src} PROPERTIES GENERATED TRUE)
-# GRAPH 库仅编译 op-def 注册/推导单元（hstu_*_forward.cpp）；
-# 纯 tiling 实现（tiling_policy*.cpp / arch/tiling_policy_arch.cpp）仅进 TILING 库，
-# 避免同一符号两份定义被同时链接进 libcust_opapi.so。
-list(REMOVE_ITEM ops_srcs ${tiling_impl_srcs})
+# RUN 模式下 GRAPH（libcust_opsproto_rt2.0.so）、TILING（libcust_opmaster_rt2.0.so）、
+# ACLNN（libcust_opapi.so）是三个独立 dlopen 的 .so。hstu_*_forward.cpp（op def/
+# infershape/tiling 三套注册）直接实例化 TilingPolicy* 子类并调用其方法，因此
+# tiling_policy*.cpp 实现必须编进 GRAPH 与 TILING 两个库（各自 .so 内自含符号，
+# 跨 .so 不冲突）。SHARED 模式下所有 host 库打进单一 libcust_opapi.so 才会
+# 出现 multiple definition，RUN 模式无此问题，故不再从 GRAPH 源列表剔除。
 npu_op_library(cust_op_proto GRAPH
     ${ops_srcs}
+    ${tiling_impl_srcs}
     ${group_proto_src}
     ${proto_src}
 )
@@ -91,10 +94,8 @@ target_compile_options(cust_op_proto PRIVATE
 
 file(GLOB fallback_src ${ASCEND_AUTOGEN_PATH}/fallback_*.cpp)
 set_source_files_properties(${fallback_src} PROPERTIES GENERATED TRUE)
-# TILING 库编译 op-def（tiling 入口注册）+ 纯 tiling 实现，符号在最终 .so 链接时统一解析
 npu_op_library(cust_optiling TILING
     ${ops_srcs}
-    ${tiling_impl_srcs}
     ${fallback_src}
 )
 
@@ -110,20 +111,4 @@ npu_op_package_add(${VENDOR_NAME}
         cust_optiling
         cust_opapi
         cust_op_proto
-)
-
-# CANN 自动生成的 tiling target 名为 <PACKAGE>_ascendc_cust_optiling
-# 一个 vendor 下多个算子共享同一个 tiling target
-set(TILING_TARGET ${VENDOR_NAME}_ascendc_cust_optiling)
-
-# 要求 tiling 库独立安装到 op_tiling/ 路径
-# nnopbase individual op 流程通过 dlopen 该目录下的 .so 定位 tiling 函数。
-install(FILES $<TARGET_FILE:${TILING_TARGET}>
-    DESTINATION ${CMAKE_INSTALL_PREFIX}/op_impl/ai_core/tbe/op_tiling
-    RENAME liboptiling.so
-    PERMISSIONS OWNER_READ OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
-)
-install(FILES $<TARGET_FILE:${TILING_TARGET}>
-    DESTINATION ${CMAKE_INSTALL_PREFIX}/op_impl/ai_core/tbe/op_tiling/lib/linux/${CMAKE_SYSTEM_PROCESSOR}
-    RENAME libcust_opmaster_rt2.0.so
 )

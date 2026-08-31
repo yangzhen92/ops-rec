@@ -70,43 +70,22 @@ ops_rec.ascendc.attention.hstu_dense_backward(
 
 ## 自动微分（autograd）用法
 
-前向算子 `hstu_dense` 不注册 C++ AutogradPrivateUse1（保证 inductor 图模式干净），
-因此 `y.backward()` 不会自动触发本算子。训练场景请在 Python 侧用
-`torch.autograd.Function` 包装：forward 调用 `hstu_dense`，backward 调用 `hstu_dense_backward`。
+前向算子 `hstu_dense` 不注册 C++ AutogradPrivateUse1（保证 inductor 图模式干净）。
+训练自动微分由 `ops_rec.autograd.hstu_v1_autograd` 通过 `torch.library.register_autograd`
+将本算子绑定为 `hstu_dense` 的 autograd 公式（`import ops_rec` 后自动生效），
+直接调用前向算子即可训练：
 
 ```python
 import torch
 import ops_rec
 
-class HstuDenseAutograd(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, q, k, v, mask, attn_bias, mask_type, max_seq_len, silu_scale):
-        ctx.save_for_backward(q, k, v, mask, attn_bias)
-        ctx.mask_type = mask_type
-        ctx.max_seq_len = max_seq_len
-        ctx.silu_scale = silu_scale
-        return ops_rec.ascendc.attention.hstu_dense(
-            q, k, v, mask=mask, attn_bias=attn_bias,
-            mask_type=mask_type, max_seq_len=max_seq_len, silu_scale=silu_scale)
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        q, k, v, mask, attn_bias = ctx.saved_tensors
-        q_grad, k_grad, v_grad, attn_bias_grad = \
-            ops_rec.ascendc.attention.hstu_dense_backward(
-                grad_output, q, k, v, mask, attn_bias,
-                ctx.mask_type, ctx.max_seq_len, ctx.silu_scale)
-        # 返回值顺序与 forward 入参一一对应；无 bias 时不返回假梯度
-        return (q_grad, k_grad, v_grad, None,
-                attn_bias_grad if attn_bias is not None else None,
-                None, None, None)
-
-y = HstuDenseAutograd.apply(q, k, v, mask, bias, mask_type, max_seq_len, silu_scale)
+y = ops_rec.ascendc.attention.hstu_dense(q, k, v, mask, bias, mask_type, max_seq_len, silu_scale)
 loss = criterion(y, target)
 loss.backward()  # 梯度流向 q/k/v/bias
 ```
 
-该包装可被 dynamo 正常追踪（forward 走 Meta 构图），`torch.compile` 训练同样可用。
+eager 与 `torch.compile` 训练均可用。
+注册逻辑位于 [hstu_v1_autograd.py](../../torch_extension/hstu_v1_autograd.py)。
 完整可运行样例与校验见
 [test_torch_hstu_backward_v1_autograd.py](../examples/torch/test_torch_hstu_backward_v1_autograd.py)，
 回归用例见 [test_hstu_autograd.py](../test/pytest/test_hstu_autograd.py)。

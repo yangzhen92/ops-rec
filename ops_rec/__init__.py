@@ -57,26 +57,63 @@ def _detect_soc_version() -> str | None:
         logging.warning("ops_rec: acl.get_soc_name() SOC detection failed.")
         return None
 
-    if soc.startswith("Ascend950"):
+    variant = _normalize_variant(soc)
+    if variant:
+        return variant
+    return None
+
+
+def _normalize_variant(value: str) -> str | None:
+    """把各种写法归一化为 ops_rec 的 variant 名（atlas_950 / atlas_a2 / atlas_a3）。
+
+    支持：
+      - 抽象 variant：atlas_950 / atlas_a2 / atlas_a3（大小写不敏感）
+      - 代号：A5 -> atlas_950，A2 -> atlas_a2，A3 -> atlas_a3
+      - 真实芯片名：Ascend950* -> atlas_950，Ascend910B* -> atlas_a2，Ascend910_93* -> atlas_a3
+    无法识别返回 None。
+    """
+    s = (value or "").strip()
+    if not s:
+        return None
+
+    low = s.lower()
+    if low.startswith("atlas_"):
+        if low in ("atlas_950", "atlas_a2", "atlas_a3"):
+            return low
+        return None
+
+    if low == "a5":
         return "atlas_950"
-    if soc.startswith("Ascend910B"):
+    if low == "a2":
         return "atlas_a2"
-    if soc.startswith("Ascend910_93"):
+    if low == "a3":
         return "atlas_a3"
-    logging.warning("ops_rec: unknown SOC '%s', defaulting to atlas_950", soc)
-    return "atlas_950"
+
+    if s.lower().startswith("ascend950"):
+        return "atlas_950"
+    if s.lower().startswith("ascend910b"):
+        return "atlas_a2"
+    if s.lower().startswith("ascend910_93"):
+        return "atlas_a3"
+    return None
 
 
 def _select_variant() -> str:
     """选择当前环境使用的 variant。
 
     优先级：
-    1. OPS_REC_FORCE_VARIANT 环境变量（用于测试/强制指定）
-    2. torch_npu._C._npu_get_soc_version() 检测
+    1. SOC_VERSION 环境变量（真实芯片名/代号/抽象 variant，通用写法）
+    2. OPS_REC_FORCE_BUILD_VER 环境变量（build/装包强制指定，同 SOC_VERSION）
+    3. acl.get_soc_name() 自动探测
+    4. 默认 atlas_950
     """
-    override = os.environ.get("OPS_REC_FORCE_VARIANT", "")
-    if override:
-        return override
+    for var in ("SOC_VERSION", "OPS_REC_FORCE_BUILD_VER"):
+        value = os.environ.get(var, "")
+        if value:
+            variant = _normalize_variant(value)
+            if variant:
+                return variant
+
     variant = _detect_soc_version()
     if variant:
         return variant

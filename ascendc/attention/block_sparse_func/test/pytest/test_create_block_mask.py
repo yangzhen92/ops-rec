@@ -459,6 +459,7 @@ def _to_npu(func_tensor_cpu):
 def _check_q2k(
     func_tensor_cpu, seqlen_q, seqlen_k, Q_BLOCK_SIZE, KV_BLOCK_SIZE, check_q_boundary=True, tag="", graph=False
 ):
+    torch.npu.set_device(NPU_DEVICE)
     ref_mask_cnt, ref_mask_idx, ref_full_cnt, ref_full_idx = create_reference_block_mask(
         func_tensor_cpu,
         seqlen_q,
@@ -498,6 +499,7 @@ def _check_q2k(
 
 
 def _check_k2q(func_tensor_cpu, seqlen_q, seqlen_k, Q_BLOCK_SIZE, KV_BLOCK_SIZE, tag="", graph=False):
+    torch.npu.set_device(NPU_DEVICE)
     ref_mask_cnt, ref_mask_idx, ref_full_cnt, ref_full_idx = create_reference_k2q_block_mask(
         func_tensor_cpu,
         seqlen_q,

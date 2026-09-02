@@ -108,6 +108,7 @@ kv 区间为 `[F_{2i}, F_{2i+1})` 的并集。该算子为 Q2K 正向路径，�
 
 - 仅支持 INT32 数据类型
 - func_tensor 必须为 4D，n_func 必须为偶数（如 2、4、6、8、...）
+- func_q_len 必须大于等于 q_len
 - q_len、kv_len、q_block_size、kv_block_size 必须大于 0
 - q_block_size、kv_block_size 必须是32的倍数
 - block_idx 每行尾端可能被过度分配（未初始化），只应读取前full_block_cnt个FULL块及后mask_block_cnt个MASK块的有效数据
@@ -168,6 +169,7 @@ q_block 的 kv 区间（kv-range 优化），再调用 `CreateK2qBlockSparseFrom
 
 - 仅支持 INT32 数据类型
 - func_tensor 必须为 4D，n_func 必须为偶数（如 2、4、6、8、...）
+- func_q_len 必须大于等于 q_len
 - q_len、kv_len、q_block_size、kv_block_size 必须大于 0
 - q_block_size、kv_block_size 必须是32的倍数
 - block_idx 每行尾端可能被过度分配（未初始化），只应读取前full_block_cnt个FULL块及后mask_block_cnt个MASK块的有效数据

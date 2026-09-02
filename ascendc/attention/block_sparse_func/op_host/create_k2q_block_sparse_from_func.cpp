@@ -55,11 +55,14 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
 
     int32_t bNum = funcShape->GetStorageShape().GetDim(0);
     int32_t hNum = funcShape->GetStorageShape().GetDim(1);
+    int32_t funcQLen = funcShape->GetStorageShape().GetDim(2);
     int32_t nFunc = funcShape->GetStorageShape().GetDim(3);
     OPS_LOG_E_IF(*qLen <= 0, context, return ge::GRAPH_FAILED, "qLen must be greater than 0");
     OPS_LOG_E_IF(*kvLen <= 0, context, return ge::GRAPH_FAILED, "kvLen must be greater than 0");
-    OPS_LOG_E_IF(*qBlockSize <= 0, context, return ge::GRAPH_FAILED, "qBlockSize must be greater than 0");
-    OPS_LOG_E_IF(*kvBlockSize <= 0, context, return ge::GRAPH_FAILED, "kvBlockSize must be greater than 0");
+    OPS_LOG_E_IF(*qBlockSize <= 0 || *qBlockSize % 32 != 0, context, return ge::GRAPH_FAILED, "qBlockSize must be greater than 0 and divisible by 32");
+    OPS_LOG_E_IF(*kvBlockSize <= 0 || *kvBlockSize % 32 != 0, context, return ge::GRAPH_FAILED, "kvBlockSize must be greater than 0 and divisible by 32");
+    OPS_LOG_E_IF(funcQLen < *qLen, context, return ge::GRAPH_FAILED, "func_q_len must be greater than or equal to qLen");
+    OPS_LOG_E_IF(nFunc < 0 || nFunc % 2 != 0, context, return ge::GRAPH_FAILED, "nFunc must be greater than or equal to 0 and divisible by 2");
 
     int32_t numQBlocks = DIVUP(*qLen, *qBlockSize);
     int32_t numKvBlocks = DIVUP(*kvLen, *kvBlockSize);

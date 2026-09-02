@@ -166,13 +166,15 @@ std::tuple<Tensor, Tensor, Tensor> create_q2k_block_sparse_from_func_impl_npu(co
     TORCH_CHECK(q_len > 0, "q_len must be positive");
     TORCH_CHECK(kv_len > 0, "kv_len must be positive");
     // catlass 限制
-    TORCH_CHECK(q_block_size > 0, "q_block_size must be positive");
-    TORCH_CHECK(kv_block_size > 0, "kv_block_size must be positive");
+    TORCH_CHECK(q_block_size > 0 && q_block_size % 32 == 0, "q_block_size must be positive and divisible by 32");
+    TORCH_CHECK(kv_block_size > 0 && kv_block_size % 32 == 0, "kv_block_size must be positive and divisible by 32");
 
     // func_tensor 可为非连续张量，保留 strides 以便 kernel 按步长索引
     int32_t B = func_tensor.size(0);
     int32_t H = func_tensor.size(1);
+    int32_t func_q_len = func_tensor.size(2);
     int32_t n_func = func_tensor.size(3);
+    TORCH_CHECK(func_q_len >= q_len, "func_q_len must be greater than or equal to q_len");
     TORCH_CHECK(n_func % 2 == 0, "n_func must be even (e.g., 2, 4, 6, 8, ...)");
 
     int32_t stride_b = func_tensor.stride(0);
@@ -247,12 +249,14 @@ std::tuple<Tensor, Tensor, Tensor> create_k2q_block_sparse_from_func_impl_npu(co
 
     TORCH_CHECK(q_len > 0, "q_len must be positive");
     TORCH_CHECK(kv_len > 0, "kv_len must be positive");
-    TORCH_CHECK(q_block_size > 0, "q_block_size must be positive");
-    TORCH_CHECK(kv_block_size > 0, "kv_block_size must be positive");
+    TORCH_CHECK(q_block_size > 0 && q_block_size % 32 == 0, "q_block_size must be positive and divisible by 32");
+    TORCH_CHECK(kv_block_size > 0 && kv_block_size % 32 == 0, "kv_block_size must be positive and divisible by 32");
 
     int32_t B = func_tensor.size(0);
     int32_t H = func_tensor.size(1);
+    int32_t func_q_len = func_tensor.size(2);
     int32_t n_func = func_tensor.size(3);
+    TORCH_CHECK(func_q_len >= q_len, "func_q_len must be greater than or equal to q_len");
     TORCH_CHECK(n_func % 2 == 0, "n_func must be even (e.g., 2, 4, 6, 8, ...)");
 
     // func_tensor 可为非连续张量，保留 strides 以便 kernel 按步长索引

@@ -1,0 +1,238 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+"""Invalid-argument tests for create_q2k/k2q_block_sparse_from_func.
+
+Split out of ``test_create_block_mask.py`` (which exceeded 1000 lines);
+positive cases live there, here we only cover argument validation.
+"""
+
+import re
+import pytest
+import torch
+
+import ops_rec
+
+CPU_DEVICE = "cpu"
+NPU_DEVICE = "npu:0"
+
+
+def _require_npu():
+    if not torch.npu.is_available():
+        pytest.skip("NPU device not available")
+
+
+def _to_npu(func_tensor_cpu):
+    return func_tensor_cpu.to(NPU_DEVICE)
+
+
+# ---------------------------------------------------------------------------
+# 7. Block-size alignment argument validation
+#
+# Both the Q2K and K2Q entry points in block_sparse_func_plugin.cpp enforce
+# (catlass restriction):
+#
+#     TORCH_CHECK(q_block_size > 0 && q_block_size % 32 == 0,
+#                 "q_block_size must be positive and divisible by 32");
+#     TORCH_CHECK(kv_block_size > 0 && kv_block_size % 32 == 0,
+#                 "kv_block_size must be positive and divisible by 32");
+#
+# The tests below verify that a non-aligned (or non-positive) block size is
+# rejected by both Q2K and K2Q with the matching message (legal block sizes
+# are covered by test_different_block_sizes above).
+# ---------------------------------------------------------------------------
+Q_BLOCK_SIZE_ERR_MSG = "q_block_size must be positive and divisible by 32"
+KV_BLOCK_SIZE_ERR_MSG = "kv_block_size must be positive and divisible by 32"
+
+# 非 32 的倍数或非正数——每一个取值都必须被拒绝
+INVALID_BLOCK_SIZES = [
+    31,  # 最小对齐尺寸减一
+    33,  # 32 加一
+    48,  # 非 32 的倍数
+    100,  # 非 32 的倍数
+    0,  # 非正数
+    -32,  # 负数（虽为 32 的倍数）
+    -1,  # 负数
+]
+
+
+def _minimal_npu_func_tensor(seqlen_q=64, n_func=2, B=1, H=1):
+    """构造最小规模的 NPU 布局 func_tensor [B, H, func_q_len, n_func]（n_func 为偶数）。"""
+    func_tensor = torch.zeros(B, H, seqlen_q, n_func, dtype=torch.int32, device=CPU_DEVICE)
+    return _to_npu(func_tensor.contiguous())
+
+
+@pytest.mark.parametrize("bad_q_block_size", INVALID_BLOCK_SIZES)
+def test_invalid_q_block_size(bad_q_block_size):
+    """Q2K and K2Q both reject a q_block_size that is not a positive multiple of 32."""
+    _require_npu()
+    func_tensor = _minimal_npu_func_tensor()
+    # q2k: 非法 q_block_size（合法 kv_block_size）
+    with pytest.raises(RuntimeError, match=Q_BLOCK_SIZE_ERR_MSG):
+        ops_rec.ascendc.attention.create_q2k_block_sparse_from_func(
+            func_tensor=func_tensor,
+            q_len=64,
+            kv_len=128,
+            q_block_size=bad_q_block_size,
+            kv_block_size=128,
+            check_q_boundary=True,
+            debug=False,
+        )
+    # k2q: 非法 q_block_size（合法 kv_block_size）
+    with pytest.raises(RuntimeError, match=Q_BLOCK_SIZE_ERR_MSG):
+        ops_rec.ascendc.attention.create_k2q_block_sparse_from_func(
+            func_tensor=func_tensor,
+            q_len=64,
+            kv_len=128,
+            q_block_size=bad_q_block_size,
+            kv_block_size=128,
+            debug=False,
+        )
+
+
+@pytest.mark.parametrize("bad_kv_block_size", INVALID_BLOCK_SIZES)
+def test_invalid_kv_block_size(bad_kv_block_size):
+    """Q2K and K2Q both reject a kv_block_size that is not a positive multiple of 32."""
+    _require_npu()
+    func_tensor = _minimal_npu_func_tensor()
+    # q2k: 合法 q_block_size，非法 kv_block_size
+    with pytest.raises(RuntimeError, match=KV_BLOCK_SIZE_ERR_MSG):
+        ops_rec.ascendc.attention.create_q2k_block_sparse_from_func(
+            func_tensor=func_tensor,
+            q_len=64,
+            kv_len=128,
+            q_block_size=128,
+            kv_block_size=bad_kv_block_size,
+            check_q_boundary=True,
+            debug=False,
+        )
+    # k2q: 合法 q_block_size，非法 kv_block_size
+    with pytest.raises(RuntimeError, match=KV_BLOCK_SIZE_ERR_MSG):
+        ops_rec.ascendc.attention.create_k2q_block_sparse_from_func(
+            func_tensor=func_tensor,
+            q_len=64,
+            kv_len=128,
+            q_block_size=128,
+            kv_block_size=bad_kv_block_size,
+            debug=False,
+        )
+
+
+# ---------------------------------------------------------------------------
+# 8. func_q_len / q_len consistency validation
+#
+# Both the Q2K and K2Q entry points enforce:
+#
+#     TORCH_CHECK(func_q_len >= q_len,
+#                 "func_q_len must be greater than or equal to q_len");
+#
+# The func_tensor must cover the whole q sequence; a func_q_len smaller than
+# q_len is rejected (func_q_len == q_len is legal and covered by the positive
+# tests in test_create_block_mask.py).
+# ---------------------------------------------------------------------------
+FUNC_Q_LEN_ERR_MSG = "func_q_len must be greater than or equal to q_len"
+
+# func_q_len < q_len 的每一种取值都必须被拒绝（q_len 固定为 64）
+INVALID_FUNC_Q_LENS = [
+    63,  # q_len - 1
+    32,  # 恰为一半
+    1,  # 最小正数
+]
+
+
+@pytest.mark.parametrize("bad_func_q_len", INVALID_FUNC_Q_LENS)
+def test_invalid_func_q_len_less_than_q_len(bad_func_q_len):
+    """Q2K and K2Q both reject a func_q_len smaller than q_len."""
+    _require_npu()
+    func_tensor = _minimal_npu_func_tensor(seqlen_q=bad_func_q_len)
+    # q2k
+    with pytest.raises(RuntimeError, match=FUNC_Q_LEN_ERR_MSG):
+        ops_rec.ascendc.attention.create_q2k_block_sparse_from_func(
+            func_tensor=func_tensor,
+            q_len=64,
+            kv_len=128,
+            q_block_size=128,
+            kv_block_size=128,
+            check_q_boundary=True,
+            debug=False,
+        )
+    # k2q
+    with pytest.raises(RuntimeError, match=FUNC_Q_LEN_ERR_MSG):
+        ops_rec.ascendc.attention.create_k2q_block_sparse_from_func(
+            func_tensor=func_tensor,
+            q_len=64,
+            kv_len=128,
+            q_block_size=128,
+            kv_block_size=128,
+            debug=False,
+        )
+
+
+# ---------------------------------------------------------------------------
+# 9. n_func parity validation
+#
+# Both the Q2K and K2Q entry points enforce:
+#
+#     TORCH_CHECK(n_func % 2 == 0,
+#                 "n_func must be even (e.g., 2, 4, 6, 8, ...)");
+#
+# n_func encodes half-open interval pairs [F0, F1) ∪ [F2, F3) ∪ ... so it must
+# be even; every odd value must be rejected (legal even values are covered by
+# the positive tests in test_create_block_mask.py).
+# ---------------------------------------------------------------------------
+N_FUNC_ERR_MSG = "n_func must be even (e.g., 2, 4, 6, 8, ...)"
+# 报错文案含括号，match 为正则，需转义
+N_FUNC_ERR_PATTERN = re.escape(N_FUNC_ERR_MSG)
+
+# 奇数 n_func 的每一种取值都必须被拒绝
+INVALID_N_FUNCS = [
+    1,  # 最小奇数
+    3,
+    5,
+    7,
+]
+
+
+@pytest.mark.parametrize("bad_n_func", INVALID_N_FUNCS)
+def test_invalid_odd_n_func(bad_n_func):
+    """Q2K and K2Q both reject an odd n_func."""
+    _require_npu()
+    func_tensor = _minimal_npu_func_tensor(seqlen_q=64, n_func=bad_n_func)
+    # q2k
+    with pytest.raises(RuntimeError, match=N_FUNC_ERR_PATTERN):
+        ops_rec.ascendc.attention.create_q2k_block_sparse_from_func(
+            func_tensor=func_tensor,
+            q_len=64,
+            kv_len=128,
+            q_block_size=128,
+            kv_block_size=128,
+            check_q_boundary=True,
+            debug=False,
+        )
+    # k2q
+    with pytest.raises(RuntimeError, match=N_FUNC_ERR_PATTERN):
+        ops_rec.ascendc.attention.create_k2q_block_sparse_from_func(
+            func_tensor=func_tensor,
+            q_len=64,
+            kv_len=128,
+            q_block_size=128,
+            kv_block_size=128,
+            debug=False,
+        )
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-sv"])

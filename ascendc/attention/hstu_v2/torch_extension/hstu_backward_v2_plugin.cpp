@@ -98,3 +98,38 @@ TORCH_LIBRARY_IMPL(ops_rec, PrivateUse1, m)
 {
     m.impl("hstu_backward_v2", TORCH_FN(hstu_backward_v2_impl_npu));
 }
+
+// Meta 实现：inductor 图模式（fake tensor 符号执行）需要算子具备 Meta kernel，
+// 否则 torch._dynamo 报 "Operator does not support running with fake tensors"。
+// 输出 shape 与真实实现对齐：qGrad=[totalSeqLenQ,heads,dimQK]、kGrad=[totalSeqLenK,heads,dimQK]、
+// vGrad=[totalSeqLenK,heads,dimGV]；rabGrad 仅在传入 rab 时返回（与真实实现 at::zeros_like 分支对齐，
+// 否则 fake tensor 推理拿到未定义 tensor 之外的同 shape 空张量会导致 shape 推导结果不一致）。
+namespace {
+
+std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> hstu_backward_v2_meta(
+    const at::Tensor& grad, const at::Tensor& q, const at::Tensor& k, const at::Tensor& v, const int64_t maxSeqLenQ,
+    const int64_t maxSeqLenK, const at::Tensor& seqOffsetQ, const at::Tensor& seqOffsetK,
+    const c10::optional<at::Tensor>& rab, const c10::optional<at::Tensor>& numContext,
+    const c10::optional<at::Tensor>& numTarget, const c10::optional<double>& scale,
+    const c10::optional<int64_t>& targetGroupSize, const c10::optional<double>& alpha, const int64_t windowSizeLeft,
+    const int64_t windowSizeRight)
+{
+    auto outQGrad = at::empty_symint(q.sym_sizes(), q.options().device(c10::kMeta));
+    auto outKGrad = at::empty_symint(k.sym_sizes(), k.options().device(c10::kMeta));
+    auto outVGrad = at::empty_symint(v.sym_sizes(), v.options().device(c10::kMeta));
+
+    at::Tensor outRabGrad;
+    if (rab.has_value() && rab.value().defined()) {
+        outRabGrad = at::empty_symint(rab.value().sym_sizes(), rab.value().options().device(c10::kMeta));
+    } else {
+        outRabGrad = at::Tensor();
+    }
+    return std::make_tuple(outQGrad, outKGrad, outVGrad, outRabGrad);
+}
+
+}  // anonymous namespace
+
+TORCH_LIBRARY_IMPL(ops_rec, Meta, m)
+{
+    m.impl("hstu_backward_v2", &hstu_backward_v2_meta);
+}

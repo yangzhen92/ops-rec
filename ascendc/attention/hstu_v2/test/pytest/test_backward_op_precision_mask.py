@@ -15,14 +15,28 @@
 # limitations under the License.
 # ==============================================================================
 # pylint: disable=redefined-outer-name, duplicate-code
+import sys
 from typing import Dict, Any, Tuple, Optional
 from dataclasses import dataclass
 
 import pytest
 import torch
+import torch._dynamo
 
+import ops_rec
 from utils import create_data_generator, Record, SeqStats
 from backend import KernelBackend, create_hstu_atten_backend
+
+
+def torch_compiled(model, **kwargs):
+    """torch.compile 封装（与库上其他算子图模式用例保持一致）。
+
+    Python >= 3.12 下 torch.compile 存在兼容问题，直接返回原始函数。
+    """
+    if sys.version_info < (3, 12, 0):
+        return torch.compile(model, **kwargs)
+    return model
+
 
 # 常量定义
 ASCEND_DEVICE_ID = 0
@@ -388,3 +402,127 @@ def test_has_mask(
         target_group_size=target_group_size,
     )
     _run_test_case(params)
+
+
+# ────────────────── Inductor 图模式 ──────────────────
+@pytest.mark.graph
+@pytest.mark.parametrize("batch_size, head_num", [(2, 4), (8, 8)])
+@pytest.mark.parametrize("seq_lens", [(256, 256), (512, 512)])
+@pytest.mark.parametrize("head_dims", [(32, 32)])
+# (-1, -1) 无 mask，(-1, 0) 因果 mask。
+# num_context + num_target < max_seqlen
+@pytest.mark.parametrize(
+    "window_size,num_context,num_target,target_group_size",
+    [
+        ((-1, 0), None, None, None),
+        ((-1, 0), 64, None, None),
+        ((-1, 0), None, 66, 1),
+    ],
+)
+@pytest.mark.parametrize("has_rab", [True, False])
+@pytest.mark.parametrize("data_type", [torch.float16, torch.bfloat16])
+@pytest.mark.parametrize("seed", [123])
+def test_generic_graph(
+    test_backends,
+    test_record,
+    batch_size,
+    head_num,
+    head_dims,
+    seq_lens,
+    window_size,
+    num_context,
+    num_target,
+    target_group_size,
+    has_rab,
+    data_type,
+    seed,
+):
+    """inductor 图模式：对 hstu_backward_v2 直接编译构图并执行
+
+    无 Meta 实现时 dynamo 会报 "Operator does not support running with fake tensors"。
+    此处验证 Meta 注册后 torch.compile(backend="inductor") 构图成功，并把 compiled 输出
+    复用同一套 Validator.backward_verify 与 pytorch_native 高精度 golden 对比。
+    注：hstu_backward_v2 无 mask 入参，mask 语义由 window_size/num_context/num_target
+    表达，故编译调用不传 mask，仅通过上述参数覆盖 mask 场景。
+    """
+    torch.npu.set_device(ASCEND_DEVICE_ID)
+    alpha = 0.5
+    scale = 1 / 1024
+
+    head_dim_qk, head_dim_v = head_dims
+    max_seqlen_q, max_seqlen_k = seq_lens
+
+    data_generator = create_data_generator(seed, seq_all_equal=False, seq_max_ratio=0.9)
+    grad, q, k, v, rab, mask, seq_offset_q, seq_offset_k = data_generator.gen_data(
+        batch_size,
+        head_num,
+        max_seqlen_q,
+        max_seqlen_k,
+        head_dim_qk,
+        head_dim_v,
+        has_rab,
+        data_type,
+        window_size,
+        num_context,
+        num_target,
+        target_group_size,
+    )
+
+    seq_stats = SeqStats.compute_seq_stats(seq_offset_q, seq_offset_k, max_seqlen_q, max_seqlen_k)
+
+    # 将 num_context/num_target 从 int 转为 Tensor，与算子 schema 的 Tensor? 类型匹配
+    # 避免 torch.compile 图模式下 dynamo 的 fake tensor 校验报类型错误
+    batch_size = len(seq_offset_q) - 1
+    if num_context is not None:
+        num_context = torch.Tensor([num_context for _ in range(batch_size)]).to("npu").to(torch.int32)
+    if num_target is not None:
+        num_target = torch.Tensor([num_target for _ in range(batch_size)]).to("npu").to(torch.int32)
+
+    # 编译 + 动态 shape + 完整入图
+    # parametrize 产生的不同 shape/标量组合会针对同一函数累积多张编译图，调大 dynamo
+    # 的 recompile 上限，避免全量跑 graph 用例时触发 FailOnRecompileLimitHit。
+    torch._dynamo.config.recompile_limit = 256
+    torch._dynamo.config.accumulated_recompile_limit = 1024
+    compiled_fn = torch_compiled(ops_rec.ascendc.attention.hstu_backward_v2, dynamic=True, fullgraph=True)
+    compiled_out = compiled_fn(
+        grad.to("npu"),
+        q.to("npu"),
+        k.to("npu"),
+        v.to("npu"),
+        max_seqlen_q,
+        max_seqlen_k,
+        torch.from_numpy(seq_offset_q).to("npu").to(torch.int32),
+        torch.from_numpy(seq_offset_k).to("npu").to(torch.int32),
+        rab.to("npu") if has_rab else None,
+        num_context,
+        num_target,
+        scale,
+        target_group_size,
+        alpha,
+        window_size[0],
+        window_size[1],
+    )
+    torch.npu.synchronize()
+    compiled_grads = tuple(grad_o.cpu() if grad_o is not None else None for grad_o in compiled_out)
+
+    # 复用 pytorch_native 高精度 golden：kernel.backward 返回
+    # (q,k,v,rab 梯度, 对应 fp32 golden) 8 元组，与 backward_verify 的 ref 结构一致
+    ref_backend = create_hstu_atten_backend(KernelBackend.PYTORCH_NATIVE)
+    ref_kernel = ref_backend.kernel(alpha, scale, has_rab, max_seqlen_q, max_seqlen_k, seq_offset_q, seq_offset_k)
+    ref_out = ref_kernel.backward(grad, q, k, v, rab, mask)
+
+    passed, detail = ref_backend.validator().backward_verify(compiled_grads, ref_out)
+    record_params = {
+        "batch_size": batch_size,
+        "head_num": head_num,
+        "head_dim_qk": head_dim_qk,
+        "head_dim_v": head_dim_v,
+        "max_seqlen_q": max_seqlen_q,
+        "max_seqlen_k": max_seqlen_k,
+        "has_rab": has_rab,
+        "data_type": str(data_type),
+        "seed": seed,
+    }
+    test_record.record("test_generic_graph", record_params, detail, seq_stats)
+
+    assert passed, f"Test case failed: detail={detail}"

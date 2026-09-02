@@ -100,6 +100,27 @@ ops_rec.ascendc.attention.hstu_backward_v2(
 
 注意：当前仅支持 causal mask 和 no mask 两种模式，不支持自定义 mask 张量输入。
 
+## 图模式（inductor）支持
+
+`hstu_backward_v2` 注册了 Meta 实现（`TORCH_LIBRARY_IMPL(ops_rec, Meta, m)`），支持 `torch.compile` 构图：
+
+```python
+compiled = torch.compile(
+    ops_rec.ascendc.attention.hstu_backward_v2,
+    dynamic=True,
+    fullgraph=True,
+)
+q_grad, k_grad, v_grad, rab_grad = compiled(
+    grad, q, k, v, max_seqlen_q, max_seqlen_k,
+    seq_offset_q, seq_offset_k, rab, num_context, num_target,
+    scale, target_group_size, alpha, window_size_left, window_size_right,
+)
+```
+
+注意：`num_context` 和 `num_target` 的 schema 类型为 `Tensor?`，传非 `None` 值时需构造为 `[batchSize]` 的 `int32` Tensor 传入，不可直接传 `int`。
+
+图模式运行依赖 `PrivateUse1 + Meta` 干净注册路径；Meta 实现的输出 shape 与真实 kernel 对齐（`rab_grad` 仅在传入 `rab` 时返回）。回归用例见 `test/pytest/test_backward_op_precision.py` 和 `test_backward_op_precision_mask.py` 中的 `test_generic_graph`（`@pytest.mark.graph`）。
+
 ## 调用示例
 
 参考 [test_torch_hstu_backward_v2.py](../examples/torch/test_torch_hstu_backward_v2.py)

@@ -102,7 +102,9 @@ ops_rec.ascendc.attention.hstu_backward_v2(
 
 ## 图模式（inductor）支持
 
-`hstu_backward_v2` 注册了 Meta 实现（`TORCH_LIBRARY_IMPL(ops_rec, Meta, m)`），支持 `torch.compile` 构图：
+`hstu_backward_v2` 注册了 Meta 实现（`TORCH_LIBRARY_IMPL(ops_rec, Meta, m)`），支持 `torch.compile` 构图。
+
+> 注：Python ≥ 3.12 下 `torch.compile` 存在兼容问题，测试用例通过 `torch_compiled` 封装降级为 eager 执行；图模式仅在 Python < 3.12 下生效。具体降级逻辑见 `test/pytest/` 中的 `torch_compiled` 函数。
 
 ```python
 compiled = torch.compile(

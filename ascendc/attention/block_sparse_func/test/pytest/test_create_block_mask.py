@@ -459,6 +459,7 @@ def _to_npu(func_tensor_cpu):
 def _check_q2k(
     func_tensor_cpu, seqlen_q, seqlen_k, Q_BLOCK_SIZE, KV_BLOCK_SIZE, check_q_boundary=True, tag="", graph=False
 ):
+    torch.npu.set_device(NPU_DEVICE)
     ref_mask_cnt, ref_mask_idx, ref_full_cnt, ref_full_idx = create_reference_block_mask(
         func_tensor_cpu,
         seqlen_q,
@@ -498,6 +499,7 @@ def _check_q2k(
 
 
 def _check_k2q(func_tensor_cpu, seqlen_q, seqlen_k, Q_BLOCK_SIZE, KV_BLOCK_SIZE, tag="", graph=False):
+    torch.npu.set_device(NPU_DEVICE)
     ref_mask_cnt, ref_mask_idx, ref_full_cnt, ref_full_idx = create_reference_k2q_block_mask(
         func_tensor_cpu,
         seqlen_q,
@@ -982,6 +984,98 @@ def test_k2q_random_mask_customer_graph(seqlen_q, seqlen_k, n_func, Q_BLOCK_SIZE
 
     tag = f"random(seqlen={seqlen_q}, n_func={n_func}, Q_BS={Q_BLOCK_SIZE}, KV_BS={KV_BLOCK_SIZE})"
     _check_k2q(func_tensor_cpu, seqlen_q, seqlen_k, Q_BLOCK_SIZE, KV_BLOCK_SIZE, tag=tag, graph=True)
+
+
+# ---------------------------------------------------------------------------
+# 7. Block-size alignment argument validation
+#
+# Both the Q2K and K2Q entry points in block_sparse_func_plugin.cpp enforce
+# (catlass restriction):
+#
+#     TORCH_CHECK(q_block_size > 0 && q_block_size % 32 == 0,
+#                 "q_block_size must be positive and divisible by 32");
+#     TORCH_CHECK(kv_block_size > 0 && kv_block_size % 32 == 0,
+#                 "kv_block_size must be positive and divisible by 32");
+#
+# The tests below verify that a non-aligned (or non-positive) block size is
+# rejected by both Q2K and K2Q with the matching message (legal block sizes
+# are covered by test_different_block_sizes above).
+# ---------------------------------------------------------------------------
+Q_BLOCK_SIZE_ERR_MSG = "q_block_size must be positive and divisible by 32"
+KV_BLOCK_SIZE_ERR_MSG = "kv_block_size must be positive and divisible by 32"
+
+# 非 32 的倍数或非正数——每一个取值都必须被拒绝
+INVALID_BLOCK_SIZES = [
+    31,  # 最小对齐尺寸减一
+    33,  # 32 加一
+    48,  # 非 32 的倍数
+    100,  # 非 32 的倍数
+    0,  # 非正数
+    -32,  # 负数（虽为 32 的倍数）
+    -1,  # 负数
+]
+
+
+def _minimal_npu_func_tensor(seqlen_q=64, n_func=2, B=1, H=1):
+    """构造最小规模的 NPU 布局 func_tensor [B, H, func_q_len, n_func]（n_func 为偶数）。"""
+    func_tensor = torch.zeros(B, H, seqlen_q, n_func, dtype=torch.int32, device=CPU_DEVICE)
+    return _to_npu(func_tensor.contiguous())
+
+
+@pytest.mark.parametrize("bad_q_block_size", INVALID_BLOCK_SIZES)
+def test_invalid_q_block_size(bad_q_block_size):
+    """Q2K and K2Q both reject a q_block_size that is not a positive multiple of 32."""
+    _require_npu()
+    func_tensor = _minimal_npu_func_tensor()
+    # q2k: 非法 q_block_size（合法 kv_block_size）
+    with pytest.raises(RuntimeError, match=Q_BLOCK_SIZE_ERR_MSG):
+        ops_rec.ascendc.attention.create_q2k_block_sparse_from_func(
+            func_tensor=func_tensor,
+            q_len=64,
+            kv_len=128,
+            q_block_size=bad_q_block_size,
+            kv_block_size=128,
+            check_q_boundary=True,
+            debug=False,
+        )
+    # k2q: 非法 q_block_size（合法 kv_block_size）
+    with pytest.raises(RuntimeError, match=Q_BLOCK_SIZE_ERR_MSG):
+        ops_rec.ascendc.attention.create_k2q_block_sparse_from_func(
+            func_tensor=func_tensor,
+            q_len=64,
+            kv_len=128,
+            q_block_size=bad_q_block_size,
+            kv_block_size=128,
+            debug=False,
+        )
+
+
+@pytest.mark.parametrize("bad_kv_block_size", INVALID_BLOCK_SIZES)
+def test_invalid_kv_block_size(bad_kv_block_size):
+    """Q2K and K2Q both reject a kv_block_size that is not a positive multiple of 32."""
+    _require_npu()
+    func_tensor = _minimal_npu_func_tensor()
+    # q2k: 合法 q_block_size，非法 kv_block_size
+    with pytest.raises(RuntimeError, match=KV_BLOCK_SIZE_ERR_MSG):
+        ops_rec.ascendc.attention.create_q2k_block_sparse_from_func(
+            func_tensor=func_tensor,
+            q_len=64,
+            kv_len=128,
+            q_block_size=128,
+            kv_block_size=bad_kv_block_size,
+            check_q_boundary=True,
+            debug=False,
+        )
+    # k2q: 合法 q_block_size，非法 kv_block_size
+    with pytest.raises(RuntimeError, match=KV_BLOCK_SIZE_ERR_MSG):
+        ops_rec.ascendc.attention.create_k2q_block_sparse_from_func(
+            func_tensor=func_tensor,
+            q_len=64,
+            kv_len=128,
+            q_block_size=128,
+            kv_block_size=bad_kv_block_size,
+            debug=False,
+        )
 
 
 if __name__ == "__main__":

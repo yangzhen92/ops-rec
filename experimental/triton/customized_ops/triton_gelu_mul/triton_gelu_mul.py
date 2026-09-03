@@ -22,6 +22,7 @@ import triton.language as tl
 # Helper functions
 # ---------------------------------------------------------------------------
 
+
 @triton.jit
 def _tanh(x):
     """Tanh implemented using sigmoid (official Triton approach)."""
@@ -47,6 +48,7 @@ def _gelu_erf(x):
 # Kernel
 # ---------------------------------------------------------------------------
 
+
 @triton.autotune(
     configs=[
         # 策略 A：BLOCK_D 尽量大，d 维度不循环
@@ -54,15 +56,14 @@ def _gelu_erf(x):
         triton.Config({"BLOCK_M": 24, "BLOCK_D": 256, "multibuffer": True}),
         triton.Config({"BLOCK_M": 16, "BLOCK_D": 512, "multibuffer": True}),
         triton.Config({"BLOCK_M": 24, "BLOCK_D": 512, "multibuffer": True}),
-        triton.Config({"BLOCK_M": 8, "BLOCK_D": 1536, "multibuffer": True}), 
-        triton.Config({"BLOCK_M": 8, "BLOCK_D": 1024, "multibuffer": True}),  
+        triton.Config({"BLOCK_M": 8, "BLOCK_D": 1536, "multibuffer": True}),
+        triton.Config({"BLOCK_M": 8, "BLOCK_D": 1024, "multibuffer": True}),
         triton.Config({"BLOCK_M": 4, "BLOCK_D": 3072, "multibuffer": True}),
         triton.Config({"BLOCK_M": 4, "BLOCK_D": 2048, "multibuffer": True}),
         triton.Config({"BLOCK_M": 2, "BLOCK_D": 4096, "multibuffer": True}),
     ],
     key=["M", "D"],
 )
-
 @triton.jit
 def _gelu_mul_kernel(
     output_ptr: tl.tensor,
@@ -119,11 +120,12 @@ def _gelu_mul_kernel(
 # Public API
 # ---------------------------------------------------------------------------
 
+
+# pylint: disable=redefined-builtin
 def triton_gelu_mul(
     input: torch.Tensor,
     approximate: str = "none",
 ) -> torch.Tensor:
-    
     if input.ndim < 2 or input.ndim > 8:
         raise ValueError(f"input must have 2–8 dims, got {input.ndim}")
 
@@ -143,14 +145,10 @@ def triton_gelu_mul(
     else:
         input_2d = input.contiguous().view(-1, 2 * D)
 
-    output_2d = torch.empty(
-        input_2d.shape[0], D,
-        dtype=input.dtype,
-        device=input.device
-    )
+    output_2d = torch.empty(input_2d.shape[0], D, dtype=input.dtype, device=input.device)
 
     M = input_2d.shape[0]
-    use_tanh = (approximate == "tanh")
+    use_tanh = approximate == "tanh"
 
     device_properties = triton.runtime.driver.active.utils.get_device_properties(input.device)
     ncores = device_properties.get("num_vectorcore", -1)

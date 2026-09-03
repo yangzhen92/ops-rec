@@ -10,6 +10,7 @@ triton_gelu_mul 是一个基于 Triton 实现的 Ascend NPU 自定义算子：
 - 输出 `out = GELU(x1) * x2`，形状为 `[..., d]`。
 - 支持两种 GELU 实现，通过 `approximate` 参数选择：
   - `"none"`（默认）：精确 erf 实现
+  - `"tanh"`：tanh 近似实现
 
 ### 约束
 

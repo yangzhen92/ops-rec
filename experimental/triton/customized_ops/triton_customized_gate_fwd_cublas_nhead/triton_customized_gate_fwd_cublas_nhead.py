@@ -16,7 +16,7 @@
 import torch
 import triton
 import triton.language as tl
-import triton.runtime.driver as driver
+from triton.runtime import driver
 
 
 def _get_ncores() -> int:
@@ -78,9 +78,7 @@ def _fused_gate_rmsnorm_kernel(
     tiles_b = tl.cdiv(B, BLOCK_B)
     tiles_per_core = tl.cdiv(tiles_b, NUM_CORES)
     start_tid_b = pid * tiles_per_core
-    end_tid_b = start_tid_b + tiles_per_core
-    if end_tid_b > tiles_b:
-        end_tid_b = tiles_b
+    end_tid_b = tl.minimum(start_tid_b + tiles_per_core, tiles_b)
 
     for tid_b in range(start_tid_b, end_tid_b):
         offs_b = tid_b * BLOCK_B + tl.arange(0, BLOCK_B)
@@ -124,6 +122,7 @@ def _fused_gate_rmsnorm_kernel(
         )
 
 
+# pylint: disable=redefined-builtin
 def customized_gate_fwd_cublas_nhead(
     input: torch.Tensor,  # (B, in_size)  bf16
     gate_layer_weight: torch.Tensor,  # (E, in_size)  bf16, E = H * Dh

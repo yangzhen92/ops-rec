@@ -69,6 +69,7 @@ def _generate_tensor_by_shape(shape, dtype, device, seed=42):
 class CustomizedGateFwdCublasNheadApi(BaseApi):
     """customized_gate_fwd_cublas_nhead 算子的 API 封装"""
 
+    # pylint: disable=attribute-defined-outside-init
     def init_by_input_data(self, input_data: InputDataset):
         """预处理阶段（不计入性能）"""
 

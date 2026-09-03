@@ -55,6 +55,7 @@ def _make_tensor(v, dtype, device):
 class GpuCustomizedGateFwdCublasNheadApi(BaseApi):
     """GPU 端 customized_gate_fwd_cublas_nhead 算子的 API 封装"""
 
+    # pylint: disable=attribute-defined-outside-init
     def init_by_input_data(self, input_data: InputDataset):
         """预处理阶段（不计入性能）"""
         device = 'cuda'

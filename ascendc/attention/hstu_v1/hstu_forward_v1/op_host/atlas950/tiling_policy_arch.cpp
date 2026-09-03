@@ -196,7 +196,12 @@ bool TilingPolicy::TilingKeySetImpl(gert::TilingContext* context, const TilingKe
     uint32_t tilingDim = 0;
 
     ge::DataType qTypeGe = context->GetInputTensor(JAGGED_INPUT_INDEX_T::Q_INDEX)->GetDataType();
-    if ((qTypeGe == ge::DataType::DT_FLOAT8_E4M3FN) || (typeTilingKey != (JAGGED_TILING_KEY & 0x3))) {
+    // fp8/fp32 与 dense/paged 固定派发 (MAX_TILING_DIM, MAX_TILING_DIM, MAX_DIM)=(256,256,512)：
+    // fp8 走 fp8 中间结果路径、fp32 走 GM 大 tile 精度验证路径，均不按 seq 长度动态选 tile。
+    // 对应 kernel SEL（op_kernel/atlas950/hstu_kernel_tiling_key_jagged.h）按 dtype 只实例化
+    // 该单 tile，此处若对 fp8/fp32 走 FindMatchShape 会选出无 kernel 实现的 key。
+    if ((qTypeGe == ge::DataType::DT_FLOAT8_E4M3FN) || (qTypeGe == ge::DataType::DT_FLOAT) ||
+        (typeTilingKey != (JAGGED_TILING_KEY & 0x3))) {
         tilingDim = MAX_DIM;
         tilingM = MAX_TILING_DIM;
         tilingN = MAX_TILING_DIM;

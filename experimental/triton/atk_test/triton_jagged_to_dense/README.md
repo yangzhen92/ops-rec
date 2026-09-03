@@ -86,15 +86,27 @@ triton_jagged_to_dense[grid](
 
 ## 目录文件
 
-| 文件 | 说明 |
-|------|------|
-| `triton_jagged_to_dense.py` | `triton_jagged_to_dense` 算子 kernel 实现 |
-| `atk/triton_jagged_to_dense_api.py` | ATK 自定义 API 封装 |
-| `atk/jagged_to_dense.yaml` | ATK 算子用例参数 |
-| `atk/generate_jagged_to_dense.py` | 限制参数生成脚本 |
-| `atk/triton_jagged_to_dense_performce.json` | 性能测试样例数据 |
+```text
+triton_jagged_to_dense/
+├── README.md
+├── gpu_atk/
+│   ├── triton_jagged_to_dense.py              # 原版算子 kernel 实现
+│   └── triton_jagged_to_dense_api.py          # GPU 端 ATK 自定义 API 封装
+└── npu_atk/
+    ├── triton_jagged_to_dense.py              # NPU 适配优化后算子 kernel 实现
+    ├── triton_jagged_to_dense_api.py          # NPU 端 ATK 自定义 API 封装
+    ├── jagged_to_dense.yaml                   # ATK 算子用例参数
+    ├── generate_jagged_to_dense.py            # 限制参数生成脚本
+    └── triton_jagged_to_dense_performce.json  # 性能测试样例数据
+```
 
 ---
+
+## 生成测试数据
+
+```bash
+atk case -f triton_jagged_to_dense.yaml -p generate_jagged_to_dense.py
+```
 
 ## 单精度测试
 

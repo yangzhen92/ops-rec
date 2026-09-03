@@ -252,7 +252,7 @@ inline void* GetOpApiFuncAddrForVendor(const char* vendor, const char* apiName)
 // Supports a vendor list (comma-separated, e.g., aggregated vendor "hstu_forward_v1,hstu_backward_v1";
 // explicitly declared by each torch adapter plugin via #define OPS_REC_CUST_VENDORS to specify its dependencies).
 // Sequentially searches for apiName across the listed vendors, returning the first successfully resolved symbol.
-// If the list contains only a single vendor (no ','), it behaves equivalently to a direct call to 
+// If the list contains only a single vendor (no ','), it behaves equivalently to a direct call to
 // GetOpApiFuncAddrForVendor, maintaining complete backward compatibility for standard vendors.
 inline void* GetOpApiFuncAddrForVendorList(const char* vendors, const char* apiName)
 {

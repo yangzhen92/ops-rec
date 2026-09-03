@@ -20,18 +20,20 @@ triton_gelu_mul 是一个基于 Triton 实现的 Ascend NPU 自定义算子：
 ## 目录结构
 
 ```
-triton_gelu_mul/
-├── README.md
-├── triton_gelu_mul.py                      # Triton kernel 实现与对外 Python API
-└── test/
-    ├── pytest/
-    │   └── test_gelu_mul.py                # pytest：Triton NPU vs PyTorch CPU 精度对比
-    └── atk_test/
-        └── npu_atk_test/
-            ├── triton_gelu_mul.yaml        # ATK 用例设计（dtype/shape/属性约束）
-            ├── generate_triton_gelu_mul.py # ATK 用例生成器（保证最后一维为偶数）
-            ├── triton_gelu_mul_api.py      # ATK API 执行文件（triton/npu/cpu 多后端注册）
-            └── all_triton_gelu_mul.json    # ATK 生成的用例配置
+experimental/triton/
+├── atk_test/
+│   └── triton_gelu_mul/
+│       └── npu_atk_test/
+│           ├── triton_gelu_mul.yaml        # ATK 用例设计（dtype/shape/属性约束）
+│           ├── generate_triton_gelu_mul.py # ATK 用例生成器（保证最后一维为偶数）
+│           ├── triton_gelu_mul_api.py      # ATK API 执行文件（triton/npu/cpu 多后端注册）
+│           └── all_triton_gelu_mul.json    # ATK 生成的用例配置
+└── customized_ops/
+    └── triton_gelu_mul/
+        ├── README.md
+        ├── triton_gelu_mul.py              # Triton kernel 实现与对外 Python API
+        └── test/
+            └── test_gelu_mul.py            # pytest：Triton NPU vs PyTorch CPU 精度对比
 ```
 
 ## 调用示例
@@ -51,9 +53,15 @@ output = triton_gelu_mul(input_npu, approximate="none")
 print(output.shape)  # torch.Size([1000, 1536])
 ```
 
-完整的精度对比用例（Triton NPU vs PyTorch CPU 标杆）参见 [test_gelu_mul.py](./test/pytest/test_gelu_mul.py)。
+完整的精度对比用例（Triton NPU vs PyTorch CPU 标杆）参见 [test_gelu_mul.py](./test/test_gelu_mul.py)。
 
 ## ATK 测试
+
+ATK 脚本目录：`experimental/triton/atk_test/triton_gelu_mul/npu_atk_test/`（相对仓库根目录），以下命令均在该目录下执行：
+
+```bash
+cd experimental/triton/atk_test/triton_gelu_mul/npu_atk_test
+```
 
 ### 环境变量
 

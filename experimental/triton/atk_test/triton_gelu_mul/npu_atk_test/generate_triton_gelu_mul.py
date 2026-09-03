@@ -17,6 +17,7 @@
 triton_gelu_mul 算子参数约束生成器
 主要工作：确保最后一维是偶数（2d）。
 """
+
 from atk.case_generator.generator.generate_types import GENERATOR_REGISTRY
 from atk.case_generator.generator.base_generator import CaseGenerator
 from atk.configs.case_config import CaseConfig

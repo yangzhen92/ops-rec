@@ -20,7 +20,7 @@ triton_gelu_mul 是一个基于 Triton 实现的 Ascend NPU 自定义算子：
 
 ## 目录结构
 
-```
+```text
 experimental/triton/
 ├── atk_test/
 │   └── triton_gelu_mul/
@@ -88,11 +88,12 @@ atk case -f triton_gelu_mul.yaml -p generate_triton_gelu_mul.py
 atk node --backend triton --devices 0 node --backend cpu task -c all_triton_gelu_mul.json --task accuracy -p triton_gelu_mul_api.py
 ```
 
-注：如需保存精度对比数据则需要在指令后加 --save_data profile 
+注：如需保存精度对比数据则需要在指令后加 --save_data profile
 
 ### 3.3 性能对比 — Triton vs AscendC(npu)
 
 ```bash
 atk node --backend triton --devices 0 node --backend npu --devices 0 task -c all_triton_gelu_mul.json --task performance_device -p triton_gelu_mul_api.py
 ```
-注：如需保存性能对比数据则需要在指令后加 --save_data profile 
+
+注：如需保存性能对比数据则需要在指令后加 --save_data profile

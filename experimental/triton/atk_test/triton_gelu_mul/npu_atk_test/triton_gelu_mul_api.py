@@ -26,6 +26,7 @@ triton_gelu_mul 算子的 ATK 自定义 API 执行文件
 
 功能：输入 [..., 2d] → GELU(x1) * x2, 其中 x1 = input[..., :d], x2 = input[..., d:]
 """
+
 import torch
 import torch_npu
 from atk.configs.dataset_config import InputDataset
@@ -35,13 +36,14 @@ from atk.tasks.api_execute.base_api import BaseApi
 # Triton 实现
 from triton_gelu_mul import triton_gelu_mul
 
+
 def get_device():
     if hasattr(torch, 'npu') and torch.npu.is_available():
         return 'npu'
     try:
         if torch.cuda.is_available():
             return 'cuda'
-    except:
+    except Exception:
         pass
     return 'cpu'
 
@@ -49,6 +51,7 @@ def get_device():
 class GeluMulBase(BaseApi):
     """共享的 init_by_input_data 逻辑"""
 
+    # pylint: disable=attribute-defined-outside-init
     def init_by_input_data(self, input_data: InputDataset):
         # 不自动将 tensor 搬到 device，让 __call__ 按需处理
         input_tensor = input_data.kwargs.get("input", None)
@@ -122,7 +125,9 @@ class NpuGeluMulApi(GeluMulBase):
             torch.npu.synchronize()
             approximate_val = 1 if approximate == "tanh" else 0
             output, _ = torch_npu.npu_geglu(
-                input_tensor, dim=-1, approximate=approximate_val,
+                input_tensor,
+                dim=-1,
+                approximate=approximate_val,
             )
             torch.npu.synchronize()
         else:

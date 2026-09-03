@@ -13,6 +13,8 @@
 # limitations under the License.
 # ==============================================================================
 
+# pylint: disable=redefined-outer-name, redefined-builtin
+
 """
 Pytest for triton_gelu_mul: Triton NPU vs PyTorch CPU reference.
 The reference (标杆) is generated on CPU via torch.nn.functional.gelu.
@@ -26,6 +28,7 @@ from triton_gelu_mul import triton_gelu_mul
 # ============================================================
 # CPU reference (标杆)
 # ============================================================
+
 
 def gelu_mul_cpu_ref(input: torch.Tensor, approximate: str = "none") -> torch.Tensor:
     d = input.shape[-1] // 2
@@ -55,28 +58,32 @@ def _build_input(rows, d, dtype, device):
 # Test cases: (rows, d, approximate)  ->  8 shapes x 2 modes = 16 cases
 # ============================================================
 
-@pytest.mark.parametrize("rows, d, approximate", [
-    # bs1
-    (1000,  3072, "none"),
-    (3072,  3072, "none"),
-    (1000,  3072, "tanh"),
-    (3072,  3072, "tanh"),
-    # bs4
-    (4000,  3072, "none"),
-    (12288, 3072, "none"),
-    (4000,  3072, "tanh"),
-    (12288, 3072, "tanh"),
-    # bs8
-    (8000,  3072, "none"),
-    (24576, 3072, "none"),
-    (8000,  3072, "tanh"),
-    (24576, 3072, "tanh"),
-    # bs16
-    (16000, 3072, "none"),
-    (49152, 3072, "none"),
-    (16000, 3072, "tanh"),
-    (49152, 3072, "tanh"),
-])
+
+@pytest.mark.parametrize(
+    "rows, d, approximate",
+    [
+        # bs1
+        (1000, 3072, "none"),
+        (3072, 3072, "none"),
+        (1000, 3072, "tanh"),
+        (3072, 3072, "tanh"),
+        # bs4
+        (4000, 3072, "none"),
+        (12288, 3072, "none"),
+        (4000, 3072, "tanh"),
+        (12288, 3072, "tanh"),
+        # bs8
+        (8000, 3072, "none"),
+        (24576, 3072, "none"),
+        (8000, 3072, "tanh"),
+        (24576, 3072, "tanh"),
+        # bs16
+        (16000, 3072, "none"),
+        (49152, 3072, "none"),
+        (16000, 3072, "tanh"),
+        (49152, 3072, "tanh"),
+    ],
+)
 def test_gelu_mul_case(rows, d, approximate, device):
     """Compare Triton NPU vs CPU reference for a single input shape."""
     dtype = torch.bfloat16
@@ -99,9 +106,7 @@ def test_gelu_mul_case(rows, d, approximate, device):
     tri_cpu = tri_out.cpu()
 
     # ---- Shape check ----
-    assert tuple(tri_cpu.shape) == out_shape, (
-        f"shape mismatch: expected {out_shape}, got {tuple(tri_cpu.shape)}"
-    )
+    assert tuple(tri_cpu.shape) == out_shape, f"shape mismatch: expected {out_shape}, got {tuple(tri_cpu.shape)}"
 
     # ---- Compare ----
     ref_f = ref.float()
@@ -110,13 +115,12 @@ def test_gelu_mul_case(rows, d, approximate, device):
     max_diff = (ref_f - tri_f).abs().max().item()
     mean_diff = (ref_f - tri_f).abs().mean().item()
 
-    print(
-        f"  [rows={rows}, d={d}, approx={approximate}] "
-        f"max_diff={max_diff:.6f}, mean_diff={mean_diff:.6f}"
-    )
+    print(f"  [rows={rows}, d={d}, approx={approximate}] max_diff={max_diff:.6f}, mean_diff={mean_diff:.6f}")
 
     torch.testing.assert_close(
-        tri_f, ref_f, atol=8e-2, rtol=1e-1,
-        msg=f"Triton vs CPU mismatch (approx={approximate}): "
-            f"max_diff={max_diff:.6f}, mean_diff={mean_diff:.6f}",
+        tri_f,
+        ref_f,
+        atol=8e-2,
+        rtol=1e-1,
+        msg=f"Triton vs CPU mismatch (approx={approximate}): max_diff={max_diff:.6f}, mean_diff={mean_diff:.6f}",
     )

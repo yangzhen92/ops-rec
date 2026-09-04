@@ -177,6 +177,7 @@ public:
     CATLASS_DEVICE void TriggerFlushToDst(TensorDst& dst, TensorSrc& src, bool isFlush, TileCopy& tileCopy)
     {
         if (isFlush) {
+            AscendC::CrossCoreWaitFlag<0x4, PIPE_FIX>(SUB_CORE_ID * AscendC::SYNC_FLAG_ID_MAX + 7);
             if constexpr (ENABLE_SCALAR_QUANT) {
                 tileCopy(dst, src, 0, deqScalar, SUB_CORE_ID);
             } else {

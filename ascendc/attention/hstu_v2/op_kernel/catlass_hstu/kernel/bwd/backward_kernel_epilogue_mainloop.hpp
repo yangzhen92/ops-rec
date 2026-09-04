@@ -253,7 +253,7 @@ struct BackwardEpilogueMainloop {
         BlockEpilogueGV blockEpilogueGV(GV_READY_ID, GRAB_READY_ID, resource);
         BlockEpilogueKGrad blockEpilogueKGrad(TRANS_READY_ID, (int64_t)heads * dimQK, resource);
         BlockEpilogueVGrad blockEpilogueVGrad(TRANS_READY_ID, (int64_t)heads * dimGV, resource);
-
+        AscendC::CrossCoreSetFlag<0x4, PIPE_MTE3>(7);
         QBlockScheduler qBlockScheduler(batch, heads, params.ptrSeqOffsetQ);
         KBlockScheduler kBlockScheduler(batch, heads, params.ptrSeqOffsetK, params.ptrSeqOffsetQ);
 

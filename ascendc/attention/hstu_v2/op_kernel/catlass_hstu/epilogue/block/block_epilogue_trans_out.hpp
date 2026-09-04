@@ -90,6 +90,7 @@ public:
         intriParams.dstStride = (stride - cols) / ELE_NUM_PER_C0;
 
         AscendC::DataCopy(dstTensor.data()[dstOffset], ubTransOut, intriParams);
+        AscendC::CrossCoreSetFlag<0x4, PIPE_MTE3>(7);
     }
 
 private:

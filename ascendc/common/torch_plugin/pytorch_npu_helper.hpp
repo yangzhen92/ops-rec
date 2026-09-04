@@ -28,6 +28,7 @@ constexpr aclDataType kATenScalarTypeToAclDataTypeTable[static_cast<int64_t>(at:
 };
 
 #define GET_OP_API_FUNC(apiName) reinterpret_cast<_##apiName>(GetOpApiFuncAddr(#apiName))
+#define CUSTOM_OPP_PROJECT_NAME "ops_rec"
 
 inline const char* GetOpApiLibName(void)
 {
@@ -164,9 +165,49 @@ inline void* GetOpApiFuncAddr(const char* apiName)
     return GetOpApiFuncAddrInLib(opApiHandler, GetOpApiLibName(), apiName);
 }
 
-// 定位并 dlopen 指定 vendor 的 op_api 库，带进程级 handler 缓存（每 vendor 只 dlopen 一次）。
-// ASCEND_CUSTOM_OPP_PATH 的首个 entry 形如 <root>/opp/<variant>/vendors/<vendor>，
-// 截到 "/vendors" 前的 variant 根后直接拼接各 vendor 的库路径，无需遍历/试探多种候选。
+// Extract the variant root from ASCEND_CUSTOM_OPP_PATH:
+//   1) locate the ':'-delimited entry that contains the project name substring "ops_rec"
+//      (any matching entry, not necessarily the first);
+//   2) if the entry contains "/vendors", truncate at it and return the variant root
+//      preceding it; otherwise return the entry as-is;
+//   3) return "" when ASCEND_CUSTOM_OPP_PATH is empty or contains no "ops_rec" substring.
+inline std::string GetVendorRoot(const std::string& customOpp)
+{
+    if (customOpp.empty()) {
+        return "";
+    }
+
+    size_t pos = customOpp.find(CUSTOM_OPP_PROJECT_NAME);
+    if (pos == std::string::npos) {
+        return "";
+    }
+
+    size_t start = 0;
+    size_t lastColon = customOpp.rfind(':', pos);
+    if (lastColon != std::string::npos) {
+        start = lastColon + 1;
+    }
+
+    size_t end = customOpp.find(':', pos);
+    if (end == std::string::npos) {
+        end = customOpp.length();
+    }
+
+    std::string entry = customOpp.substr(start, end - start);
+
+    size_t vendPos = entry.rfind("/vendors");
+    if (vendPos != std::string::npos) {
+        return entry.substr(0, vendPos);
+    }
+
+    return entry;
+}
+
+// Locate and dlopen the specified vendor's op_api library; each vendor's
+// handler (incl. nullptr on failure) is cached at the process level.
+// GetVendorRoot finds the entry in ASCEND_CUSTOM_OPP_PATH containing "ops_rec"
+// (any matching entry, not necessarily the first) and truncates it at
+// "/vendors", so the per-vendor library path is built directly.
 inline void* GetVendorOpApiHandler(const char* vendor)
 {
     static std::unordered_map<std::string, void*> gVendorHandler;
@@ -180,15 +221,10 @@ inline void* GetVendorOpApiHandler(const char* vendor)
     void* handler = nullptr;
     const char* customOpp = std::getenv("ASCEND_CUSTOM_OPP_PATH");
     if (customOpp != nullptr && *customOpp != '\0') {
-        std::string first = customOpp;
-        size_t colon = first.find(':');
-        if (colon != std::string::npos) {
-            first = first.substr(0, colon);  // 取首个 entry
-        }
-        std::string vendorRoot = first;
-        size_t vendPos = first.rfind("/vendors");
-        if (vendPos != std::string::npos) {
-            vendorRoot = first.substr(0, vendPos);  // 截到 /vendors 前的 variant 根
+        std::string vendorRoot = GetVendorRoot(customOpp);
+        if (vendorRoot.empty()) {
+            gVendorHandler[vendor] = nullptr;
+            return nullptr;
         }
         const std::string lib = vendorRoot + "/vendors/" + vendor + "/op_api/lib/" + GetCustOpApiLibName();
         if (std::filesystem::exists(lib)) {
@@ -200,7 +236,7 @@ inline void* GetVendorOpApiHandler(const char* vendor)
     return handler;
 }
 
-// 仅查找指定 vendor 的 op_api 符号，复用缓存的 dlopen 句柄
+// Resolve the op_api symbol for the specified vendor only, reusing the cached dlopen handle.
 inline void* GetOpApiFuncAddrForVendor(const char* vendor, const char* apiName)
 {
     if (vendor == nullptr || *vendor == '\0' || apiName == nullptr) {
@@ -213,10 +249,11 @@ inline void* GetOpApiFuncAddrForVendor(const char* vendor, const char* apiName)
     return GetOpApiFuncAddrInLib(handler, GetCustOpApiLibName(), apiName);
 }
 
-// 支持 vendor 列表（以 ',' 分隔，如聚合 vendor "hstu_forward_v1,hstu_backward_v1"；由每个
-// torch 适配层插件通过 #define OPS_REC_CUST_VENDORS 显式声明其所依赖的 vendor）。
-// 依次在各 vendor 下查找 apiName，返回第一个命中的符号；列表仅含单个 vendor（无 ','）
-// 时等价于直接调用 GetOpApiFuncAddrForVendor，因此对普通 vendor 完全向后兼容。
+// Supports a vendor list (comma-separated, e.g., aggregated vendor "hstu_forward_v1,hstu_backward_v1";
+// explicitly declared by each torch adapter plugin via #define OPS_REC_CUST_VENDORS to specify its dependencies).
+// Sequentially searches for apiName across the listed vendors, returning the first successfully resolved symbol.
+// If the list contains only a single vendor (no ','), it behaves equivalently to a direct call to
+// GetOpApiFuncAddrForVendor, maintaining complete backward compatibility for standard vendors.
 inline void* GetOpApiFuncAddrForVendorList(const char* vendors, const char* apiName)
 {
     if (vendors == nullptr || *vendors == '\0' || apiName == nullptr) {
@@ -593,9 +630,9 @@ typedef void (*ReleaseHugeMem)(void*, bool);
         static const auto initMemAddr = GetOpApiFuncAddrForVendorList(OPS_REC_CUST_VENDORS, "InitHugeMemThreadLocal");     \
         static const auto unInitMemAddr = GetOpApiFuncAddrForVendorList(OPS_REC_CUST_VENDORS, "UnInitHugeMemThreadLocal"); \
         static const auto releaseMemAddr = GetOpApiFuncAddrForVendorList(OPS_REC_CUST_VENDORS, "ReleaseHugeMem");          \
-        TORCH_CHECK(getWorkspaceSizeFuncAddr != nullptr && opApiFuncAddr != nullptr, #aclnn_api, " or ",      \
-                    #aclnn_api "GetWorkspaceSize", " not in ", GetOpApiLibName(), ", or ", GetOpApiLibName(), \
-                    "not found.");                                                                            \
+        TORCH_CHECK(getWorkspaceSizeFuncAddr != nullptr && opApiFuncAddr != nullptr, #aclnn_api, " or ",                   \
+                    #aclnn_api "GetWorkspaceSize", " not in ", GetCustOpApiLibName(), ", or ", GetCustOpApiLibName(),      \
+                    " not found.");                                                                           \
         auto acl_stream = c10_npu::getCurrentNPUStream().stream(false);                                       \
         uint64_t workspace_size = 0;                                                                          \
         uint64_t* workspace_size_addr = &workspace_size;                                                      \

@@ -18,13 +18,13 @@
 _add_position_embeddings_bwd_kernel 算子参数约束生成器
 
 约束关系：
-1. [MUST] Jagged.shape[0] == sum(seq_offsets段长度) == seq_offsets[-1]
-2. [MUST] Jagged.shape[1] == DenseOut.shape[1]  # D维度对齐
-3. [MUST] DenseOut.shape[0] == len(high_inds) == len(seq_offsets) - 1 == B
-4. [MUST] high_inds[i] < seq_offsets[i+1] - seq_offsets[i] (每段的高位索引不能超过段长)
-5. [MUST] Jagged.dtype == DenseOut.dtype
-6. [MUST] seq_offsets单调递增, 首0尾sum
-7. [MUST] JaggedOut.shape == Jagged.shape (当SCALE_JAGGED时)
+1. Jagged.shape[0] == sum(seq_offsets段长度) == seq_offsets[-1]
+2. Jagged.shape[1] == DenseOut.shape[1]  # D维度对齐
+3. DenseOut.shape[0] == len(high_inds) == len(seq_offsets) - 1 == B
+4. high_inds[i] < seq_offsets[i+1] - seq_offsets[i] (每段的高位索引不能超过段长)
+5. Jagged.dtype == DenseOut.dtype
+6. seq_offsets单调递增, 首0尾sum
+7. JaggedOut.shape == Jagged.shape (当SCALE_JAGGED时)
 """
 from atk.case_generator.generator.generate_types import GENERATOR_REGISTRY
 from atk.case_generator.generator.base_generator import CaseGenerator

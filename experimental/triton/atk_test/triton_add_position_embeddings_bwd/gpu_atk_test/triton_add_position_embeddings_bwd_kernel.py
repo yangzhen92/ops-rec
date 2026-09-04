@@ -22,8 +22,6 @@
 # limitations under the License.
 # ==============================================================================
 
-from typing import List
-
 import torch
 import triton
 import triton.language as tl

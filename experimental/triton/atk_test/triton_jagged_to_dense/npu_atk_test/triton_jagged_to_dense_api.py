@@ -1,7 +1,17 @@
-# triton_jagged_to_dense_api.py
-"""
-triton_jagged_to_dense 算子的ATK自定义API执行文件
-"""
+/* Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+        limitations under the License.
+==============================================================================*/
 import torch
 from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
@@ -21,7 +31,7 @@ def get_device():
 
 
 # 从被测代码直接引用函数
-from triton_jagged_tensor_ops import triton_jagged_to_dense
+from triton_jagged_to_dense import triton_jagged_to_dense
 
 
 def _jagged_offsets_to_dense_indice(
@@ -275,8 +285,6 @@ class TritonJaggedToDenseApi(BaseApi):
             self._dense_row_stride,
             self._dense_matrix_stride,
             self._JAGGED_DIM,
-            self._thread_block_row_size,
-            self._thread_block_col_size,
             operation_function=self._operation_function,
             operation_dense=self._operation_dense,
         )

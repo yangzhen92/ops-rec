@@ -26,9 +26,9 @@
 
 # pyre-ignore-all-errors[6]
 
-import torch
 import triton  # @manual
 import triton.language as tl  # @manual
+
 
 @triton.jit
 # pyre-fixme[3]: Return type must be annotated.
@@ -42,6 +42,7 @@ def tensor_elementwise_add(x, y):
 # pyre-fixme[2]: Parameter must be annotated.
 def tensor_elementwise_mul(x, y):
     return x * y
+
 
 @triton.jit
 def triton_jagged_to_dense(
@@ -112,10 +113,7 @@ def triton_jagged_to_dense(
 
     for _i in range(begin, end, thread_block_row_size):
         offset_col = tl.arange(0, thread_block_col_size)
-        block_offset = (
-            offset_row[:, None] * dense_row_stride
-            + offset_col[None, :] * dense_col_stride
-        )
+        block_offset = offset_row[:, None] * dense_row_stride + offset_col[None, :] * dense_col_stride
         for _j in range(0, N, thread_block_col_size):
             mask = (offset_row[:, None] < M) & (offset_col[None, :] < N)
             jagged_val = tl.load(jagged_value_ptr + block_offset, mask=mask, other=0)

@@ -1,4 +1,3 @@
-
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,8 +13,9 @@
 # limitations under the License.
 # ==============================================================================
 
-"""_add_embeddings_bwd_kernel kernel 的 ATK API 封装（autotune 调优版）。
-"""
+# pylint: disable=attribute-defined-outside-init
+
+"""_add_embeddings_bwd_kernel kernel 的 ATK API 封装（autotune 调优版）。"""
 
 from __future__ import annotations
 
@@ -35,12 +35,12 @@ _SUPPORTED_DTYPES = {torch.float32, torch.float16, torch.bfloat16}
 
 
 def _import_local_kernel():
-    """从同目录的 _add_embeddings_bwd_kernel.py 导入目标 kernel。
-    """
+    """从同目录的 _add_embeddings_bwd_kernel.py 导入目标 kernel。"""
     source_dir = str(Path(__file__).resolve().parent)
     if source_dir not in sys.path:
         sys.path.insert(0, source_dir)
     from _add_embeddings_bwd_kernel import _add_embeddings_bwd_kernel
+
     return _add_embeddings_bwd_kernel
 
 
@@ -48,8 +48,7 @@ _add_embeddings_bwd_kernel = _import_local_kernel()
 
 
 def _resolve_device(tensor: torch.Tensor) -> str:
-    """按输入 tensor 所在设备决定目标设备。
-    """
+    """按输入 tensor 所在设备决定目标设备。"""
     device = tensor.device.type
     if device in ("cpu", "npu", "cuda"):
         return device
@@ -98,8 +97,7 @@ class AddEmbeddingsBwdKernelApi(BaseApi):
         num_keys = max(1, num_keys)
         if num_keys > jagged_size:
             raise ValueError(
-                f"num_keys={num_keys} > jagged_size={jagged_size}. "
-                f"Generator should ensure jagged_size >= num_keys"
+                f"num_keys={num_keys} > jagged_size={jagged_size}. Generator should ensure jagged_size >= num_keys"
             )
 
         # ── 2. 统一 dtype（以 In 为准）──
@@ -113,14 +111,14 @@ class AddEmbeddingsBwdKernelApi(BaseApi):
 
         # ── 3. 确定性推导 KeyInds / ValueInds ──
         value_inds = torch.arange(jagged_size, dtype=torch.int32)
-        key_inds = (
-            torch.arange(jagged_size, dtype=torch.int64) * num_keys
-        ) // jagged_size
+        key_inds = (torch.arange(jagged_size, dtype=torch.int64) * num_keys) // jagged_size
         key_inds = key_inds.to(torch.int32)
 
         # ── 4. 编译参数（autotune 版：grid 从 META 读 BLOCK）──
         block_d = _next_pow2(d)
-        grid = lambda META: (triton.cdiv(jagged_size, META["BLOCK"]),)
+
+        def grid(META):
+            return (triton.cdiv(jagged_size, META["BLOCK"]),)
 
         # ── 5. 移到目标设备，Out 零初始化（atomic_add 累加）──
         # golden（double_benchmark）的输入在 CPU worker 里已在 CPU 上，
@@ -151,9 +149,7 @@ class AddEmbeddingsBwdKernelApi(BaseApi):
 
     def __call__(self, input_data: InputDataset, with_output: bool = False):
         if self._device == "cpu":
-            key_map = (
-                torch.arange(self._jagged_size, dtype=torch.int64) * self._num_keys
-            ) // self._jagged_size
+            key_map = (torch.arange(self._jagged_size, dtype=torch.int64) * self._num_keys) // self._jagged_size
             ref = torch.zeros((self._num_keys, self._d), dtype=self._in.dtype)
             ref.index_add_(0, key_map, self._in)
             return ref

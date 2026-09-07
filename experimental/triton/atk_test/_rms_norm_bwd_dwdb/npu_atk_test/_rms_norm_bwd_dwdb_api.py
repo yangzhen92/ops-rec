@@ -102,7 +102,7 @@ class RMSNormBwdDwdbApi(BaseApi):
         elif device == "cuda":
             torch.cuda.synchronize()
 
-        _rms_norm_bwd_dwdb[self._grid](
+        _rms_norm_bwd_dwdb_kernel[self._grid](
             self._dw,
             self._final_dw,
             self._N,

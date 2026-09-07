@@ -194,7 +194,9 @@ class TritonJaggedToDenseApi(BaseApi):
 
             if jagged_offsets_shapes:
                 # 根据已知的 shape，使用确定性算法生成偏移值
-                jagged_offsets = _generate_jagged_offsets_by_shapes(jagged_offsets_shapes, jagged_values.shape[0], device)
+                jagged_offsets = _generate_jagged_offsets_by_shapes(
+                    jagged_offsets_shapes, jagged_values.shape[0], device
+                )
             else:
                 raise ValueError("Cannot get shapes from jagged_offsets_input")
         else:

@@ -22,7 +22,6 @@
 # limitations under the License.
 # ==============================================================================
 
-import torch
 import triton
 import triton.language as tl
 
@@ -47,7 +46,7 @@ def _add_embeddings_bwd_kernel(
     offs_d = tl.arange(0, BLOCK_D)
     mask_d = offs_d < D
     key_ind = -1
-    key_ind = key_ind.to(KeyInds.dtype.element_ty)  # pyre-ignore[16]
+    key_ind = key_ind.to(KeyInds.dtype.element_ty)  # pyre-ignore[16]  # pylint: disable=no-member
     accumulator = tl.zeros((BLOCK_D,), dtype=In.dtype.element_ty)
     for off_i in range(0, BLOCK):
         off = off_block * BLOCK + off_i

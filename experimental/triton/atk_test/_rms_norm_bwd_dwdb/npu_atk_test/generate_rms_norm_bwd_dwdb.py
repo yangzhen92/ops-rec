@@ -35,20 +35,12 @@ class RMSNormBwdDwdbGenerator(CaseGenerator):
 
         # ── 1. 统一 D ──
         # DW 的第二维必须和 FINAL_DW 的第一维相同
-        requested_d_dw = (
-            int(dw.shape[1]) if hasattr(dw, "shape") and len(dw.shape) > 1 else 64
-        )
-        requested_d_final = (
-            int(final_dw.shape[0])
-            if hasattr(final_dw, "shape") and len(final_dw.shape) > 0
-            else 64
-        )
+        requested_d_dw = int(dw.shape[1]) if hasattr(dw, "shape") and len(dw.shape) > 1 else 64
+        requested_d_final = int(final_dw.shape[0]) if hasattr(final_dw, "shape") and len(final_dw.shape) > 0 else 64
         d = max(requested_d_dw, requested_d_final)
 
         # ── 2. 确定 tile_num（N）──
-        tile_num = (
-            int(dw.shape[0]) if hasattr(dw, "shape") and len(dw.shape) > 0 else 16
-        )
+        tile_num = int(dw.shape[0]) if hasattr(dw, "shape") and len(dw.shape) > 0 else 16
 
         # ── 3. 回写 shape ──
         dw.shape = [tile_num, d]

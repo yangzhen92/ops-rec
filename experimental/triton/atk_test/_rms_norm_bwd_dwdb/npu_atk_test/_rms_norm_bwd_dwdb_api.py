@@ -40,7 +40,7 @@ def get_device():
     return "cpu"
 
 
-from _rms_norm_bwd_dwdb import _rms_norm_bwd_dwdb
+from _rms_norm_bwd_dwdb_kernel import _rms_norm_bwd_dwdb_kernel
 
 
 @register("_rms_norm_bwd_dwdb")

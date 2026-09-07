@@ -104,13 +104,13 @@ atk case -f _add_embeddings_bwd_kernel.yaml -p generate_add_embeddings_bwd_kerne
 
 生成的精度测试用例位于 `result/_add_embeddings_bwd_kernel/json/` 下，文件名为 `all__add_embeddings_bwd_kernel.json`。
 
-## 远端 GPU 服务器起监听命令
+### 远端 GPU 服务器起监听命令
 
 ```bash
 atk server --devices 0 --plugin_path /path/to/api文件所在文件夹
 ```
 
-## 精度测试
+### 精度测试
 
 ```bash
 atk node --backend triton --devices 0 node --backend npu --devices 0 \
@@ -118,7 +118,7 @@ atk node --backend triton --devices 0 node --backend npu --devices 0 \
     -p _add_embeddings_bwd_kernel_api.py
 ```
 
-## 性能测试
+### 性能测试
 
 ```bash
 atk node --backend triton --devices 0 node --backend npu --devices 0 \

@@ -55,7 +55,7 @@ import ops_rec
 torch.npu.config.allow_internal_format = False
 logging.basicConfig(level=logging.INFO)
 
-# 测试有 144 种 shape 组合，增大 cache 避免 dynamic=True 时因重编译超限报错
+# dynamic=True 图模式会在不同 shape 下重编译，增大 cache 避免超限报错
 torch._dynamo.config.cache_size_limit = 256
 
 CPU_DEVICE = "cpu"

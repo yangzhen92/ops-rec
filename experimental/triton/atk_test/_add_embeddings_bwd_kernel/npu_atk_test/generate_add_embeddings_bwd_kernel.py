@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
- 
+
 """_add_embeddings_bwd_kernel 的 ATK shape 约束生成器。
 
 关键约束：

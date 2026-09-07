@@ -30,8 +30,6 @@
 #!/usr/bin/env python3
 
 
-from typing import List, Optional, Tuple
-
 import torch
 
 # torch 26.04 circular-import workaround for wrap_triton — do not remove
@@ -42,6 +40,7 @@ import triton
 
 # @manual=//triton:triton
 import triton.language as tl
+
 
 @triton.jit
 def _layer_norm_fwd(
@@ -84,5 +83,3 @@ def _layer_norm_fwd(
     y = x_mean * rstd
     # Write output
     tl.store(Y + cols, y.to(Y.dtype.element_ty), mask=mask)
-
-

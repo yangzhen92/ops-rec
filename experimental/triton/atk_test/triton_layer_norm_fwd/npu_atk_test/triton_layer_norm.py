@@ -28,8 +28,6 @@
 # ==============================================================================
 
 
-from typing import List, Optional, Tuple
-
 import torch
 
 # torch 26.04 circular-import workaround for wrap_triton — do not remove
@@ -40,9 +38,6 @@ import triton
 
 # @manual=//triton:triton
 import triton.language as tl
-
-
-
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -69,7 +64,7 @@ def _layer_norm_fwd_prune_configs(configs, named_args, **kwargs):
     kept = []
     for config in configs:
         block_d = config.kwargs["BLOCK_D"]
-        if block_d >= min_block and block_d <= max_fused:
+        if min_block <= block_d <= max_fused:
             kept.append(config)
     return kept
 

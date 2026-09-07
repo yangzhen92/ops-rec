@@ -35,10 +35,6 @@ Kernel 参数说明（见 triton_layer_norm.py:36-76）：
 
 from __future__ import annotations
 
-import json
-import sys
-from pathlib import Path
-from types import ModuleType
 
 import torch
 import triton
@@ -46,6 +42,7 @@ import triton
 from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
 from atk.tasks.api_execute.base_api import BaseApi
+from triton_layer_norm import _layer_norm_fwd
 
 
 _SUPPORTED_DTYPES = {torch.float32, torch.float16, torch.bfloat16}
@@ -53,7 +50,6 @@ _SUPPORTED_DTYPES = {torch.float32, torch.float16, torch.bfloat16}
 
 # double_benchmark 模式：关闭 dump
 
-from triton_layer_norm import _layer_norm_fwd
 
 def _get_device() -> str:
     if hasattr(torch, "npu") and torch.npu.is_available():
@@ -76,6 +72,20 @@ def _synchronize(device: str) -> None:
 class LayerNormFwdApi(BaseApi):
     """_layer_norm_fwd kernel 的 API 封装。"""
 
+    def __init__(self):
+        self._device = None
+        self._x = None
+        self._y = None
+        self._mean = None
+        self._rstd = None
+        self._d = None
+        self._eps = None
+        self._stride_x = None
+        self._stride_y = None
+        self._block_d = None
+        self._num_warps = None
+        self._grid = None
+
     # @staticmethod
     # def _make_case_id(x_input: torch.Tensor, eps) -> str:
     #     """根据输入值构造跨后端一致的 case ID，用于 dump 目录命名。
@@ -90,9 +100,6 @@ class LayerNormFwdApi(BaseApi):
         """根据 ATK InputDataset 组装 kernel 入参（不计时）。"""
         # ── 1. 读取输入参数 ──
         x_input = input_data.kwargs.get("X")
-        y_input = input_data.kwargs.get("Y")
-        mean_input = input_data.kwargs.get("Mean")
-        rstd_input = input_data.kwargs.get("Rstd")
         eps_input = input_data.kwargs.get("eps")
 
         # ── 2. 输入校验 ──
@@ -138,9 +145,6 @@ class LayerNormFwdApi(BaseApi):
 
         # ── 5. eps：转成 float 供 kernel 使用 ──
         eps = float(eps_input) if eps_input is not None else 1e-5
-
-        # 保存 case_id 用于 dump（NPU/GPU 相同输入生成相同 ID）
-        #self._case_id = self._make_case_id(x_input, eps)
 
         # ── 6. 保存实例变量 ──
         self._x = x

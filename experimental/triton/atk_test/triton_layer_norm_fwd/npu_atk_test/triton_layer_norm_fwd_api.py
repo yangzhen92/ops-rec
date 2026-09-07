@@ -28,22 +28,16 @@ _layer_norm_fwd kernel ATK API 封装 — Autotune 版本。
 
 from __future__ import annotations
 
-import os
-import sys
-from pathlib import Path
-from types import ModuleType
 
 import torch
-import triton
 
 from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
 from atk.tasks.api_execute.base_api import BaseApi
+from triton_layer_norm import _layer_norm_fwd
 
 
 _SUPPORTED_DTYPES = {torch.float32, torch.float16, torch.bfloat16}
-
-from triton_layer_norm import _layer_norm_fwd
 
 
 def _get_device() -> str:
@@ -60,12 +54,23 @@ def _synchronize(device: str) -> None:
     else:
         torch.cuda.synchronize()
 
+
 @register("triton_layer_norm._layer_norm_fwd")
 @register("triton_layer_norm_fwd")
-
 class LayerNormFwdAutotuneApi(BaseApi):
-    """_layer_norm_fwd kernel 的 Autotune API 封装。
-    """
+    """_layer_norm_fwd kernel 的 Autotune API 封装。"""
+
+    def __init__(self):
+        self._device = None
+        self._x = None
+        self._y = None
+        self._mean = None
+        self._rstd = None
+        self._d = None
+        self._eps = None
+        self._stride_x = None
+        self._stride_y = None
+        self._grid = None
 
     def init_by_input_data(self, input_data: InputDataset):
         """根据 ATK InputDataset 组装 kernel 入参（不计时）。"""
@@ -96,7 +101,6 @@ class LayerNormFwdAutotuneApi(BaseApi):
         x = x.to(device)
         dtype = x.dtype
 
-
         y = torch.empty((n, d), dtype=dtype, device=device).contiguous()
         mean = torch.empty((n,), dtype=torch.float32, device=device)
         rstd = torch.empty((n,), dtype=torch.float32, device=device)
@@ -106,7 +110,6 @@ class LayerNormFwdAutotuneApi(BaseApi):
 
         # ── 5. eps：转成 float 供 kernel 使用 ──
         eps = float(eps_input) if eps_input is not None else 1e-5
-
 
         self._x = x
         self._y = y
@@ -133,11 +136,8 @@ class LayerNormFwdAutotuneApi(BaseApi):
             self._stride_y,
             TRAINING=True,
             COMPUTE_MEAN_AND_RSTD=True,
-
         )
 
         _synchronize(self._device)
-
-
 
         return self._y, self._mean, self._rstd

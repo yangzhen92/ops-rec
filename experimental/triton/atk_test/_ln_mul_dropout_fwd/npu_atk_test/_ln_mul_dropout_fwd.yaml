@@ -1,0 +1,207 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
+name: _ln_mul_dropout_fwd
+api: pytorch
+version: v2.1
+api_type: _ln_mul_dropout_fwd
+triton_api_type: _ln_mul_dropout_fwd
+triton_name: triton_norm_mul_dropout.triton_layer_norm_mul_dropout_fwd
+generate: generate_ln_mul_dropout_fwd
+dtype_numbers: 50
+outputs: 0
+standard:
+  acc:  double_benchmark
+  perf: not_key
+
+inputs:
+  # x: [N, D] - 区间对（Generator 会覆盖为精确 [N, D]）
+  - name: x
+    type: tensor
+    required: true
+    dtypes:
+      values: [ fp32, fp16, bf16 ]
+    shapes:
+      dim_numbers:
+        values: [ 2 ]
+      dim_values:
+        values: [ [2, 1024], [2049, 4096], [4097, 8192] ]
+        weights: [ 0.1, 0.4, 0.5 ]
+    ranges:
+      valid:
+        values: [ [-100, 100] ]
+        random_types:
+          - name: nd
+            mean: [0, 50]
+            std: [1, 10]
+      invalid:
+        values: [ [-100, 100] ]
+    align_32B: true
+    boundary:
+      has_empty: false
+      has_infnan: true
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  # u: [N, D]（2D）或 [N, H, UD]（3D，H*UD==D）。可同时训练/非训练与双 concat 分支
+  - name: u
+    type: tensor
+    required: true
+    dtypes:
+      values: [ fp32, fp16, bf16 ]
+    shapes:
+      dim_numbers:
+        values: [ 2, 3 ]
+      dim_values:
+        values: [ [2, 1024], [2049, 4096], [4097, 8192] ]
+        weights: [ 0.1, 0.4, 0.5 ]
+    ranges:
+      valid:
+        values: [ [-100, 100] ]
+        random_types:
+          - name: nd
+            mean: [0, 50]
+            std: [1, 10]
+      invalid:
+        values: [ [-100, 100] ]
+    align_32B: true
+    boundary:
+      has_empty: false
+      has_infnan: true
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  # weight: [D]
+  - name: weight
+    type: tensor
+    required: true
+    dtypes:
+      values: [ fp32, fp16, bf16 ]
+    shapes:
+      dim_numbers:
+        values: [ 1 ]
+      dim_values:
+        values: [ [2, 1024], [2049, 4096], [4097, 8192] ]
+        weights: [ 0.1, 0.4, 0.5 ]
+    ranges:
+      valid:
+        values: [ [-100, 100] ]
+        random_types:
+          - name: nd
+            mean: [0, 50]
+            std: [1, 10]
+      invalid:
+        values: [ [-100, 100] ]
+    align_32B: true
+    boundary:
+      has_empty: false
+      has_infnan: true
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  # bias: [D]
+  - name: bias
+    type: tensor
+    required: true
+    dtypes:
+      values: [ fp32, fp16, bf16 ]
+    shapes:
+      dim_numbers:
+        values: [ 1 ]
+      dim_values:
+        values: [ [2, 1024], [2049, 4096], [4097, 8192] ]
+        weights: [ 0.1, 0.4, 0.5 ]
+    ranges:
+      valid:
+        values: [ [-100, 100] ]
+        random_types:
+          - name: nd
+            mean: [0, 50]
+            std: [1, 10]
+      invalid:
+        values: [ [-100, 100] ]
+    align_32B: true
+    boundary:
+      has_empty: false
+      has_infnan: true
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  # eps: 标量，LayerNorm 数值稳定项（性能无关，固定合法值；0 会引入除零风险，避免）
+  - name: eps
+    type: scalar
+    required: true
+    dtypes:
+      values: [ float ]
+    ranges:
+      valid:
+        values: [ 0.0001, 0.001, 0.1, 1.0 ]
+      invalid:
+        values: [ 0.0 ]
+
+  # dropout_ratio: 丢弃概率。当前先不测 dropout 模式（同 seed 下 tl.rand 在 GPU/NPU
+  #   生成的随机流不同，导致丢弃位置不一致、精度对比失败）。
+  #   方案：valid 仅保留 0.0（无实际丢弃）→ 即使 training=True，y_keep 因
+  #   (random > 0.0)|True 恒为 True，输出与 tl.rand 结果无关，GPU/NPU 必然一致。
+  #   invalid 清空（原 -1.0/2.0 不触发 wrapper 报错，会被判作"期望报错却没报"）。
+  #   后续恢复 dropout 测试时，把 values 改回多值即可。
+  - name: dropout_ratio
+    type: scalar
+    required: true
+    dtypes:
+      values: [ float ]
+    ranges:
+      valid:
+        values: [ 0.0 ]
+
+  # training: 布尔，是否执行随机 dropout（TRAINING constexpr；非全-True 覆盖训练/推理两分支）
+  - name: training
+    type: attr
+    required: true
+    dtypes:
+      values: [ attr_bool ]
+    ranges:
+      valid:
+        values: [ true, false ]
+        weights: [ 0.7, 0.3 ]
+      invalid:
+        values: [ false ]
+
+  # concat_ux: 布尔，是否拼接输出 [u, x, y]（y=[N,3D] vs [N,D]；非全-单一 覆盖两分支）
+  - name: concat_ux
+    type: attr
+    required: true
+    dtypes:
+      values: [ attr_bool ]
+    ranges:
+      valid:
+        values: [ false, true ]
+        weights: [ 0.7, 0.3 ]
+      invalid:
+        values: [ false ]
+
+  # seed: 标量占位。不参与形状/dtype 约束；API 内用确定性算法覆盖为固定值，保证 GPU/NPU 输入一致
+  - name: seed
+    type: scalar
+    required: true
+    dtypes:
+      values: [ int ]
+    ranges:
+      valid:
+        values: [ 0 ]

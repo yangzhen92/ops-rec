@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
- 
+
 """_add_embeddings_bwd_kernel kernel 的 ATK API 封装（双标杆直测版）。
 """
 
@@ -181,3 +181,4 @@ class AddEmbeddingsBwdKernelApi(BaseApi):
         _synchronize(self._device)
 
         return self._out
+

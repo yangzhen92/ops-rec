@@ -86,7 +86,7 @@ _add_embeddings_bwd_kernel/
     ├── generate_add_embeddings_bwd_kernel.py      # 限制参数生成脚本
     └── all__add_embeddings_bwd_kernel.json        # 性能测试样例数据
  ```
- 
+
 ## ATK 测试
 
 测试在 NPU / GPU 两端协同进行：

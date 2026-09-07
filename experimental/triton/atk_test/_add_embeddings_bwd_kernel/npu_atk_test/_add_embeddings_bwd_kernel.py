@@ -1,3 +1,12 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+#
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+#
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,7 +21,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
- 
+
 from typing import List
 
 import torch
@@ -26,6 +35,12 @@ def bwd_pre_hook(nargs):
 
 def get_autotune_config() -> List[triton.Config]:
     """生成 (BLOCK, num_warps) 组合的 triton.Config 列表。
+
+    每个 config 都带 pre_hook=bwd_pre_hook：autotune 每次跑 kernel 前先把
+    Out 清零，保证 atomic_add 累加从零开始（scatter-add 正确性前提）。
+
+    不加入 multibuffer: True 的原因：本 kernel 是逐元素、数据相关分支 + atomic_add 的 scatter-add，无可流水化
+    的 tile-load 循环，auto-multi-buffer 也无收益，故不加。
     """
     return [
         triton.Config({"BLOCK": 32}, num_warps=2, num_stages=2, pre_hook=bwd_pre_hook),

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
- 
+
 # _add_embeddings_bwd_kernel 测试设计yaml。
 
 name: _add_embeddings_bwd_kernel

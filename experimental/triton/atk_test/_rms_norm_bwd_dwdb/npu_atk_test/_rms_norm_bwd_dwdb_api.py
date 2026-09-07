@@ -81,9 +81,7 @@ class RMSNormBwdDwdbApi(BaseApi):
         # grid: 启动 cdiv(D, BLOCK_D) 个 program，每个处理BLOCK_D列
         BLOCK_D = 32
 
-        grid = lambda meta: (
-            min(NCORES, triton.cdiv(D, meta["BLOCK_D"])),
-        )  # NPU上小，ncores
+        grid = lambda meta: (min(NCORES, triton.cdiv(D, meta["BLOCK_D"])),)  # NPU上小，ncores
 
         # 保存实例变量
         self._device = device

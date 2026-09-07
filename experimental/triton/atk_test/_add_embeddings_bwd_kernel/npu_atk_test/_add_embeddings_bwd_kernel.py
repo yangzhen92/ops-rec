@@ -1,3 +1,12 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+#
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+#
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,167 +22,88 @@
 # limitations under the License.
 # ==============================================================================
 
-# pylint: disable=attribute-defined-outside-init
+from typing import List
 
-"""_add_embeddings_bwd_kernel kernel 的 ATK API 封装（autotune 调优版）。"""
-
-from __future__ import annotations
-
-import sys
-from pathlib import Path
-
-import torch
 import triton
-
-from atk.configs.dataset_config import InputDataset
-from atk.tasks.api_execute import register
-from atk.tasks.api_execute.base_api import BaseApi
+import triton.language as tl
 
 
-_SUPPORTED_DTYPES = {torch.float32, torch.float16, torch.bfloat16}
-"""kernel 支持的 dtype。"""
+def bwd_pre_hook(nargs):
+    nargs["Out"].zero_()
 
 
-def _import_local_kernel():
-    """从同目录的 _add_embeddings_bwd_kernel.py 导入目标 kernel。"""
-    source_dir = str(Path(__file__).resolve().parent)
-    if source_dir not in sys.path:
-        sys.path.insert(0, source_dir)
-    from _add_embeddings_bwd_kernel import _add_embeddings_bwd_kernel
+def get_autotune_config() -> List[triton.Config]:
+    """生成 (BLOCK, num_warps) 组合的 triton.Config 列表。
 
-    return _add_embeddings_bwd_kernel
+    每个 config 都带 pre_hook=bwd_pre_hook：autotune 每次跑 kernel 前先把
+    Out 清零，保证 atomic_add 累加从零开始（scatter-add 正确性前提）。
 
-
-_add_embeddings_bwd_kernel = _import_local_kernel()
-
-
-def _resolve_device(tensor: torch.Tensor) -> str:
-    """按输入 tensor 所在设备决定目标设备。"""
-    device = tensor.device.type
-    if device in ("cpu", "npu", "cuda"):
-        return device
-    raise RuntimeError(f"_add_embeddings_bwd_kernel got unsupported input device: {device}")
-
-
-def _synchronize(device: str) -> None:
-    if device == "npu":
-        torch.npu.synchronize()
-    else:
-        torch.cuda.synchronize()
-
-
-def _next_pow2(n: int) -> int:
-    p = 1
-    while p < n:
-        p <<= 1
-    return p
-
-
-@register("_add_embeddings_bwd_kernel")
-@register("triton_position._add_embeddings_bwd_kernel")
-@register("_add_embeddings_bwd_kernel.autotune")
-@register("triton_position._add_embeddings_bwd_kernel.autotune")
-@register("_add_embeddings_bwd_kernel_autotune")
-class AddEmbeddingsBwdKernelApi(BaseApi):
-    """_add_embeddings_bwd_kernel kernel 的 API 封装（autotune 版）。
-
-    BLOCK/num_warps 由 @triton.autotune 自动注入，grid 从 META["BLOCK"] 读取；
-    KeyInds/ValueInds 由 In 与 num_keys 确定性推导，保证 GPU/NPU 两端输入一致。
+    不加入 multibuffer: True 的原因：本 kernel 是逐元素、数据相关分支 + atomic_add 的 scatter-add，无可流水化
+    的 tile-load 循环，auto-multi-buffer 也无收益，故不加。
     """
+    return [
+        triton.Config({"BLOCK": 32}, num_warps=2, num_stages=2, pre_hook=bwd_pre_hook),
+        triton.Config({"BLOCK": 32}, num_warps=4, num_stages=2, pre_hook=bwd_pre_hook),
+        triton.Config({"BLOCK": 64}, num_warps=2, num_stages=2, pre_hook=bwd_pre_hook),
+        triton.Config({"BLOCK": 64}, num_warps=4, num_stages=2, pre_hook=bwd_pre_hook),
+        triton.Config({"BLOCK": 64}, num_warps=8, num_stages=2, pre_hook=bwd_pre_hook),
+        triton.Config({"BLOCK": 128}, num_warps=2, num_stages=2, pre_hook=bwd_pre_hook),
+        triton.Config({"BLOCK": 128}, num_warps=4, num_stages=2, pre_hook=bwd_pre_hook),
+        triton.Config({"BLOCK": 128}, num_warps=8, num_stages=2, pre_hook=bwd_pre_hook),
+    ]
 
-    def init_by_input_data(self, input_data: InputDataset):
-        # ── 1. 读取输入 ──
-        in_input = input_data.kwargs.get("In")
-        num_keys = int(input_data.kwargs.get("num_keys", 16))
 
-        if in_input is None or not isinstance(in_input, torch.Tensor):
-            raise ValueError("In must be a tensor")
-        if in_input.ndim != 2:
-            raise ValueError(f"In must be 2D, got {in_input.ndim}D")
-
-        jagged_size, d = in_input.shape
-        if jagged_size == 0 or d == 0:
-            raise ValueError(f"In cannot have zero dim, got shape {in_input.shape}")
-        num_keys = max(1, num_keys)
-        if num_keys > jagged_size:
-            raise ValueError(
-                f"num_keys={num_keys} > jagged_size={jagged_size}. Generator should ensure jagged_size >= num_keys"
-            )
-
-        # ── 2. 统一 dtype（以 In 为准）──
-        x = in_input
-        if x.dtype == torch.float64:
-            x = x.to(torch.float32).contiguous()
-        if x.dtype not in _SUPPORTED_DTYPES:
-            raise ValueError(f"Unsupported In dtype: {x.dtype}")
-        dtype = x.dtype
-        in_cpu = x.cpu().to(dtype).contiguous()
-
-        # ── 3. 确定性推导 KeyInds / ValueInds ──
-        value_inds = torch.arange(jagged_size, dtype=torch.int32)
-        key_inds = (torch.arange(jagged_size, dtype=torch.int64) * num_keys) // jagged_size
-        key_inds = key_inds.to(torch.int32)
-
-        # ── 4. 编译参数（autotune 版：grid 从 META 读 BLOCK）──
-        block_d = _next_pow2(d)
-
-        def grid(META):
-            return (triton.cdiv(jagged_size, META["BLOCK"]),)
-
-        # ── 5. 移到目标设备，Out 零初始化（atomic_add 累加）──
-        # golden（double_benchmark）的输入在 CPU worker 里已在 CPU 上，
-        # 直接按输入 tensor 所在设备执行即可，不依赖默认卡 0。
-        device = _resolve_device(in_input)
-        in_d = in_cpu.to(device)
-        key_d = key_inds.to(device)
-        value_d = value_inds.to(device)
-        out = torch.zeros((num_keys, d), dtype=dtype, device=device)
-
-        # 保存实例变量（不保存 BLOCK：autotune 自动选择）
-        self._device = device
-        self._jagged_size = jagged_size
-        self._d = d
-        self._num_keys = num_keys
-        self._block_d = block_d
-        self._grid = grid
-        self._in = in_d
-        self._key_inds = key_d
-        self._value_inds = value_d
-        self._out = out
-        self._stride_in = in_d.stride(0)
-        self._stride_on = out.stride(0)
-        # autotune key 参数：kernel 内部未使用，固定值即可
-        self._autotune_max_seq_len = 1024
-        self._b = 1
-        self._autotune_b = 1
-
-    def __call__(self, input_data: InputDataset, with_output: bool = False):
-        if self._device == "cpu":
-            key_map = (torch.arange(self._jagged_size, dtype=torch.int64) * self._num_keys) // self._jagged_size
-            ref = torch.zeros((self._num_keys, self._d), dtype=self._in.dtype)
-            ref.index_add_(0, key_map, self._in)
-            return ref
-
-        _synchronize(self._device)
-
-        self._out.zero_()
-
-        _add_embeddings_bwd_kernel[self._grid](
-            In=self._in,
-            KeyInds=self._key_inds,
-            ValueInds=self._value_inds,
-            Out=self._out,
-            AUTOTUNE_MAX_SEQ_LEN=self._autotune_max_seq_len,
-            B=self._b,
-            AUTOTUNE_B=self._autotune_b,
-            D=self._d,
-            jagged_size=self._jagged_size,
-            stride_in=self._stride_in,
-            stride_on=self._stride_on,
-            BLOCK_D=self._block_d,
-            # BLOCK / num_warps 由 @triton.autotune 自动注入，不显式传递
+@triton.autotune(
+    configs=get_autotune_config(),
+    key=["AUTOTUNE_MAX_SEQ_LEN", "AUTOTUNE_B", "D"],
+)
+@triton.jit
+def _add_embeddings_bwd_kernel(
+    In,
+    KeyInds,
+    ValueInds,
+    Out,
+    AUTOTUNE_MAX_SEQ_LEN,
+    B,
+    AUTOTUNE_B,
+    D,
+    jagged_size,
+    stride_in,
+    stride_on,
+    BLOCK_D: tl.constexpr,
+    BLOCK: tl.constexpr,
+):
+    off_block = tl.program_id(0)
+    offs_d = tl.arange(0, BLOCK_D)
+    mask_d = offs_d < D
+    key_ind = -1
+    key_ind = key_ind.to(KeyInds.dtype.element_ty)  # pyre-ignore[16]  # pylint: disable=no-member
+    accumulator = tl.zeros((BLOCK_D,), dtype=In.dtype.element_ty)
+    for off_i in range(0, BLOCK):
+        off = off_block * BLOCK + off_i
+        if off < jagged_size:
+            value_ind = tl.load(ValueInds + off)
+            in_offset = In + value_ind.to(tl.int64) * stride_in
+            jagged_in = tl.load(in_offset + offs_d, mask=mask_d)
+            key_ind_new = tl.load(KeyInds + off)
+            if key_ind == key_ind_new:
+                accumulator += jagged_in
+            else:
+                if key_ind >= 0:
+                    out_offset = Out + key_ind.to(tl.int64) * stride_on
+                    tl.atomic_add(
+                        out_offset + offs_d,
+                        accumulator.to(Out.dtype.element_ty),
+                        mask=mask_d,
+                        sem="relaxed",
+                    )
+                key_ind = key_ind_new
+                accumulator = jagged_in
+    if key_ind >= 0:
+        out_offset = Out + key_ind.to(tl.int64) * stride_on
+        tl.atomic_add(
+            out_offset + offs_d,
+            accumulator.to(Out.dtype.element_ty),
+            mask=mask_d,
+            sem="relaxed",
         )
-
-        _synchronize(self._device)
-
-        return self._out

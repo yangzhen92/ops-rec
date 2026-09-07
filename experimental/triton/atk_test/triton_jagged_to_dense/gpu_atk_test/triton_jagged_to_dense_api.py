@@ -146,8 +146,9 @@ def _generate_jagged_offsets_by_shapes(shapes: list, total_elements: int, device
 class TritonJaggedToDenseApi(BaseApi):
     """jagged_to_dense 算子的 API 封装"""
 
-    def init_by_input_data(self, input_data: InputDataset):  # pylint: disable=attribute-defined-outside-init
+    def init_by_input_data(self, input_data: InputDataset):
         """初始化操作"""
+        # pylint: disable=attribute-defined-outside-init
         device = get_device()
         if device == 'npu':
             torch.npu.synchronize()

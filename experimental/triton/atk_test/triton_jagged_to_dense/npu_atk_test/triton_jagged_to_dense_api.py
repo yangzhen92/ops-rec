@@ -145,8 +145,9 @@ def _generate_jagged_offsets_by_shapes(shapes: list, total_elements: int, device
 class TritonJaggedToDenseApi(BaseApi):
     """jagged_to_dense 算子的 API 封装"""
 
-    def init_by_input_data(self, input_data: InputDataset):  # pylint: disable=attribute-defined-outside-init
+    def init_by_input_data(self, input_data: InputDataset):
         """初始化操作"""
+        # pylint: disable=attribute-defined-outside-init
         device = get_device()
         if device == 'npu':
             torch.npu.synchronize()
@@ -261,8 +262,6 @@ class TritonJaggedToDenseApi(BaseApi):
         )
 
         self._JAGGED_DIM = JAGGED_DIM
-        self._thread_block_row_size = 32
-        self._thread_block_col_size = 32
         self._dense_col_stride = self._output_dense.stride(-1)
         self._dense_row_stride = self._output_dense.stride(-2)
         self._dense_matrix_stride = self._output_dense.stride(-3)

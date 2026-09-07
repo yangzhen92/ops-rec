@@ -31,7 +31,6 @@ class JaggedToDenseGenerator(CaseGenerator):
         operation_value = case_config.inputs[5] if len(case_config.inputs) > 5 else None
 
         jagged_offsets = case_config.inputs[1]
-        num_offsets = len(jagged_offsets)
 
         # jagged_offsets dtype 统一
         if isinstance(jagged_offsets, list) and len(jagged_offsets) > 0:

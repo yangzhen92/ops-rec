@@ -42,35 +42,38 @@ def _jagged_offsets_to_dense_indice(
     output_offset = torch.zeros(len(offsets[-1]) - 1, device="cpu", dtype=torch.int32)
 
     offsets_cpu = [offset.cpu() for offset in offsets]
+    n_levels = len(offsets_cpu)
 
-    for i in range(len(offsets_cpu[-1]) - 1):
-        idx = i
-        result = 0
-        in_range = True
+    for entry in range(len(offsets_cpu[-1]) - 1):
+        cursor = entry
+        total = 0
+        within_dense = True
 
-        for j in range(len(offsets_cpu) - 2, -1, -1):
-            left, right = 0, offsets_cpu[j].size(0)
-            while left < right:
-                mid = left + (right - left) // 2
-                if offsets_cpu[j][mid] > idx:
-                    right = mid
+        for lv in range(n_levels - 2, -1, -1):
+            off = offsets_cpu[lv]
+            lb, ub = 0, off.size(0)
+            while lb < ub:
+                middle = (lb + ub) // 2
+                if off[middle] > cursor:
+                    ub = middle
                 else:
-                    left = mid + 1
+                    lb = middle + 1
 
-            cur_val = idx - offsets_cpu[j][left - 1]
-            if dense_sizes and cur_val >= dense_sizes[j + 1]:
-                in_range = False
+            span = cursor - off[lb - 1]
+            if dense_sizes and span >= dense_sizes[lv + 1]:
+                within_dense = False
                 break
-            result += cur_val * dense_strides[j + 1]
-            idx = left - 1
+            total += span * dense_strides[lv + 1]
+            cursor = lb - 1
 
-        if in_range:
-            result += idx * dense_strides[0]
-            if dense_sizes and idx > dense_sizes[0]:
-                result = -1
-            output_offset[i] = result
-        else:
-            output_offset[i] = -1
+        if not within_dense:
+            output_offset[entry] = -1
+            continue
+
+        total += cursor * dense_strides[0]
+        if dense_sizes and cursor > dense_sizes[0]:
+            total = -1
+        output_offset[entry] = total
 
     if device == 'npu':
         return output_offset.npu()

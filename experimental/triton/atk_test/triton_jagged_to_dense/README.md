@@ -45,16 +45,19 @@
 
 ```python
 import torch
+import torch_npu
 import triton
 from triton_jagged_to_dense import triton_jagged_to_dense
 
+DEVICE = "npu:0"
+
 values = torch.tensor(
     [[1, 1], [2, 2], [3, 3], [4, 4], [5, 5], [6, 6], [7, 7]],
-    dtype=torch.float32, device="npu",
+    dtype=torch.float32, device=DEVICE,
 )
-inner_offsets = torch.tensor([0, 3, 7], dtype=torch.int64, device="npu")
-output_dense = torch.zeros(2, 4, 2, dtype=torch.float32, device="npu")
-dense_indices = torch.zeros(2, dtype=torch.int32, device="npu")
+inner_offsets = torch.tensor([0, 3, 7], dtype=torch.int64, device=DEVICE)
+output_dense = torch.zeros(2, 4, 2, dtype=torch.float32, device=DEVICE)
+dense_indices = torch.zeros(2, dtype=torch.int32, device=DEVICE)
 
 grid = (inner_offsets.size(0) - 1,)
 triton_jagged_to_dense[grid](
@@ -67,8 +70,6 @@ triton_jagged_to_dense[grid](
     output_dense.stride(-2),       # dense_row_stride
     output_dense.stride(-3),       # dense_matrix_stride
     JAGGED_DIM=2,
-    thread_block_row_size=32,
-    thread_block_col_size=32,
     operation_function=None,
     operation_dense=None,
 )
@@ -128,7 +129,7 @@ atk server --devices 0 --plugin_path /path/to/api文件所在文件夹
 ### 精度测试
 
 ```bash
-atk node --backend triton --devices 0 node --backend npu --devices 0 \
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 \
     task -c all_triton_jagged_to_dense.json --task accuracy \
     -p triton_jagged_to_dense_api.py
 ```
@@ -136,7 +137,7 @@ atk node --backend triton --devices 0 node --backend npu --devices 0 \
 ### 性能测试
 
 ```bash
-atk node --backend triton --devices 0 node --backend npu --devices 0 \
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 \
     task -c triton_jagged_to_dense_performce.json --task performance_device \
     -p triton_jagged_to_dense_api.py
 ```

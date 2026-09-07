@@ -41,35 +41,38 @@ def _jagged_offsets_to_dense_indice(
     output_offset = torch.zeros(len(offsets[-1]) - 1, device="cpu", dtype=torch.int32)
 
     offsets_cpu = [offset.cpu() for offset in offsets]
+    level_count = len(offsets_cpu)
 
-    for i in range(len(offsets_cpu[-1]) - 1):
-        idx = i
-        result = 0
-        in_range = True
+    for row in range(len(offsets_cpu[-1]) - 1):
+        pos = row
+        acc = 0
+        valid = True
 
-        for j in range(len(offsets_cpu) - 2, -1, -1):
-            left, right = 0, offsets_cpu[j].size(0)
-            while left < right:
-                mid = left + (right - left) // 2
-                if offsets_cpu[j][mid] > idx:
-                    right = mid
+        for level in range(level_count - 2, -1, -1):
+            offset = offsets_cpu[level]
+            lo, hi = 0, offset.size(0)
+            while lo < hi:
+                mid = (lo + hi) // 2
+                if offset[mid] > pos:
+                    hi = mid
                 else:
-                    left = mid + 1
+                    lo = mid + 1
 
-            cur_val = idx - offsets_cpu[j][left - 1]
-            if dense_sizes and cur_val >= dense_sizes[j + 1]:
-                in_range = False
+            cur = pos - offset[lo - 1]
+            if dense_sizes and cur >= dense_sizes[level + 1]:
+                valid = False
                 break
-            result += cur_val * dense_strides[j + 1]
-            idx = left - 1
+            acc += cur * dense_strides[level + 1]
+            pos = lo - 1
 
-        if in_range:
-            result += idx * dense_strides[0]
-            if dense_sizes and idx > dense_sizes[0]:
-                result = -1
-            output_offset[i] = result
-        else:
-            output_offset[i] = -1
+        if not valid:
+            output_offset[row] = -1
+            continue
+
+        acc += pos * dense_strides[0]
+        if dense_sizes and pos > dense_sizes[0]:
+            acc = -1
+        output_offset[row] = acc
 
     if device == 'npu':
         return output_offset.npu()

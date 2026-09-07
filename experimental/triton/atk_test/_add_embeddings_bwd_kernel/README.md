@@ -66,6 +66,7 @@ _add_embeddings_bwd_kernel[grid](
 ```
 
 ## 关键约束
+
 - In.ndim == 2 且 jagged_size >= num_keys（每个 key 至少被一个 token 寻址）。
 - Out 以 torch.zeros 初始化，atomic_add 需要零起点；多次调用前需归零。
 - KeyInds 已排序（API 按 i * num_keys // jagged_size 确定性生成），组内累加才成立。
@@ -85,6 +86,7 @@ _add_embeddings_bwd_kernel/
     ├── generate_add_embeddings_bwd_kernel.py      # 限制参数生成脚本
     └── all__add_embeddings_bwd_kernel.json        # 性能测试样例数据
  ```
+ 
 ## ATK 测试
 
 测试在 NPU / GPU 两端协同进行：
@@ -103,11 +105,13 @@ atk case -f _add_embeddings_bwd_kernel.yaml -p generate_add_embeddings_bwd_kerne
 生成的精度测试用例位于 `result/_add_embeddings_bwd_kernel/json/` 下，文件名为 `all__add_embeddings_bwd_kernel.json`。
 
 ## 远端 GPU 服务器起监听命令
+
 ```bash
 atk server --devices 0 --plugin_path /path/to/api文件所在文件夹
 ```
 
 ## 精度测试
+
 ```bash
 atk node --backend triton --devices 0 node --backend npu --devices 0 \
     task -c all__add_embeddings_bwd_kernel.json --task accuracy \
@@ -115,6 +119,7 @@ atk node --backend triton --devices 0 node --backend npu --devices 0 \
 ```
 
 ## 性能测试
+
 ```bash
 atk node --backend triton --devices 0 node --backend npu --devices 0 \
     task -c all_add_embeddings_bwd_kernel.json --task performance_device \

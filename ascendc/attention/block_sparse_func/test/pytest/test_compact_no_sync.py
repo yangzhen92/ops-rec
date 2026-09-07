@@ -37,7 +37,7 @@ import ops_rec
 
 torch.npu.config.allow_internal_format = False
 
-# 测试有 144 种 shape 组合，增大 cache 避免 dynamic=True 时因重编译超限报错
+# dynamic=True 图模式会在不同 shape 下重编译，增大 cache 避免超限报错
 torch._dynamo.config.cache_size_limit = 256
 
 logging.basicConfig(level=logging.INFO)
@@ -156,9 +156,10 @@ def _check_tuple(npu_out, cpu_out, name: str = "compact_no_sync") -> None:
 # ---------------------------------------------------------------------------
 # Fixture: skip everything if no NPU is available
 # ---------------------------------------------------------------------------
-def _require_npu():
+def _require_npu(device: str):
     if not torch.npu.is_available():
         pytest.skip("NPU device not available")
+    torch.npu.set_device(device)
 
 
 # ---------------------------------------------------------------------------
@@ -175,7 +176,7 @@ def test_compact_no_sync_hand_crafted_single_row(device):
         full_offset = [0, 2], full_compact = [10, 20]
         mask_offset = [0, 1], mask_compact = [40]   (last mcnt=1 entry)
     """
-    _require_npu()
+    _require_npu(device)
 
     mask_cnt = np.array([[[1]]], dtype=np.int32)
     full_cnt = np.array([[[2]]], dtype=np.int32)
@@ -209,7 +210,7 @@ def test_compact_no_sync_hand_crafted_multi_row(device):
     block_idx[1,0,0] = [20, 21, 22, 23, 24, 25],  fcnt=0, mcnt=0
     block_idx[1,0,1] = [30, 31, 32, 33, 34, 35],  fcnt=6, mcnt=0
     """
-    _require_npu()
+    _require_npu(device)
 
     mask_cnt = np.array([[[3, 1]], [[0, 0]]], dtype=np.int32)
     full_cnt = np.array([[[2, 4]], [[0, 6]]], dtype=np.int32)
@@ -266,7 +267,7 @@ def test_compact_no_sync_hand_crafted_multi_row(device):
 )
 def test_compact_no_sync_random(device, B, H, num_blocks, max_blocks):
     """Random counts in [0, max_blocks] and random block_idx; compare to CPU."""
-    _require_npu()
+    _require_npu(device)
 
     rng = np.random.default_rng(seed=B * 1000 + H * 100 + num_blocks * 10 + max_blocks)
 
@@ -300,7 +301,7 @@ def test_compact_no_sync_all_zeros(device, B, H, num_blocks, max_blocks):
 
     Expected: offsets are all zero (cumsum of zeros), compacts are empty.
     """
-    _require_npu()
+    _require_npu(device)
 
     mask_cnt = np.zeros((B, H, num_blocks), dtype=np.int32)
     full_cnt = np.zeros((B, H, num_blocks), dtype=np.int32)
@@ -331,7 +332,7 @@ def test_compact_no_sync_all_full(device, B, H, num_blocks, max_blocks):
     Expected: mask_compact empty, full_compact = all rows' first max_blocks entries
     concatenated.
     """
-    _require_npu()
+    _require_npu(device)
 
     mask_cnt = np.zeros((B, H, num_blocks), dtype=np.int32)
     full_cnt = np.full((B, H, num_blocks), max_blocks, dtype=np.int32)
@@ -361,7 +362,7 @@ def test_compact_no_sync_all_masked(device, B, H, num_blocks, max_blocks):
     Expected: full_compact empty, mask_compact = all rows' last max_blocks entries
     (in reverse order) concatenated.
     """
-    _require_npu()
+    _require_npu(device)
 
     mask_cnt = np.full((B, H, num_blocks), max_blocks, dtype=np.int32)
     full_cnt = np.zeros((B, H, num_blocks), dtype=np.int32)
@@ -397,7 +398,7 @@ def test_compact_no_sync_max_blocks_one(device, B, H, num_blocks, max_blocks):
     the first fcnt and the last mcnt are read. With max_blocks=1 the first
     and last slots are the same, so we set fcnt+mcnt=1.
     """
-    _require_npu()
+    _require_npu(device)
 
     rng = np.random.default_rng(seed=42)
     # Each row gets either fcnt=1, mcnt=0 OR fcnt=0, mcnt=1
@@ -425,7 +426,7 @@ def test_compact_no_sync_max_blocks_one(device, B, H, num_blocks, max_blocks):
 )
 def test_compact_no_sync_output_metadata(device, B, H, num_blocks, max_blocks):
     """Return-tuple structure, dtypes, and shapes are as documented."""
-    _require_npu()
+    _require_npu(device)
 
     rng = np.random.default_rng(seed=0)
     mask_cnt = rng.integers(0, max_blocks + 1, size=(B, H, num_blocks), dtype=np.int32)
@@ -461,7 +462,7 @@ def test_compact_no_sync_output_metadata(device, B, H, num_blocks, max_blocks):
 )
 def test_compact_no_sync_offset_starts_at_zero(device, B, H, num_blocks, max_blocks):
     """The first entry of each offset array must be zero (exclusive scan)."""
-    _require_npu()
+    _require_npu(device)
 
     rng = np.random.default_rng(seed=7)
     mask_cnt = rng.integers(0, max_blocks + 1, size=(B, H, num_blocks), dtype=np.int32)
@@ -486,7 +487,7 @@ def test_compact_no_sync_offset_starts_at_zero(device, B, H, num_blocks, max_blo
 )
 def test_compact_no_sync_offset_total_equals_sum(device, B, H, num_blocks, max_blocks):
     """The final offset entry equals the sum of all per-row counts."""
-    _require_npu()
+    _require_npu(device)
 
     rng = np.random.default_rng(seed=11)
     mask_cnt = rng.integers(0, max_blocks + 1, size=(B, H, num_blocks), dtype=np.int32)
@@ -514,7 +515,7 @@ def test_compact_no_sync_offset_total_equals_sum(device, B, H, num_blocks, max_b
 )
 def test_compact_no_sync_deterministic(device, B, H, num_blocks, max_blocks):
     """Calling the op twice on the same inputs must yield the same outputs."""
-    _require_npu()
+    _require_npu(device)
 
     rng = np.random.default_rng(seed=2026)
     mask_cnt = rng.integers(0, max_blocks + 1, size=(B, H, num_blocks), dtype=np.int32)
@@ -551,7 +552,7 @@ def test_compact_no_sync_full_and_mask_independent(device):
     """The mask stream and the full stream are independent: changes to one
     do not affect the other.
     """
-    _require_npu()
+    _require_npu(device)
 
     block_idx_a = np.array([[[[1, 2, 3, 4], [5, 6, 7, 8]]]], dtype=np.int32)
     block_idx_b = block_idx_a.copy()
@@ -584,7 +585,7 @@ def test_compact_no_sync_full_and_mask_independent(device):
 @pytest.mark.graph
 @pytest.mark.parametrize("device", ["npu:0"])
 def test_compact_no_sync_graph(device):
-    _require_npu()
+    _require_npu(device)
 
     mask_cnt = np.array([[[1]]], dtype=np.int32)
     full_cnt = np.array([[[2]]], dtype=np.int32)

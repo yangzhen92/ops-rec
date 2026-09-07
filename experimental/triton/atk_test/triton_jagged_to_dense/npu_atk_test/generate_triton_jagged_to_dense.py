@@ -60,7 +60,6 @@ class JaggedToDenseGenerator(CaseGenerator):
                 jagged_offsets[:] = jagged_offsets[:target_num]
             if isinstance(jagged_max_lengths, list) and len(jagged_max_lengths) > target_num:
                 jagged_max_lengths[:] = jagged_max_lengths[:target_num]
-            num_offsets = target_num
 
         # jagged_values.shape[0] >= jagged_offsets[-1].shape[0]
         min_total = jagged_offsets[-1].shape[0] * random.randint(2, 3)

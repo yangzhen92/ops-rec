@@ -18,6 +18,9 @@ from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
 from atk.tasks.api_execute.base_api import BaseApi
 
+# 从被测代码直接引用函数
+from triton_jagged_to_dense import triton_jagged_to_dense
+
 
 def get_device():
     """获取可用的设备，优先NPU"""
@@ -26,13 +29,9 @@ def get_device():
     try:
         if torch.cuda.is_available():
             return 'cuda'
-    except:
+    except Exception:
         pass
     return 'cpu'
-
-
-# 从被测代码直接引用函数
-from triton_jagged_to_dense import triton_jagged_to_dense
 
 
 def _jagged_offsets_to_dense_indice(
@@ -144,7 +143,7 @@ def _generate_jagged_offsets_by_shapes(shapes: list, total_elements: int, device
 class TritonJaggedToDenseApi(BaseApi):
     """jagged_to_dense 算子的 API 封装"""
 
-    def init_by_input_data(self, input_data: InputDataset):
+    def init_by_input_data(self, input_data: InputDataset):  # pylint: disable=attribute-defined-outside-init
         """初始化操作"""
         device = get_device()
         if device == 'npu':

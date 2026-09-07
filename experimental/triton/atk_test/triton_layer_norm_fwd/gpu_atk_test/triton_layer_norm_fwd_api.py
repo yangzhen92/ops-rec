@@ -155,56 +155,9 @@ class LayerNormFwdApi(BaseApi):
         self._num_warps = num_warps
         self._grid = grid
 
-    # def _dump_dir(self) -> Path:
-    #     """获取当前 case 的 dump 目录。
-
-    #     NPU 写到 kernel_input_dump/，GPU 写到 kernel_input_dump_gpu/，
-    #     便于对比两侧输入/输出分析精度差异。
-    #     """
-    #     dump_root = Path(__file__).resolve().parent
-    #     if self._device == "cuda":
-    #         dump_root = dump_root / "kernel_input_dump_gpu"
-    #     else:
-    #         dump_root = dump_root / "kernel_input_dump"
-    #     dump_dir = dump_root / str(self._case_id)
-    #     dump_dir.mkdir(parents=True, exist_ok=True)
-    #     return dump_dir
-
-    # def _dump_tensor(self, dump_dir: Path, name: str, tensor: torch.Tensor) -> None:
-    #     """将单个 tensor 写入 dump 目录下对应的 txt 文件。"""
-    #     path = dump_dir / f"{name}.txt"
-    #     with open(path, "w") as f:
-    #         f.write(f"# {name} shape={list(tensor.shape)} dtype={tensor.dtype}\n")
-    #         f.write(f"# device={tensor.device}\n")
-    #         vals = tensor.cpu().flatten().tolist()
-    #         f.write(f"{name} values={vals}\n")
-
-    # def _dump_config(self, dump_dir: Path) -> None:
-    #     """将关键配置写入文件。"""
-    #     config = {
-    #         "case_id": self._case_id,
-    #         "device": self._device,
-    #         "N": self._x.shape[0],
-    #         "D": self._d,
-    #         "block_d": self._block_d,
-    #         "num_warps": self._num_warps,
-    #         "eps": self._eps,
-    #         "stride_x": self._stride_x,
-    #         "stride_y": self._stride_y,
-    #     }
-    #     path = dump_dir / "config.json"
-    #     with open(path, "w") as f:
-    #         json.dump(config, f, indent=2)
-
     def __call__(self, input_data: InputDataset, with_output: bool = False):
         """执行 kernel（计时）。"""
         _synchronize(self._device)
-
-        # if _DUMP_ENABLED:
-        #     dump_dir = self._dump_dir()
-        #     self._dump_tensor(dump_dir, "X", self._x)
-        #     self._dump_config(dump_dir)
-
         _layer_norm_fwd[self._grid](
             self._x,
             self._y,

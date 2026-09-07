@@ -2,7 +2,10 @@
 
 ## 来源
 
-`triton_layer_norm_fwd` 算子源自 Meta Platforms 的 Triton layer normalization kernel 实现。本目录保留原始版权声明，并在 NPU/ATK 适配文件中补充 Huawei Technologies Co., Ltd. 版权与 Apache License 声明。
+`triton_layer_norm_fwd` 算子源自 NVIDIA recsys-examples 代码仓
+
+
+<https://github.com/pytorch/FBGEMM/blob/v1.5.0-release/fbgemm_gpu/fbgemm_gpu/triton/jagged/triton_jagged_tensor_ops.py>
 
 ## 算子功能
 

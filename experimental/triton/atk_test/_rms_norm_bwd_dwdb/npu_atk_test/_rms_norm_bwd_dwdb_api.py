@@ -24,6 +24,7 @@ import triton
 from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
 from atk.tasks.api_execute.base_api import BaseApi
+from _rms_norm_bwd_dwdb_kernel import _rms_norm_bwd_dwdb_kernel
 
 NCORES = 64
 
@@ -35,14 +36,13 @@ def get_device():
     try:
         if torch.cuda.is_available():
             return "cuda"
-    except:
+    except (AttributeError, RuntimeError):
         pass
     return "cpu"
 
 
-from _rms_norm_bwd_dwdb_kernel import _rms_norm_bwd_dwdb_kernel
-
-
+# BaseApi 通过 init_by_input_data 生命周期方法初始化运行时状态。
+# pylint: disable=attribute-defined-outside-init
 @register("_rms_norm_bwd_dwdb")
 class RMSNormBwdDwdbApi(BaseApi):
     """_rms_norm_bwd_dwdb 算子的 API 封装"""
@@ -78,10 +78,9 @@ class RMSNormBwdDwdbApi(BaseApi):
         # 创建输出 tensor
         final_dw = torch.empty((D,), dtype=dw.dtype, device=device)
 
-        # grid: 启动 cdiv(D, BLOCK_D) 个 program，每个处理BLOCK_D列
-        BLOCK_D = 32
-
-        grid = lambda meta: (min(NCORES, triton.cdiv(D, meta["BLOCK_D"])),)  # NPU上小，ncores
+        # grid: 启动不超过 NCORES 个 program，每个处理 BLOCK_D 列
+        def grid(meta):
+            return (min(NCORES, triton.cdiv(D, meta["BLOCK_D"])),)
 
         # 保存实例变量
         self._device = device

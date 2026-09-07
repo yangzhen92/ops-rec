@@ -24,6 +24,7 @@ import triton
 from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
 from atk.tasks.api_execute.base_api import BaseApi
+from _rms_norm_bwd_dwdb_kernel import _rms_norm_bwd_dwdb_kernel
 
 
 def get_device():
@@ -33,14 +34,13 @@ def get_device():
     try:
         if torch.cuda.is_available():
             return "cuda"
-    except:
+    except (AttributeError, RuntimeError):
         pass
     return "cpu"
 
 
-from _rms_norm_bwd_dwdb_kernel import _rms_norm_bwd_dwdb_kernel
-
-
+# BaseApi 通过 init_by_input_data 生命周期方法初始化运行时状态。
+# pylint: disable=attribute-defined-outside-init
 @register("_rms_norm_bwd_dwdb")
 class RMSNormBwdDwdbApi(BaseApi):
     """_rms_norm_bwd_dwdb 算子的 API 封装"""

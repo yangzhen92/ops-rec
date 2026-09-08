@@ -24,8 +24,8 @@ using namespace AscendC;
 
 namespace {
 #define DIVUP(x, y) (((x) + (y) - 1) / (y))
-constexpr int32_t MAX_Q_BLOCK_SIZE = 128;
-constexpr int32_t MAX_NUM_WARPS = (MAX_Q_BLOCK_SIZE / WARP_SIZE_CONST);
+// block 级模式块线程数固定不超过 BLOCK_THREAD_NUM_256（=256），共享内存按 8 个 warp 分配
+constexpr int32_t MAX_NUM_WARPS = (BLOCK_THREAD_NUM_256 / WARP_SIZE_CONST);
 
 /**
  * 块级归约：计算需要遍历的 kv_block 范围。
@@ -148,32 +148,32 @@ __simt_vf__ __aicore__ LAUNCH_BOUND(BLOCK_THREAD_NUM_256) inline void create_q2k
 
 #ifndef DISABLE_REG_CACHE
         // 加载 func 值到寄存器
+        // warp 级：编译期 TOKENS_PER_THREAD 个 token 一次性预载到 func_regs，全程复用
+        // block 级：token 数 tpt 是运行期的（q_block_size / 256），无法预载全部，
+        //            改为在 kv 范围 / 状态循环中逐 token 加载到 func_regs[0] 即用即弃
         token_active_mask = 0;
+        if constexpr (USE_WARP_LEVEL) {
 #pragma unroll
-        for (int32_t t = 0; t < TOKENS_PER_THREAD; t++) {
-            int32_t local_q_idx;
-            if constexpr (USE_WARP_LEVEL) {
-                local_q_idx = lane_id * TOKENS_PER_THREAD + t;
-            } else {
-                local_q_idx = tid;
-            }
-            int32_t q_idx = q_start + local_q_idx;
-            if (local_q_idx < num_active_tokens) {
-                token_active_mask |= (1 << t);
-                __gm__ int32_t* func_ptr = const_cast<__gm__ int32_t*>(base_func_ptr) + q_idx * stride_q;
-                if constexpr (N_FUNC > 0) {
-                    if (stride_f == 1) {
-                        constexpr int32_t NUM_PAIRS = N_FUNC / 2;
+            for (int32_t t = 0; t < TOKENS_PER_THREAD; t++) {
+                const int32_t local_q_idx = lane_id * TOKENS_PER_THREAD + t;
+                int32_t q_idx = q_start + local_q_idx;
+                if (local_q_idx < num_active_tokens) {
+                    token_active_mask |= (1 << t);
+                    __gm__ int32_t* func_ptr = const_cast<__gm__ int32_t*>(base_func_ptr) + q_idx * stride_q;
+                    if constexpr (N_FUNC > 0) {
+                        if (stride_f == 1) {
+                            constexpr int32_t NUM_PAIRS = N_FUNC / 2;
 #pragma unroll
-                        for (int32_t i = 0; i < NUM_PAIRS; i++) {
-                            __gm__ int2* func_ptr2 = reinterpret_cast<__gm__ int2*>(func_ptr + 2 * i);
-                            func_regs[t][2 * i] = (*func_ptr2).x;
-                            func_regs[t][2 * i + 1] = (*func_ptr2).y;
-                        }
-                    } else {
+                            for (int32_t i = 0; i < NUM_PAIRS; i++) {
+                                __gm__ int2* func_ptr2 = reinterpret_cast<__gm__ int2*>(func_ptr + 2 * i);
+                                func_regs[t][2 * i] = (*func_ptr2).x;
+                                func_regs[t][2 * i + 1] = (*func_ptr2).y;
+                            }
+                        } else {
 #pragma unroll
-                        for (int32_t f = 0; f < N_FUNC; f++) {
-                            func_regs[t][f] = func_ptr[f * stride_f];
+                            for (int32_t f = 0; f < N_FUNC; f++) {
+                                func_regs[t][f] = func_ptr[f * stride_f];
+                            }
                         }
                     }
                 }
@@ -213,19 +213,44 @@ __simt_vf__ __aicore__ LAUNCH_BOUND(BLOCK_THREAD_NUM_256) inline void create_q2k
                     kv_block_end = 0;
                 }
             } else {
-                if (is_active_primary) {
+                // block 级：块线程数 = min(qBlockSize, 256)，每线程按 block_threads 步长遍历所负责的 q_token
+                const int32_t block_threads = AscendC::Simt::GetThreadNum();
+                const int32_t tpt = DIVUP(num_active_tokens, block_threads);
+                for (int32_t tt = 0; tt < tpt; tt++) {
+                    const int32_t local_q_idx = tt * block_threads + tid;
+                    if (local_q_idx >= num_active_tokens) {
+                        continue;
+                    }
+                    const __gm__ int32_t* ptr = base_func_ptr + (q_start + local_q_idx) * stride_q;
+                    int32_t token_min_kv, token_max_kv;
 #ifndef DISABLE_REG_CACHE
                     if constexpr (N_FUNC > 0) {
-                        block_sparse_func::get_token_kv_range_from_regs<N_FUNC>(func_regs[0], thread_min_kv,
-                                                                                thread_max_kv);
+                        if (stride_f == 1) {
+                            constexpr int32_t NUM_PAIRS = N_FUNC / 2;
+#pragma unroll
+                            for (int32_t i = 0; i < NUM_PAIRS; i++) {
+                                __gm__ int2* func_ptr2 =
+                                    reinterpret_cast<__gm__ int2*>(const_cast<__gm__ int32_t*>(ptr + 2 * i));
+                                func_regs[0][2 * i] = (*func_ptr2).x;
+                                func_regs[0][2 * i + 1] = (*func_ptr2).y;
+                            }
+                        } else {
+#pragma unroll
+                            for (int32_t f = 0; f < N_FUNC; f++) {
+                                func_regs[0][f] = ptr[f * stride_f];
+                            }
+                        }
+                        block_sparse_func::get_token_kv_range_from_regs<N_FUNC>(func_regs[0], token_min_kv,
+                                                                                token_max_kv);
                     } else {
-                        block_sparse_func::get_token_kv_range<N_FUNC>(my_func_ptr, n_func, stride_f, thread_min_kv,
-                                                                      thread_max_kv);
+                        block_sparse_func::get_token_kv_range<N_FUNC>(ptr, n_func, stride_f, token_min_kv,
+                                                                      token_max_kv);
                     }
 #else
-                    block_sparse_func::get_token_kv_range<N_FUNC>(my_func_ptr, n_func, stride_f, thread_min_kv,
-                                                                  thread_max_kv);
+                    block_sparse_func::get_token_kv_range<N_FUNC>(ptr, n_func, stride_f, token_min_kv, token_max_kv);
 #endif
+                    thread_min_kv = min(thread_min_kv, token_min_kv);
+                    thread_max_kv = max(thread_max_kv, token_max_kv);
                 }
                 reduce_kv_block_range(thread_min_kv, thread_max_kv, KV_BLOCK_SIZE, num_kv_blocks, warp_min_results,
                                       warp_max_results, kv_block_start, kv_block_end);
@@ -246,38 +271,76 @@ __simt_vf__ __aicore__ LAUNCH_BOUND(BLOCK_THREAD_NUM_256) inline void create_q2k
             const bool is_kv_block_full = (kv_end == kv_start + KV_BLOCK_SIZE);
 
             uint32_t local_state_mask = 0;
+            const int32_t inactive_state = check_q_boundary ? STATE_EMPTY : STATE_FULL;
+            if constexpr (USE_WARP_LEVEL) {
 #pragma unroll
-            for (int32_t t = 0; t < TOKENS_PER_THREAD; t++) {
-                int32_t token_state;
-                int32_t active_state = STATE_EMPTY;
-                int32_t inactive_state = check_q_boundary ? STATE_EMPTY : STATE_FULL;
+                for (int32_t t = 0; t < TOKENS_PER_THREAD; t++) {
+                    int32_t token_state;
+                    int32_t active_state = STATE_EMPTY;
 
 #ifndef DISABLE_REG_CACHE
-                bool is_active = token_active_mask & (1 << t);
-                if constexpr (N_FUNC > 0) {
-                    active_state = block_sparse_func::get_token_kv_block_state_from_regs<N_FUNC / 2>(func_regs[t],
-                                                                                                     kv_start, kv_end);
-                } else {
-                    int32_t local_q_idx;
-                    if constexpr (USE_WARP_LEVEL) {
-                        local_q_idx = lane_id * TOKENS_PER_THREAD + t;
+                    const bool is_active = token_active_mask & (1 << t);
+                    if constexpr (N_FUNC > 0) {
+                        active_state = block_sparse_func::get_token_kv_block_state_from_regs<N_FUNC / 2>(
+                            func_regs[t], kv_start, kv_end);
                     } else {
-                        local_q_idx = tid;
+                        const int32_t local_q_idx = lane_id * TOKENS_PER_THREAD + t;
+                        const __gm__ int32_t* ptr = base_func_ptr + (q_start + local_q_idx) * stride_q;
+                        active_state = block_sparse_func::get_token_kv_block_state<N_FUNC>(ptr, n_func, stride_f,
+                                                                                           kv_start, kv_end);
                     }
-                    const __gm__ int32_t* ptr = base_func_ptr + (q_start + local_q_idx) * stride_q;
-                    active_state =
-                        block_sparse_func::get_token_kv_block_state<N_FUNC>(ptr, n_func, stride_f, kv_start, kv_end);
-                }
-                token_state = is_active ? active_state : inactive_state;
+                    token_state = is_active ? active_state : inactive_state;
 #else
-                bool is_active = is_active_primary;
-                if (is_active) {
-                    active_state = block_sparse_func::get_token_kv_block_state<N_FUNC>(my_func_ptr, n_func, stride_f,
-                                                                                       kv_start, kv_end);
-                }
-                token_state = is_active ? active_state : inactive_state;
+                    const bool is_active = is_active_primary;
+                    if (is_active) {
+                        active_state = block_sparse_func::get_token_kv_block_state<N_FUNC>(my_func_ptr, n_func,
+                                                                                           stride_f, kv_start, kv_end);
+                    }
+                    token_state = is_active ? active_state : inactive_state;
 #endif
-                local_state_mask |= (1u << token_state);
+                    local_state_mask |= (1u << token_state);
+                }
+            } else {
+                // block 级：块线程数 = min(qBlockSize, 256)，按 block_threads 步长遍历所负责的 q_token
+                const int32_t block_threads = AscendC::Simt::GetThreadNum();
+                const int32_t tpt = DIVUP(num_active_tokens, block_threads);
+                for (int32_t tt = 0; tt < tpt; tt++) {
+                    const int32_t local_q_idx = tt * block_threads + tid;
+                    const bool is_active = (local_q_idx < num_active_tokens);
+                    int32_t active_state = STATE_EMPTY;
+                    if (is_active) {
+                        const __gm__ int32_t* ptr = base_func_ptr + (q_start + local_q_idx) * stride_q;
+#ifndef DISABLE_REG_CACHE
+                        if constexpr (N_FUNC > 0) {
+                            if (stride_f == 1) {
+                                constexpr int32_t NUM_PAIRS = N_FUNC / 2;
+#pragma unroll
+                                for (int32_t i = 0; i < NUM_PAIRS; i++) {
+                                    __gm__ int2* func_ptr2 =
+                                        reinterpret_cast<__gm__ int2*>(const_cast<__gm__ int32_t*>(ptr + 2 * i));
+                                    func_regs[0][2 * i] = (*func_ptr2).x;
+                                    func_regs[0][2 * i + 1] = (*func_ptr2).y;
+                                }
+                            } else {
+#pragma unroll
+                                for (int32_t f = 0; f < N_FUNC; f++) {
+                                    func_regs[0][f] = ptr[f * stride_f];
+                                }
+                            }
+                            active_state = block_sparse_func::get_token_kv_block_state_from_regs<N_FUNC / 2>(
+                                func_regs[0], kv_start, kv_end);
+                        } else {
+                            active_state = block_sparse_func::get_token_kv_block_state<N_FUNC>(ptr, n_func, stride_f,
+                                                                                               kv_start, kv_end);
+                        }
+#else
+                        active_state = block_sparse_func::get_token_kv_block_state<N_FUNC>(ptr, n_func, stride_f,
+                                                                                           kv_start, kv_end);
+#endif
+                    }
+                    const int32_t token_state = is_active ? active_state : inactive_state;
+                    local_state_mask |= (1u << token_state);
+                }
             }
 
             int32_t kv_block_state;
@@ -404,13 +467,33 @@ extern "C" __global__ __aicore__ void create_q2k_block_sparse_from_func(GM_ADDR 
 
 #ifdef ENABLE_WARP_LEVEL_OPT
     int32_t blockSize = WARP_LEVEL_NUM * WARP_SIZE_CONST;
-    if (qBlockSize == 256 && kvBlockSize == 128) {
-        DISPATCH_Q2K_BY_NFUNC(nFunc, 256, 128, blockSize);
+    if (qBlockSize == 64 && kvBlockSize == 64) {
+        DISPATCH_Q2K_BY_NFUNC(nFunc, 64, 64, blockSize);
+    } else if (qBlockSize == 64 && kvBlockSize == 128) {
+        DISPATCH_Q2K_BY_NFUNC(nFunc, 64, 128, blockSize);
+    } else if (qBlockSize == 64 && kvBlockSize == 256) {
+        DISPATCH_Q2K_BY_NFUNC(nFunc, 64, 256, blockSize);
+    } else if (qBlockSize == 128 && kvBlockSize == 64) {
+        DISPATCH_Q2K_BY_NFUNC(nFunc, 128, 64, blockSize);
     } else if (qBlockSize == 128 && kvBlockSize == 128) {
         DISPATCH_Q2K_BY_NFUNC(nFunc, 128, 128, blockSize);
+    } else if (qBlockSize == 128 && kvBlockSize == 256) {
+        DISPATCH_Q2K_BY_NFUNC(nFunc, 128, 256, blockSize);
+    } else if (qBlockSize == 256 && kvBlockSize == 64) {
+        DISPATCH_Q2K_BY_NFUNC(nFunc, 256, 64, blockSize);
+    } else if (qBlockSize == 256 && kvBlockSize == 128) {
+        DISPATCH_Q2K_BY_NFUNC(nFunc, 256, 128, blockSize);
+    } else if (qBlockSize == 256 && kvBlockSize == 256) {
+        DISPATCH_Q2K_BY_NFUNC(nFunc, 256, 256, blockSize);
+    } else if (qBlockSize == 512 && kvBlockSize == 64) {
+        DISPATCH_Q2K_BY_NFUNC(nFunc, 512, 64, blockSize);
+    } else if (qBlockSize == 512 && kvBlockSize == 128) {
+        DISPATCH_Q2K_BY_NFUNC(nFunc, 512, 128, blockSize);
+    } else if (qBlockSize == 512 && kvBlockSize == 256) {
+        DISPATCH_Q2K_BY_NFUNC(nFunc, 512, 256, blockSize);
     } else {
-        blockSize = qBlockSize;
-        DISPATCH_Q2K_BY_NFUNC(nFunc, 0, 0, qBlockSize);
+        blockSize = min(qBlockSize, static_cast<int32_t>(BLOCK_THREAD_NUM_256));
+        DISPATCH_Q2K_BY_NFUNC(nFunc, 0, 0, blockSize);
     }
 #else
     int32_t blockSize = qBlockSize;
@@ -421,6 +504,7 @@ extern "C" __global__ __aicore__ void create_q2k_block_sparse_from_func(GM_ADDR 
     } else if (qBlockSize == 64 && kvBlockSize == 64) {
         DISPATCH_Q2K_BY_NFUNC(nFunc, 64, 64, blockSize);
     } else {
+        blockSize = min(qBlockSize, static_cast<int32_t>(BLOCK_THREAD_NUM_256));
         DISPATCH_Q2K_BY_NFUNC(nFunc, 0, 0, blockSize);
     }
 #endif  // ENABLE_WARP_LEVEL_OPT

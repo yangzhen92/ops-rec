@@ -191,8 +191,8 @@ class CustomizedGate(torch.nn.Module):
 def device():
     if not torch.npu.is_available():
         pytest.skip("NPU is not available")
-    torch.npu.set_device(2)
-    return torch.device("npu:2")
+    torch.npu.set_device(0)
+    return torch.device("npu:0")
 
 
 def _make_tensors(B, in_size, embedding_dim, num_heads, device, dtype=torch.bfloat16):

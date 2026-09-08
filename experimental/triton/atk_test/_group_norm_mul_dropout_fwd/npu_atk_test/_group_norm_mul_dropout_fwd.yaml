@@ -1,0 +1,160 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
+# _group_norm_mul_dropout_fwd.yaml
+# _group_norm_mul_dropout_fwd 算子用例设计文件
+# 用于 Group Normalization + 元素级乘法 + Dropout 的前向融合算子：
+# - 输入: X [B, Heads, D], U [B, Heads, D], W [Heads], Bias [Heads]
+# - 输出: Y [B, Heads, D]（或 [B, 3, Heads, D]，当 CONCAT_UX=True 时）
+name: _group_norm_mul_dropout_fwd
+api: pytorch
+version: v2.1
+api_type: _group_norm_mul_dropout_fwd
+triton_api_type: _group_norm_mul_dropout_fwd
+triton_name: _group_norm_mul_dropout_fwd
+generate: generate_group_norm_mul_dropout_fwd
+dtype_numbers: 3334
+outputs: 0
+standard:
+  acc: double_benchmark # 双标杆
+  perf: not_key
+inputs:
+  - name: X
+    type: tensor
+    required: true
+    dtypes:
+      values: [ fp32, fp16, bf16 ]
+    ranges:
+      valid:
+        values: [ [-10000, 10000] ]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+      invalid:
+        values: [ [-10000, 10000] ]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+    shapes:
+      dim_numbers:
+        values: [ 3 ]
+      dim_values:
+        values: [ [4, 10], [10, 100], [100, 300] ]
+        weights: [ 0.1, 0.2, 0.7]
+      max_length: 27000000
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: U
+    type: tensor
+    required: true
+    dtypes:
+      values: [ fp32, fp16, bf16 ]
+    ranges:
+      valid:
+        values: [ [-10000, 10000] ]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+      invalid:
+        values: [ [-10000, 10000] ]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+    shapes:
+      dim_numbers:
+        values: [ 3 ]
+      dim_values:
+        values: [ [4, 10], [10, 100], [100, 300] ]
+        weights: [ 0.1, 0.2, 0.7]
+      max_length: 27000000
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: W
+    type: tensor
+    required: true
+    dtypes:
+      values: [ fp32, fp16, bf16 ]
+    ranges:
+      valid:
+        values: [ [-10000, 10000] ]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+      invalid:
+        values: [ [-10000, 10000] ]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+    shapes:
+      dim_numbers:
+        values: [ 1 ]
+      dim_values:
+        values: [ [4, 10], [10, 100], [100, 300] ]
+        weights: [ 0.1, 0.2, 0.7]
+      max_length: 27000000
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: Bias
+    type: tensor
+    required: true
+    dtypes:
+      values: [ fp32, fp16, bf16 ]
+    ranges:
+      valid:
+        values: [ [-10000, 10000] ]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+      invalid:
+        values: [ [-10000, 10000] ]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+    shapes:
+      dim_numbers:
+        values: [ 1 ]
+      dim_values:
+        values: [ [4, 10], [10, 100], [100, 300] ]
+        weights: [ 0.1, 0.2, 0.7]
+      max_length: 27000000
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false

@@ -39,9 +39,9 @@ repos:
       - id: codespell
         args: [
           "-L",
-          "CANN,cann,NNAL,nnal,ASCEND,ascend,EnQue,CopyIn,ArchType,AND,ND,tbe,copyin,alog,nd",
+          "CANN,cann,NNAL,nnal,ASCEND,ascend,EnQue,CopyIn,ArchType,AND,ND,tbe,copyin,alog",
           "--skip",
-          "*.py,*.cpp,*.hpp,*.c,*.h,*typos.toml",
+          "*.py,*.cpp,*.hpp,*.c,*.h",
         ]
 
   # pylint：指定 pre-commit/pyproject.toml

@@ -8,7 +8,7 @@
 
 ## 算子功能
 
-`triton_jagged_to_dense` 用于将 **jagged tensor（不规则张量）** 转换为 **dense tensor（稠密张量）**，并支持在写回时与一个 dense tensor 做元素级算术融合（`add` 或 `mul`）。
+`triton_jagged_to_dense` 用于将 **jagged tensor（不规则张量）** 转换为 **dense tensor（稠密张量）**，并支持在写回时与一个 dense tensor 做元素级算术融合（`add` 或 `mul`）
 
 - 通过 `jagged_max_lengths` 控制每一维的目标尺寸，不足部分以 `padding_value` 填充；越界部分直接截断。
 - 可选地将 `jagged` 与同形状的 `operation_dense` 做元素级融合，结果直接写回 `output_dense`，无需中间临时张量。   

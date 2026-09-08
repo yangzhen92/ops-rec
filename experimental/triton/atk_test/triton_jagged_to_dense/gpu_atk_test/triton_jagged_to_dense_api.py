@@ -96,7 +96,7 @@ def _generate_jagged_offsets_by_shapes(shapes: list, total_elements: int, device
     """
     offsets = []
 
-    # 计算每层的分段数
+    # 计算每层分段数
     layer_sizes = [shape[0] - 1 for shape in shapes]  # 每个 offset 的长度-1就是分段数
 
     # 生成最内层 offsets

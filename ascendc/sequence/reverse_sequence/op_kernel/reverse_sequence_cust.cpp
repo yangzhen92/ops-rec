@@ -29,7 +29,6 @@ struct ReverseSequenceArgs {
     int64_t maxSeqLen;
     int64_t dataDim;
 
-    int64_t handleNumOneTime;
     int64_t left;
     int64_t handleTotalCount;
 
@@ -144,7 +143,6 @@ extern "C" __global__ __aicore__ void reverse_sequence_cust(GM_ADDR input, GM_AD
                                                      tiling_data.batchSize,
                                                      tiling_data.maxSeqLen,
                                                      tiling_data.dataDim,
-                                                     tiling_data.handleNumOneTime,
                                                      tiling_data.left,
                                                      tiling_data.handleTotalCount,
                                                      tiling_data.alignBytes,

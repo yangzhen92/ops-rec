@@ -108,7 +108,6 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
     tilingData.set_batchSize(inputShape.GetDim(DIM0));
     tilingData.set_maxSeqLen(inputShape.GetDim(DIM1));
     tilingData.set_dataDim(dataDim);
-    tilingData.set_handleNumOneTime(handleNumOneTime);
     tilingData.set_handleTotalCount(handleTotalCount);
     tilingData.set_left(left);
     tilingData.set_alignBytes(alignBytes);

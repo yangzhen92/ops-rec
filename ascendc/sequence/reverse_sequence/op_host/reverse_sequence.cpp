@@ -23,13 +23,18 @@ See the License for the specific language governing permissions and
 namespace optiling {
 // 常量定义
 constexpr int32_t ALIGN_32 = 32;
+constexpr int32_t ALIGN_512 = 512;
+constexpr int32_t RESERVER_UB_SIZE = (20 * 1024);  // 20KB
 constexpr int32_t DIM0 = 0;
 constexpr int32_t DIM1 = 1;
 constexpr int32_t DIM2 = 2;
 
+constexpr int32_t JAGGED_DIM0_INDEX = 0;
 constexpr int32_t PARAM_INPUT_INDEX = 0;
 constexpr int32_t PARAM_SEQ_LENGTH_INDEX = 1;
 constexpr int32_t OUTPUT_INDEX = 0;
+
+constexpr int64_t LOCAL_TENSOR_COUNT = 2;  // 输入输出各占一份
 
 constexpr int64_t DATA_BYTE_FP32 = 4;
 constexpr int64_t DATA_BYTE_FP16 = 2;
@@ -63,6 +68,8 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
     // 设置总的workspace的数值大小，总的workspace空间由框架来申请并管理。
     currentWorkspace[0] = usrSize + systemWorkspacesSize;
     size_t coreNum = ascendCPlatform.GetCoreNumAiv();
+    uint64_t ubSize = 0;
+    ascendCPlatform.GetCoreMemSize(platform_ascendc::CoreMemType::UB, ubSize);
 
     // 一共要处理的dataDim维度的数据条数
     int64_t totalDataNum = inputShape.GetDim(DIM0) * inputShape.GetDim(DIM1);
@@ -80,6 +87,10 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
         OPS_LOG_E("", "invalid datatype, only support float/fp16/bf16/int64\n");
         return ge::GRAPH_FAILED;
     }
+    int64_t blockLen = (ubSize - RESERVER_UB_SIZE) / LOCAL_TENSOR_COUNT / dataBytes;
+    auto alignment = ALIGN_32 / dataBytes;
+    blockLen = blockLen / alignment * alignment;                    // 一次能处理的浮点数个数 对齐32字节
+    int64_t handleNumOneTime = blockLen / inputShape.GetDim(DIM2);  // 单个核一次能处理的数据条数
 
     OPS_CHECK(coreNum == 0, OPS_LOG_E("[ERROR]", "aiv core num == 0"), return ge::GRAPH_FAILED);
     // 单个核总共要处理的数据条数
@@ -91,14 +102,14 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
     uint32_t alignBytes = oneDataBytes / ALIGN_32 * ALIGN_32;
     uint32_t unAlignBytes = oneDataBytes - alignBytes;
     uint32_t alignNumberCount = alignBytes / dataBytes;
-    // 向上取整到 32B 对齐后的【元素个数】，需除以 dataBytes（源实现漏除导致 UB 内拷贝越界）
-    uint32_t overAlignNumberCount = (oneDataBytes + ALIGN_32 - 1) / ALIGN_32 * ALIGN_32 / dataBytes;
+    uint32_t overAlignNumberCount = (oneDataBytes + ALIGN_32 - 1) / ALIGN_32 * ALIGN_32;
 
     // 设置分片数据
     ReverseSequenceTilling tilingData;
     tilingData.set_batchSize(inputShape.GetDim(DIM0));
     tilingData.set_maxSeqLen(inputShape.GetDim(DIM1));
     tilingData.set_dataDim(dataDim);
+    tilingData.set_handleNumOneTime(handleNumOneTime);
     tilingData.set_handleTotalCount(handleTotalCount);
     tilingData.set_left(left);
     tilingData.set_alignBytes(alignBytes);
@@ -117,6 +128,10 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
 }  // namespace optiling
 
 namespace ge {
+using optiling::DIM0;
+using optiling::DIM1;
+using optiling::DIM2;
+using optiling::JAGGED_DIM0_INDEX;
 using optiling::OUTPUT_INDEX;
 using optiling::PARAM_INPUT_INDEX;
 

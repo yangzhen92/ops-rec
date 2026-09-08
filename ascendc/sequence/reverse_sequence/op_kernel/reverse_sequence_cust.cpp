@@ -19,6 +19,8 @@ See the License for the specific language governing permissions and
 using namespace AscendC;
 
 namespace ReverseSequence_Kernel {
+constexpr int32_t ALIGN_32 = 32;
+constexpr int32_t ALIGN_16 = 16;
 
 struct ReverseSequenceArgs {
     GM_ADDR input;
@@ -29,6 +31,7 @@ struct ReverseSequenceArgs {
     int64_t maxSeqLen;
     int64_t dataDim;
 
+    int64_t handleNumOneTime;
     int64_t left;
     int64_t handleTotalCount;
 
@@ -46,6 +49,7 @@ public:
     __aicore__ inline void init(ReverseSequenceArgs& args, TPipe& pipe)
     {
         this->args = &args;
+        this->pipe = &pipe;
 
         thisId = GetBlockIdx();
         if (thisId < args.left) {
@@ -55,16 +59,14 @@ public:
             offsetStartPos = (args.handleTotalCount + 1) * args.left + (thisId - args.left) * args.handleTotalCount;
         }
 
-        inputGM.SetGlobalBuffer(reinterpret_cast<__gm__ dType*>(args.input),
-                                args.batchSize * args.maxSeqLen * args.dataDim);
+        intputGM.SetGlobalBuffer(reinterpret_cast<__gm__ dType*>(args.input),
+                                 args.batchSize * args.maxSeqLen * args.dataDim);
         seqLengthsGM.SetGlobalBuffer(reinterpret_cast<__gm__ tType*>(args.seqLengths), args.batchSize);
         outputGM.SetGlobalBuffer(reinterpret_cast<__gm__ dType*>(args.output),
                                  args.batchSize * args.maxSeqLen * args.dataDim);
 
-        // UB buffer 直接按 32B 对齐后的单行字节数申请，与 UB->UB 拷贝长度一致，
-        // 不依赖分配器的对齐取整行为
-        pipe.InitBuffer(inQueue, 1, args.overAlignNumberCount * sizeof(dType));
-        pipe.InitBuffer(outQueue, 1, args.overAlignNumberCount * sizeof(dType));
+        pipe.InitBuffer(inQueue, 1, args.dataDim * sizeof(dType));
+        pipe.InitBuffer(outQueue, 1, args.dataDim * sizeof(dType));
     }
 
     __aicore__ inline void Compute()
@@ -72,7 +74,7 @@ public:
         for (int i = 0; i < args->handleTotalCount; ++i) {
             int64_t currentDataIndex = offsetStartPos + i;
             LocalTensor<dType> localIn = inQueue.AllocTensor<dType>();
-            CpGm2Local(localIn, inputGM[currentDataIndex * args->dataDim], args->dataDim);
+            CpGm2Local(localIn, intputGM[currentDataIndex * args->dataDim], args->dataDim);
             inQueue.EnQue(localIn);
 
             LocalTensor<dType> localOut = outQueue.AllocTensor<dType>();
@@ -83,10 +85,6 @@ public:
 
             int64_t bsIndex = currentDataIndex / args->maxSeqLen;
             int64_t seqLenValue = seqLengthsGM.GetValue(bsIndex);
-            // 防御性截断：seq_len 超过 max_seq_len 时按 max_seq_len 处理，避免越界写 GM
-            if (seqLenValue > args->maxSeqLen) {
-                seqLenValue = args->maxSeqLen;
-            }
             int64_t maxSeqLenIndex = currentDataIndex % args->maxSeqLen;
             if (maxSeqLenIndex < seqLenValue) {
                 int64_t maxSeqLenReverseIndex = seqLenValue - maxSeqLenIndex - 1;
@@ -104,7 +102,6 @@ private:
     {
         DataCopy(lt, gt, args->alignNumberCount);
         if (args->unAlignLen != 0) {
-            // DataCopyExtParams.blockLen 单位为字节，unAlignLen 即未对齐尾部的字节数
             const DataCopyExtParams dataCopyExtParams{1, static_cast<uint32_t>(args->unAlignLen), 0, 0, 0};
             const DataCopyPadExtParams<T> dataCopyPadExtParams{false, 0, 0, 0};
             DataCopyPad(lt[args->alignNumberCount], gt[args->alignNumberCount], dataCopyExtParams,
@@ -122,13 +119,17 @@ private:
         }
     }
 
+    TPipe* pipe;
+    int64_t align;
     int64_t thisId;
     int64_t offsetStartPos;
     ReverseSequenceArgs* args;
 
-    GlobalTensor<dType> inputGM;
+    GlobalTensor<dType> intputGM;
     GlobalTensor<tType> seqLengthsGM;
     GlobalTensor<dType> outputGM;
+
+    TQue<QuePosition::VECIN, 1> seqLenInQueue;
 
     TQue<QuePosition::VECIN, 1> inQueue;
     TQue<QuePosition::VECOUT, 1> outQueue;
@@ -147,6 +148,7 @@ extern "C" __global__ __aicore__ void reverse_sequence_cust(GM_ADDR input, GM_AD
                                                      tiling_data.batchSize,
                                                      tiling_data.maxSeqLen,
                                                      tiling_data.dataDim,
+                                                     tiling_data.handleNumOneTime,
                                                      tiling_data.left,
                                                      tiling_data.handleTotalCount,
                                                      tiling_data.alignBytes,

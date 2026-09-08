@@ -23,13 +23,11 @@ See the License for the specific language governing permissions and
 namespace optiling {
 // 常量定义
 constexpr int32_t ALIGN_32 = 32;
-constexpr int32_t ALIGN_512 = 512;
 constexpr int32_t RESERVER_UB_SIZE = (20 * 1024);  // 20KB
 constexpr int32_t DIM0 = 0;
 constexpr int32_t DIM1 = 1;
 constexpr int32_t DIM2 = 2;
 
-constexpr int32_t JAGGED_DIM0_INDEX = 0;
 constexpr int32_t PARAM_INPUT_INDEX = 0;
 constexpr int32_t PARAM_SEQ_LENGTH_INDEX = 1;
 constexpr int32_t OUTPUT_INDEX = 0;
@@ -129,10 +127,6 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
 }  // namespace optiling
 
 namespace ge {
-using optiling::DIM0;
-using optiling::DIM1;
-using optiling::DIM2;
-using optiling::JAGGED_DIM0_INDEX;
 using optiling::OUTPUT_INDEX;
 using optiling::PARAM_INPUT_INDEX;
 

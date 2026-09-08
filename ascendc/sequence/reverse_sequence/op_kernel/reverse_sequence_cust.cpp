@@ -19,8 +19,6 @@ See the License for the specific language governing permissions and
 using namespace AscendC;
 
 namespace ReverseSequence_Kernel {
-constexpr int32_t ALIGN_32 = 32;
-constexpr int32_t ALIGN_16 = 16;
 
 struct ReverseSequenceArgs {
     GM_ADDR input;
@@ -59,14 +57,14 @@ public:
             offsetStartPos = (args.handleTotalCount + 1) * args.left + (thisId - args.left) * args.handleTotalCount;
         }
 
-        intputGM.SetGlobalBuffer(reinterpret_cast<__gm__ dType*>(args.input),
-                                 args.batchSize * args.maxSeqLen * args.dataDim);
+        inputGM.SetGlobalBuffer(reinterpret_cast<__gm__ dType*>(args.input),
+                                args.batchSize * args.maxSeqLen * args.dataDim);
         seqLengthsGM.SetGlobalBuffer(reinterpret_cast<__gm__ tType*>(args.seqLengths), args.batchSize);
         outputGM.SetGlobalBuffer(reinterpret_cast<__gm__ dType*>(args.output),
                                  args.batchSize * args.maxSeqLen * args.dataDim);
 
-        // UB buffer 按 32B 对齐后的单行字节数显式申请，与 UB->UB 拷贝长度严格一致，
-        // 不依赖分配器的对齐取整行为（与框架隐式取整的实际分配量相同）
+        // UB buffer 直接按 32B 对齐后的单行字节数申请，与 UB->UB 拷贝长度一致，
+        // 不依赖分配器的对齐取整行为
         pipe.InitBuffer(inQueue, 1, args.overAlignNumberCount * sizeof(dType));
         pipe.InitBuffer(outQueue, 1, args.overAlignNumberCount * sizeof(dType));
     }
@@ -76,7 +74,7 @@ public:
         for (int i = 0; i < args->handleTotalCount; ++i) {
             int64_t currentDataIndex = offsetStartPos + i;
             LocalTensor<dType> localIn = inQueue.AllocTensor<dType>();
-            CpGm2Local(localIn, intputGM[currentDataIndex * args->dataDim], args->dataDim);
+            CpGm2Local(localIn, inputGM[currentDataIndex * args->dataDim], args->dataDim);
             inQueue.EnQue(localIn);
 
             LocalTensor<dType> localOut = outQueue.AllocTensor<dType>();
@@ -127,11 +125,9 @@ private:
     int64_t offsetStartPos;
     ReverseSequenceArgs* args;
 
-    GlobalTensor<dType> intputGM;
+    GlobalTensor<dType> inputGM;
     GlobalTensor<tType> seqLengthsGM;
     GlobalTensor<dType> outputGM;
-
-    TQue<QuePosition::VECIN, 1> seqLenInQueue;
 
     TQue<QuePosition::VECIN, 1> inQueue;
     TQue<QuePosition::VECOUT, 1> outQueue;

@@ -122,7 +122,7 @@ public:
 
      */
     CATLASS_DEVICE
-    BlockMmadTla(Arch::Resource<ArchTag>& resource, uint32_t vecFlag, uint32_t cubeFlag,
+    BlockMmadTla(Arch::Resource<ArchTag>& resource, uint32_t vecFlag, uint32_t cubeFlag, uint32_t ubFreeFlag,
                  uint32_t const (&L1B_EVENT_ID_)[2])
     {
         for (auto i = 0; i < STAGES; i++) {
@@ -140,6 +140,9 @@ public:
         }
 
         cubeReady = Arch::CrossCoreFlag(cubeFlag);
+        // mode 4 uses an offset flag ID on AIC to select the destination AIV.
+        // The AIV side always signals the base ubFreeFlag in its own namespace.
+        ubFree = Arch::CrossCoreFlag(SUB_CORE_ID * AscendC::SYNC_FLAG_ID_MAX + ubFreeFlag);
 
         L1B_EVENT_ID[0] = L1B_EVENT_ID_[0];  // q or grad
         L1B_EVENT_ID[1] = L1B_EVENT_ID_[1];  // q or grad
@@ -177,6 +180,9 @@ public:
     CATLASS_DEVICE void TriggerFlushToDst(TensorDst& dst, TensorSrc& src, bool isFlush, TileCopy& tileCopy)
     {
         if (isFlush) {
+            // Do not overwrite the destination UB until its previous UB->GM copy
+            // has completed. The initial token is seeded once by each AIV.
+            AscendC::CrossCoreWaitFlag<0x4, PIPE_FIX>(ubFree.id);
             if constexpr (ENABLE_SCALAR_QUANT) {
                 tileCopy(dst, src, 0, deqScalar, SUB_CORE_ID);
             } else {
@@ -284,6 +290,7 @@ public:
 protected:
     Arch::CrossCoreFlag vecReady[STAGES];
     Arch::CrossCoreFlag cubeReady;
+    Arch::CrossCoreFlag ubFree;
 
     AscendC::LocalTensor<ElementA> l1ATensor[STAGES];
     AscendC::LocalTensor<ElementA> l0ATensor[STAGES];

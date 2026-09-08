@@ -171,25 +171,6 @@ class LnMulDropoutFwdApi(BaseApi):
             torch.npu.synchronize()
         elif device == 'cuda':
             torch.cuda.synchronize()
-
-        '''
-        print('----------------------------------look at me----------------------------------!')
-        with open('./my_test.txt','a',encoding='utf-8') as f:
-            f.write(str(self._x.shape))
-            f.write(str(self._x.tolist()))
-            f.write(str(self._u.shape))
-            f.write(str(self._u.tolist()))
-            f.write(str(self._weight.shape))
-            f.write(str(self._weight))
-            f.write(str(self._bias.shape))
-            f.write(str(self._bias))
-            f.write(str(self._eps))
-            f.write(str(self._dropout_ratio))
-            f.write(str(self._training))
-            f.write(str(self._concat_ux))
-            f.write(str(self._seed))
-        print('----------------------------------look at me----------------------------------!')
-        '''
         
         y, _, _, _, _, _ = triton_layer_norm_mul_dropout_fwd(
             x=self._x,

@@ -1,40 +1,40 @@
-# `_add_embeddings_bwd_kernel` 绠楀瓙鏂囨。
+﻿# `_add_embeddings_bwd_kernel` 算子文档
 
-## 鏉ユ簮
+## 来源
 
-`_add_embeddings_bwd_kernel` 绠楀瓙婧愯嚜 NVIDIA recsys-examples 浠ｇ爜浠擄細
+`_add_embeddings_bwd_kernel` 算子源自 NVIDIA recsys-examples 代码仓：
 
 <https://github.com/NVIDIA/recsys-examples/blob/main/examples/hstu/ops/triton_ops/triton_position.py>
 
-## 绠楀瓙鍔熻兘
+## 算子功能
 
-`_add_embeddings_bwd_kernel` 鐢ㄤ簬灏?position/timestamp embeddings 鐨?*鍙嶅悜姊害**鎸夊綊骞?key 鍋?scatter-add锛堝師瀛愮疮鍔狅級锛屾瘡缁勫唴鍚屼竴 key 鐨?token 姊害姹傚拰銆?
+`_add_embeddings_bwd_kernel` 用于将 position/timestamp embeddings 的**反向梯度**按归并 key 做 scatter-add（原子累加），每组内同一 key 的 token 梯度求和。
 
-杈撳叆涓哄睍骞?token 鐨勪笂娓告搴?`In` 涓庢帓搴忓垎娈电殑 `KeyInds`/`ValueInds` 绱㈠紩瀵广€傚鐩稿悓 key 鐨勫垎缁勶紝缁勫唴 `In[ValueInds[i]]` 鍚勮鍏堟湰鍦扮疮鍔狅紝鍐?`atomic_add`锛坮elaxed锛夋眹鍏?`Out[KeyInds[i]]`銆?
+输入为展平 token 的上游梯度 `In` 与排序分段的 `KeyInds`/`ValueInds` 索引对。对相同 key 的分组，组内 `In[ValueInds[i]]` 各行先本地累加，再 `atomic_add`（relaxed）汇入 `Out[KeyInds[i]]`。
 
-`KeyInds`/`ValueInds` 鐢?`num_keys` 涓?`jagged_size` 纭畾鎬ф帹瀵硷紙`ValueInds[i] = i`锛宍KeyInds[i] = i * num_keys // jagged_size`锛夛紝淇濊瘉 GPU/NPU 涓ょ杈撳叆涓€鑷淬€?
+`KeyInds`/`ValueInds` 由 `num_keys` 与 `jagged_size` 确定性推导（`ValueInds[i] = i`，`KeyInds[i] = i * num_keys // jagged_size`），保证 GPU/NPU 两端输入一致。
 
-`Out` 浠ラ浂鍒濆鍖栵紝`atomic_add` 绱姞瑕佹眰姣忔璋冪敤浠庨浂寮€濮嬨€?
+`Out` 以零初始化，`atomic_add` 累加要求每次调用从零开始。
 
-## 杈撳叆
+## 输入
 
-| 鍙傛暟 | 璇存槑 |
+| 参数 | 说明 |
 |------|------|
-| `In` | 灞曞钩 token 鐨勪笂娓告搴︼紝shape `(jagged_size, D)`锛宒type 鏀寔 fp32/fp16/bf16 |
-| `KeyInds` | 姣忎釜 token 褰掑苟鍒扮殑 key锛堝凡鎺掑簭鍒嗘锛屽€煎煙 `[0, num_keys)`锛?|
-| `ValueInds` | 琚疮鍔犵殑琛岀储寮曪紝`ValueInds[i] = i` |
-| `num_keys` | 杈撳嚭 key 鏁帮紙`Out` 琛屾暟锛夛紝瑕佹眰 `jagged_size >= num_keys` |
-| `Out` | 杈撳嚭姊害锛坋mbedding 琛ㄥ悇琛屾搴︼級锛宻hape `(num_keys, D)`锛屼互闆跺垵濮嬪寲 |
-| `BLOCK_D` | 鍒楀潡澶у皬锛坈onstexpr锛夛紝鍙?`next_power_of_2(D)` |
-| `BLOCK` | 琛屽潡澶у皬锛坈onstexpr锛?|
+| `In` | 展平 token 的上游梯度，shape `(jagged_size, D)`，dtype 支持 fp32/fp16/bf16 |
+| `KeyInds` | 每个 token 归并到的 key（已排序分段，值域 `[0, num_keys)`） |
+| `ValueInds` | 被累加的行索引，`ValueInds[i] = i` |
+| `num_keys` | 输出 key 数（`Out` 行数），要求 `jagged_size >= num_keys` |
+| `Out` | 输出梯度（embedding 表各行梯度），shape `(num_keys, D)`，以零初始化 |
+| `BLOCK_D` | 列块大小（constexpr），取 `next_power_of_2(D)` |
+| `BLOCK` | 行块大小（constexpr） |
 
-## 杈撳嚭
+## 输出
 
-`Out`锛氬舰鐘?`(num_keys, D)`锛屽叾涓?`num_keys` 鐢辫緭鍏ユ寚瀹氾紝dtype 涓?`In` 鐩稿悓銆俙atomic_add` 绱姞瑕佹眰姣忔璋冪敤浠庨浂寮€濮嬶紙API 鍦?`__call__` 鍓?`zero_()`锛夈€?
+`Out`：形状 `(num_keys, D)`，其中 `num_keys` 由输入指定，dtype 与 `In` 相同。`atomic_add` 累加要求每次调用从零开始（API 在 `__call__` 前 `zero_()`）。
 
-## 浣跨敤鏍蜂緥
+## 使用样例
 
-### 鐩存帴璋冪敤 kernel
+### 直接调用 kernel
 
 ```python
 import torch
@@ -65,52 +65,52 @@ _add_embeddings_bwd_kernel[grid](
 )
 ```
 
-## 鍏抽敭绾︽潫
+## 关键约束
 
-- In.ndim == 2 涓?jagged_size >= num_keys锛堟瘡涓?key 鑷冲皯琚竴涓?token 瀵诲潃锛夈€?
-- Out 浠?torch.zeros 鍒濆鍖栵紝atomic_add 闇€瑕侀浂璧风偣锛涘娆¤皟鐢ㄥ墠闇€褰掗浂銆?
-- KeyInds 宸叉帓搴忥紙API 鎸?i * num_keys // jagged_size 纭畾鎬х敓鎴愶級锛岀粍鍐呯疮鍔犳墠鎴愮珛銆?
+- In.ndim == 2 且 jagged_size >= num_keys（每个 key 至少被一个 token 寻址）。
+- Out 以 torch.zeros 初始化，atomic_add 需要零起点；多次调用前需归零。
+- KeyInds 已排序（API 按 i * num_keys // jagged_size 确定性生成），组内累加才成立。
 
-## 鐩綍鏂囦欢
+## 目录文件
 
 ```text
 _add_embeddings_bwd_kernel/
-鈹溾攢鈹€ README.md
-鈹溾攢鈹€ gpu_atk_test/
-鈹?  鈹溾攢鈹€ _add_embeddings_bwd_kernel.py              # 鍘熺増绠楀瓙 kernel 瀹炵幇
-鈹?  鈹斺攢鈹€ _add_embeddings_bwd_kernel_api.py          # GPU 绔?ATK 鑷畾涔?API 灏佽
-鈹斺攢鈹€ npu_atk_test/
-    鈹溾攢鈹€ _add_embeddings_bwd_kernel.py              # NPU 閫傞厤浼樺寲鍚庣畻瀛?kernel 瀹炵幇
-    鈹溾攢鈹€ _add_embeddings_bwd_kernel_api.py          # NPU 绔?ATK 鑷畾涔?API 灏佽
-    鈹溾攢鈹€ _add_embeddings_bwd_kernel.yaml            # ATK 绠楀瓙鐢ㄤ緥鍙傛暟
-    鈹溾攢鈹€ generate_add_embeddings_bwd_kernel.py      # 闄愬埗鍙傛暟鐢熸垚鑴氭湰
-    鈹斺攢鈹€ all__add_embeddings_bwd_kernel.json        # 鎬ц兘娴嬭瘯鏍蜂緥鏁版嵁
+├── README.md
+├── gpu_atk_test/
+│   ├── _add_embeddings_bwd_kernel.py              # 原版算子 kernel 实现
+│   └── _add_embeddings_bwd_kernel_api.py          # GPU 端 ATK 自定义 API 封装
+└── npu_atk_test/
+    ├── _add_embeddings_bwd_kernel.py              # NPU 适配优化后算子 kernel 实现
+    ├── _add_embeddings_bwd_kernel_api.py          # NPU 端 ATK 自定义 API 封装
+    ├── _add_embeddings_bwd_kernel.yaml            # ATK 算子用例参数
+    ├── generate_add_embeddings_bwd_kernel.py      # 限制参数生成脚本
+    └── all__add_embeddings_bwd_kernel.json        # 性能测试样例数据
  ```
 
-## ATK 娴嬭瘯
+## ATK 测试
 
-娴嬭瘯鍦?NPU / GPU 涓ょ鍗忓悓杩涜锛?
+测试在 NPU / GPU 两端协同进行：
 
-- `npu_atk_test/` 閮ㄧ讲鍒?NPU 绔紱`gpu_atk_test/` 閮ㄧ讲鍒?GPU 绔€?
-- 绮惧害娴嬭瘯鐢ㄤ緥鍦?NPU 绔敓鎴愩€?
-- 鎬ц兘娴嬭瘯鐢ㄤ緥澶嶇敤 `npu_atk_test/all__add_embeddings_bwd_kernel.json`銆?
-- GPU 绔惎鍔?ATK server锛孨PU 绔綔涓?ATK 瀹㈡埛绔媺璧风簿搴?鎬ц兘娴嬭瘯銆?
+- `npu_atk_test/` 部署到 NPU 端；`gpu_atk_test/` 部署到 GPU 端。
+- 精度测试用例在 NPU 端生成。
+- 性能测试用例复用 `npu_atk_test/_add_embeddings_bwd_kernel_performce.json`。
+- GPU 端启动 ATK server，NPU 端作为 ATK 客户端拉起精度/性能测试。
 
-### 鐢熸垚绮惧害娴嬭瘯鏁版嵁
+### 生成精度测试数据
 
 ```bash
 atk case -f _add_embeddings_bwd_kernel.yaml -p generate_add_embeddings_bwd_kernel.py
 ```
 
-鐢熸垚鐨勭簿搴︽祴璇曠敤渚嬩綅浜?`result/_add_embeddings_bwd_kernel/json/` 涓嬶紝鏂囦欢鍚嶄负 `all__add_embeddings_bwd_kernel.json`銆?
+生成的精度测试用例位于 `result/_add_embeddings_bwd_kernel/json/` 下，文件名为 `all__add_embeddings_bwd_kernel.json`。
 
-### 杩滅 GPU 鏈嶅姟鍣ㄨ捣鐩戝惉鍛戒护
+### 远端 GPU 服务器起监听命令
 
 ```bash
-atk server --devices 0 --plugin_path /path/to/api鏂囦欢鎵€鍦ㄦ枃浠跺す
+atk server --devices 0 --plugin_path /path/to/api文件所在文件夹
 ```
 
-### 绮惧害娴嬭瘯
+### 精度测试
 
 ```bash
 atk node --backend triton --devices 0 node --backend npu --devices 0 \
@@ -118,7 +118,7 @@ atk node --backend triton --devices 0 node --backend npu --devices 0 \
     -p _add_embeddings_bwd_kernel_api.py
 ```
 
-### 鎬ц兘娴嬭瘯
+### 性能测试
 
 ```bash
 atk node --backend triton --devices 0 node --backend npu --devices 0 \

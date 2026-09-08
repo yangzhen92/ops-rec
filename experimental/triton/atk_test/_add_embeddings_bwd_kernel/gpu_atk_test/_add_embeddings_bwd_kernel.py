@@ -45,32 +45,37 @@ def _add_embeddings_bwd_kernel(
     BLOCK_D: tl.constexpr,
     BLOCK: tl.constexpr,
 ):
-    # 每个 program 负责 BLOCK 个连续行,把 In 各行按 KeyInds 分组累加进 Out。
-    # 行块内同一 key 的梯度先在本地累加,key 切换或行块结束时一次 atomic_add 写回。
-    pid = tl.program_id(0)
-    first_row = pid * BLOCK
-    lane = tl.arange(0, BLOCK_D)
-    col_ok = lane < D
-
-    # 用首行初始化:grid 由 cdiv(jagged_size, BLOCK) 生成,首行必在范围内。
-    src_row = tl.load(ValueInds + first_row)
-    grp_key = tl.load(KeyInds + first_row)
-    acc = tl.load(In + src_row.to(tl.int64) * stride_in + lane, mask=col_ok)
-
-    for step in range(1, BLOCK):
-        ridx = first_row + step
-        if ridx < jagged_size:
-            src_row = tl.load(ValueInds + ridx)
-            x = tl.load(In + src_row.to(tl.int64) * stride_in + lane, mask=col_ok)
-            k = tl.load(KeyInds + ridx)
-            if k == grp_key:
-                acc += x
+    off_block = tl.program_id(0)
+    offs_d = tl.arange(0, BLOCK_D)
+    mask_d = offs_d < D
+    key_ind = -1
+    key_ind = key_ind.to(KeyInds.dtype.element_ty)  # pyre-ignore[16]  # pylint: disable=no-member
+    accumulator = tl.zeros((BLOCK_D,), dtype=In.dtype.element_ty)
+    for off_i in range(0, BLOCK):
+        off = off_block * BLOCK + off_i
+        if off < jagged_size:
+            value_ind = tl.load(ValueInds + off)
+            in_offset = In + value_ind.to(tl.int64) * stride_in
+            jagged_in = tl.load(in_offset + offs_d, mask=mask_d)
+            key_ind_new = tl.load(KeyInds + off)
+            if key_ind == key_ind_new:
+                accumulator += jagged_in
             else:
-                dst = Out + grp_key.to(tl.int64) * stride_on + lane
-                tl.atomic_add(dst, acc.to(Out.dtype.element_ty), mask=col_ok, sem="relaxed")
-                grp_key = k
-                acc = x
-
-    # 写回最后一个分组。
-    dst = Out + grp_key.to(tl.int64) * stride_on + lane
-    tl.atomic_add(dst, acc.to(Out.dtype.element_ty), mask=col_ok, sem="relaxed")
+                if key_ind >= 0:
+                    out_offset = Out + key_ind.to(tl.int64) * stride_on
+                    tl.atomic_add(
+                        out_offset + offs_d,
+                        accumulator.to(Out.dtype.element_ty),
+                        mask=mask_d,
+                        sem="relaxed",
+                    )
+                key_ind = key_ind_new
+                accumulator = jagged_in
+    if key_ind >= 0:
+        out_offset = Out + key_ind.to(tl.int64) * stride_on
+        tl.atomic_add(
+            out_offset + offs_d,
+            accumulator.to(Out.dtype.element_ty),
+            mask=mask_d,
+            sem="relaxed",
+        )

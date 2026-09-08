@@ -65,8 +65,10 @@ public:
         outputGM.SetGlobalBuffer(reinterpret_cast<__gm__ dType*>(args.output),
                                  args.batchSize * args.maxSeqLen * args.dataDim);
 
-        pipe.InitBuffer(inQueue, 1, args.dataDim * sizeof(dType));
-        pipe.InitBuffer(outQueue, 1, args.dataDim * sizeof(dType));
+        // UB buffer 按 32B 对齐后的单行字节数显式申请，与 UB->UB 拷贝长度严格一致，
+        // 不依赖分配器的对齐取整行为（与框架隐式取整的实际分配量相同）
+        pipe.InitBuffer(inQueue, 1, args.overAlignNumberCount * sizeof(dType));
+        pipe.InitBuffer(outQueue, 1, args.overAlignNumberCount * sizeof(dType));
     }
 
     __aicore__ inline void Compute()

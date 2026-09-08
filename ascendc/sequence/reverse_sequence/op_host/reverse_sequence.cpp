@@ -102,7 +102,8 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
     uint32_t alignBytes = oneDataBytes / ALIGN_32 * ALIGN_32;
     uint32_t unAlignBytes = oneDataBytes - alignBytes;
     uint32_t alignNumberCount = alignBytes / dataBytes;
-    uint32_t overAlignNumberCount = (oneDataBytes + ALIGN_32 - 1) / ALIGN_32 * ALIGN_32;
+    // 向上取整到 32B 对齐后的【元素个数】，需除以 dataBytes（源实现漏除导致 UB 内拷贝越界）
+    uint32_t overAlignNumberCount = (oneDataBytes + ALIGN_32 - 1) / ALIGN_32 * ALIGN_32 / dataBytes;
 
     // 设置分片数据
     ReverseSequenceTilling tilingData;

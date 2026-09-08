@@ -19,6 +19,10 @@ import triton.language as tl
 from triton.runtime import driver
 
 
+CLAMP_MIN = -10.0
+CLAMP_MAX = 10.0
+
+
 def _get_ncores() -> int:
     """Query the number of AI cores from NPU hardware at runtime."""
     device = torch.npu.current_device()
@@ -97,7 +101,7 @@ def _fused_gate_rmsnorm_kernel(
                 mask=load_mask,
                 other=0.0,
             )
-            proj_h = tl.minimum(tl.maximum(proj_h, -10.0), 10.0)
+            proj_h = tl.minimum(tl.maximum(proj_h, CLAMP_MIN), CLAMP_MAX)
             proj_h = proj_h * tl.sigmoid(proj_h)
             acc = acc + proj_h
 

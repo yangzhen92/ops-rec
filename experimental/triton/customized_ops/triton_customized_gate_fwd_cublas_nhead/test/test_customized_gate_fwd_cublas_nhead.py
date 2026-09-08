@@ -1,3 +1,12 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+#
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+#
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -185,12 +194,8 @@ def device():
     return torch.device("npu:2")
 
 
-def _make_tensors(B, in_size, embedding_dim, num_heads, dtype=torch.bfloat16):
+def _make_tensors(B, in_size, embedding_dim, num_heads, device, dtype=torch.bfloat16):
     """Create random tensors for the operator with CustomizedGate reference module."""
-    if not torch.npu.is_available():
-        pytest.skip("NPU is not available")
-    torch.npu.set_device(2)
-    DEVICE = torch.device("npu:2")
     head_size = embedding_dim // num_heads
 
     torch.manual_seed(42)
@@ -201,7 +206,7 @@ def _make_tensors(B, in_size, embedding_dim, num_heads, dtype=torch.bfloat16):
         in_size=in_size,
         layer_sizes=[embedding_dim],
         input_gate_head=num_heads,
-        device=DEVICE,
+        device=device,
         eps=1e-5,
         dtype=dtype,
     )
@@ -211,7 +216,7 @@ def _make_tensors(B, in_size, embedding_dim, num_heads, dtype=torch.bfloat16):
 
     # 在 CPU 上创建输入 tensor，然后移到 NPU
     x_cpu = torch.randn((B, in_size), device="cpu", dtype=dtype)
-    x = x_cpu.to(DEVICE)
+    x = x_cpu.to(device)
 
     # 提取 NPU 上的权重
     gate_w = model._gate_layer._mlp[0].weight.data  # (E, in_size)
@@ -261,11 +266,11 @@ def _make_tensors(B, in_size, embedding_dim, num_heads, dtype=torch.bfloat16):
         (8192, 6519, 2048, 4),
     ],
 )
-def test_customer_case(B, in_size, embedding_dim, num_heads):
+def test_customer_case(B, in_size, embedding_dim, num_heads, device):
     """Customer cases matching gr_inference test_customized_gate_nhead.py shapes."""
     dtype = torch.bfloat16
     x, gate_w, gate_b, proj_w, proj_b, rms_w, model, rms_eps = _make_tensors(
-        B, in_size, embedding_dim, num_heads, dtype=dtype
+        B, in_size, embedding_dim, num_heads, device, dtype=dtype
     )
 
     # ---- Reference ----

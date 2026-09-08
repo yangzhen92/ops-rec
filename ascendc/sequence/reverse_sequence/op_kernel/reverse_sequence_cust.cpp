@@ -47,7 +47,6 @@ public:
     __aicore__ inline void init(ReverseSequenceArgs& args, TPipe& pipe)
     {
         this->args = &args;
-        this->pipe = &pipe;
 
         thisId = GetBlockIdx();
         if (thisId < args.left) {
@@ -102,6 +101,7 @@ private:
     {
         DataCopy(lt, gt, args->alignNumberCount);
         if (args->unAlignLen != 0) {
+            // DataCopyExtParams.blockLen 单位为字节，unAlignLen 即未对齐尾部的字节数
             const DataCopyExtParams dataCopyExtParams{1, static_cast<uint32_t>(args->unAlignLen), 0, 0, 0};
             const DataCopyPadExtParams<T> dataCopyPadExtParams{false, 0, 0, 0};
             DataCopyPad(lt[args->alignNumberCount], gt[args->alignNumberCount], dataCopyExtParams,
@@ -119,8 +119,6 @@ private:
         }
     }
 
-    TPipe* pipe;
-    int64_t align;
     int64_t thisId;
     int64_t offsetStartPos;
     ReverseSequenceArgs* args;

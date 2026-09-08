@@ -1,4 +1,4 @@
-﻿# `_add_timestamp_position_embeddings_kernel` 绠楀瓙鏂囨。
+# `_add_timestamp_position_embeddings_kernel` 绠楀瓙鏂囨。
 
 ## 鏉ユ簮
 

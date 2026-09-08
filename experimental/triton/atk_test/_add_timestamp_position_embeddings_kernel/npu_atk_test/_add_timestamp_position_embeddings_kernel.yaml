@@ -21,54 +21,30 @@ triton_name: triton_position._add_timestamp_position_embeddings_kernel
 generate: generate_add_timestamp_position_embeddings_kernel
 dtype_numbers: 3334
 outputs: 0
-standard:
-  acc: double_benchmark
-  perf: not_key
+standard: {acc: double_benchmark, perf: not_key}
 inputs:
   - name: SeqEmb
     type: tensor
     required: true
-    dtypes:
-      values: [fp32, fp16, bf16]
-    ranges:
-      valid:
-        values: [[-100.0, 100.0]]
-      invalid:
-        values: [[-100.0, 100.0]]
+    dtypes: {values: [fp32, fp16, bf16]}
+    ranges: {valid: {values: [[-100.0, 100.0]]}, invalid: {values: [[-100.0, 100.0]]}}
     shapes:
-      dim_numbers:
-        values: [2]
-      dim_values:
-        values: [[32, 1024], [1025, 4096], [4097, 8192]]
-        weights: [0.3, 0.3, 0.4]
+      dim_numbers: {values: [2]}
+      dim_values: {values: [[32, 1024], [1025, 4096], [4097, 8192]], weights: [0.3, 0.3, 0.4]}
       max_length: 67108864
-    boundary:
-      has_empty: false
-      has_infnan: false
-      has_scalar: false
-      has_upper_border: false
-      has_lower_border: false
+    boundary: {has_empty: false, has_infnan: false, has_scalar: false, has_upper_border: false, has_lower_border: false}
   - name: num_batches
     type: attr
     required: true
-    dtypes:
-      values: [int]
-    ranges:
-      valid:
-        values: [2, 4, 8]
+    dtypes: {values: [int]}
+    ranges: {valid: {values: [2, 4, 8]}}
   - name: max_contextual_seq_len
     type: attr
     required: true
-    dtypes:
-      values: [int]
-    ranges:
-      valid:
-        values: [64, 128, 256]
+    dtypes: {values: [int]}
+    ranges: {valid: {values: [64, 128, 256]}}
   - name: time_bucket_fn
     type: attr
     required: true
-    dtypes:
-      values: [string]
-    ranges:
-      valid:
-        values: ["sqrt"]
+    dtypes: {values: [string]}
+    ranges: {valid: {values: ["sqrt"]}}

@@ -37,13 +37,10 @@
 
 ## 使用样例
 
-### 直接调用 kernel
-
 ```python
 import torch
 import triton
 from _add_timestamp_position_embeddings_kernel import _add_timestamp_position_embeddings_kernel
-
 seq_emb = torch.randn(200, 16, dtype=torch.float32, device="npu")
 offsets = torch.tensor([0, 100, 200], dtype=torch.int32, device="npu")
 lengths = torch.tensor([100, 100], dtype=torch.int32, device="npu")

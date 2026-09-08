@@ -117,7 +117,7 @@ _add_timestamp_position_embeddings_kernel/
 
 - `npu_atk_test/` 部署到 NPU 端；`gpu_atk_test/` 部署到 GPU 端。
 - 精度测试用例在 NPU 端生成。
-- 精度测试采用单基准模式（acc: single_bm），性能测试未配置（perf: not_key）。
+- 精度测试采用 GPU/NPU 双标杆模式（acc: double_benchmark），性能测试未配置（perf: not_key）。
 
 ### 生成精度测试数据
 

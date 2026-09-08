@@ -26,8 +26,7 @@ generate: generate_add_timestamp_position_embeddings_kernel
 dtype_numbers: 3334
 outputs: 0
 standard:
- # acc: double_benchmark
-  acc: single_bm
+  acc: double_benchmark
   perf: not_key
 
 inputs:

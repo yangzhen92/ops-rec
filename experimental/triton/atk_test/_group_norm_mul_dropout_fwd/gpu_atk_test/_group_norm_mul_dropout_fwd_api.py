@@ -14,23 +14,7 @@
 # ==============================================================================
 
 # _group_norm_mul_dropout_fwd_api.py
-"""
-_group_norm_mul_dropout_fwd 算子的ATK自定义API执行文件
-
-用于 Group Normalization + 元素级乘法 + Dropout 的前向融合算子：
-- 输入: X [B, Heads, D], U [B, Heads, D], W [Heads], Bias [Heads]
-- 输出: Y [B, Heads, D]（或 [B, 3, Heads, D]，当 CONCAT_UX=True 时）
-- 中间输出: Mean [B, Heads], Rstd [B, Heads]（用于反向传播）
-
-计算公式：
-- X: [B, Heads, D] - 输入特征，按 head（group）分组
-- U: [B, Heads, D] - 元素级乘法因子
-- W: [Heads] - 每个 head 的仿射变换权重
-- Bias: [Heads] - 每个 head 的仿射变换偏置
-- Mean: [B, Heads] - 每个 head 的均值
-- Rstd: [B, Heads] - 每个 head 的方差倒数（reciprocal standard deviation）
-- Y: [B, Heads, D] - 最终输出
-"""
+"""_group_norm_mul_dropout_fwd 算子的 ATK 自定义 API。"""
 
 import torch
 import triton
@@ -62,10 +46,7 @@ class GroupNormMulDropoutFwdApi(BaseApi):
         return input_tensor.to(device=device, dtype=dtype)
 
     def init_by_input_data(self, input_data: InputDataset):
-        """
-        初始化操作，不计入性能统计
-        """
-        # ret = acl.rt.set_device(3)
+        """初始化输入和输出，不计入性能统计。"""
         device = get_device()
 
         # 同步操作
@@ -154,10 +135,7 @@ class GroupNormMulDropoutFwdApi(BaseApi):
         self._grid = (self._B, num_blocks_h)
 
     def __call__(self, input_data: InputDataset, with_output: bool = False):
-        """
-        执行 _group_norm_mul_dropout_fwd kernel
-        """
-
+        """执行 _group_norm_mul_dropout_fwd kernel。"""
         # 同步
         if self._device == "npu":
             torch.npu.synchronize()
@@ -199,8 +177,6 @@ class GroupNormMulDropoutFwdApi(BaseApi):
 
         if with_output:
             # 输入曾被强转 fp32 以通过编译；此处把输出转回原始 dtype
-            # 原始输入：
-            # return self._Y, self._Mean, self._Rstd
             orig_dtype = getattr(self, "_orig_dtype", None)
             if orig_dtype is not None and self._Y.dtype != orig_dtype:
                 self._Y = self._Y.to(orig_dtype)

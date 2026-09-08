@@ -59,6 +59,7 @@ def _build_input(rows, d, dtype, device):
 # ============================================================
 
 
+@pytest.mark.ci
 @pytest.mark.parametrize(
     "rows, d, approximate",
     [

@@ -104,11 +104,11 @@ _add_timestamp_position_embeddings_kernel/
 │   ├── _add_timestamp_position_embeddings_kernel.py       # 原版算子 kernel 实现
 │   └── _add_timestamp_position_embeddings_kernel_api.py   # GPU 端 ATK 自定义 API 封装
 └── npu_atk_test/
-    ├── _add_timestamp_position_embeddings_kernel.py       # NPU 适配（autotune）kernel 实现
+    ├── _add_timestamp_position_embeddings_kernel.py       # NPU 适配优化后算子 kernel 实现
     ├── _add_timestamp_position_embeddings_kernel_api.py   # NPU 端 ATK 自定义 API 封装
     ├── _add_timestamp_position_embeddings_kernel.yaml     # ATK 算子用例参数
     ├── generate_add_timestamp_position_embeddings_kernel.py  # 限制参数生成脚本
-    └── all__add_timestamp_position_embeddings_kernel.json    # 测试样例数据
+    └── all__add_timestamp_position_embeddings_kernel.json    # 性能测试样例数据
 ```
 
 ## ATK 测试
@@ -117,7 +117,8 @@ _add_timestamp_position_embeddings_kernel/
 
 - `npu_atk_test/` 部署到 NPU 端；`gpu_atk_test/` 部署到 GPU 端。
 - 精度测试用例在 NPU 端生成。
-- 精度测试采用 GPU/NPU 双标杆模式（acc: double_benchmark），性能测试未配置（perf: not_key）。
+- 性能测试用例复用 `npu_atk_test/_add_timestamp_position_embeddings_kernel_performce.json`。
+- GPU 端启动 ATK server，NPU 端作为 ATK 客户端拉起精度/性能测试。
 
 ### 生成精度测试数据
 
@@ -138,5 +139,13 @@ atk server --devices 0 --plugin_path /path/to/api文件所在文件夹
 ```bash
 atk node --backend triton --devices 0 node --backend npu --devices 0 \
     task -c all__add_timestamp_position_embeddings_kernel.json --task accuracy \
+    -p _add_timestamp_position_embeddings_kernel_api.py
+```
+
+### 性能测试
+
+```bash
+atk node --backend triton --devices 0 node --backend npu --devices 0 \
+    task -c all_add_timestamp_position_embeddings_kernel.json --task performance_device \
     -p _add_timestamp_position_embeddings_kernel_api.py
 ```

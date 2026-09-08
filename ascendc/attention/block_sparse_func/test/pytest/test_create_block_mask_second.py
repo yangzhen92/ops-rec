@@ -26,6 +26,8 @@ import torch
 
 import ops_rec
 
+from test_create_block_mask import _check_k2q, generate_special_func_tensor
+
 CPU_DEVICE = "cpu"
 NPU_DEVICE = "npu:0"
 
@@ -233,6 +235,25 @@ def test_invalid_odd_n_func(bad_n_func):
             debug=False,
         )
 
+@pytest.mark.parametrize("Q_BLOCK_SIZE,KV_BLOCK_SIZE", [(128, 128), (512, 128), (512, 256), (256, 512)])
+def test_different_block_sizes_k2q(Q_BLOCK_SIZE, KV_BLOCK_SIZE):
+    """Q and KV block sizes can be chosen independently."""
+    _require_npu()
+    seqlen = 1024
+    func_tensor_cpu = generate_special_func_tensor(
+        seqlen,
+        seqlen,
+        "causal",
+        n_func=1,
+    )
+    _check_k2q(
+        func_tensor_cpu,
+        seqlen,
+        seqlen,
+        Q_BLOCK_SIZE,
+        KV_BLOCK_SIZE,
+        tag=f"block_sizes(Q_BS={Q_BLOCK_SIZE}, KV_BS={KV_BLOCK_SIZE})",
+    )
 
 if __name__ == "__main__":
     pytest.main([__file__, "-sv"])

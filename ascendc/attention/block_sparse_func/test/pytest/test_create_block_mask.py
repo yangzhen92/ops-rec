@@ -823,7 +823,7 @@ def test_asymmetric_seqlen_k2q(seqlen_q, seqlen_k):
 # ---------------------------------------------------------------------------
 # 5. Block-size sweep (migrated from test_different_block_sizes)
 # ---------------------------------------------------------------------------
-@pytest.mark.parametrize("Q_BLOCK_SIZE,KV_BLOCK_SIZE", [(128, 128)])
+@pytest.mark.parametrize("Q_BLOCK_SIZE,KV_BLOCK_SIZE", [(128, 128), (512, 128), (512, 256), (256, 512)])
 def test_different_block_sizes(Q_BLOCK_SIZE, KV_BLOCK_SIZE):
     """Q and KV block sizes can be chosen independently."""
     _require_npu()

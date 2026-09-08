@@ -23,7 +23,7 @@
 # ==============================================================================
 
 
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple
 
 import torch
 
@@ -93,9 +93,7 @@ def _ln_mul_dropout_fwd(
         u_tile_offsets = tl.arange(0, NUM_U_SLICES)
         u_inner_offsets = tl.arange(0, UD)
         offsets_2d = u_tile_offsets[:, None] * stride_u1 + u_inner_offsets[None, :]
-        u_mask = (u_tile_offsets[:, None] < NUM_U_SLICES) & (
-            u_inner_offsets[None, :] < UD
-        )
+        u_mask = (u_tile_offsets[:, None] < NUM_U_SLICES) & (u_inner_offsets[None, :] < UD)
         u = tl.load(U + offsets_2d, mask=u_mask, other=0.0).to(tl.float32)
         u = u.reshape(NUM_U_SLICES * UD)
     else:
@@ -144,9 +142,7 @@ def triton_layer_norm_mul_dropout_fwd(
     training: bool,
     concat_ux: bool = False,
     seed: Optional[int] = None,
-) -> Tuple[
-    torch.Tensor, torch.Tensor, torch.Tensor, int, int, int
-]:  # y, mean, rstd, BLOCK_D, num_warps, seed
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, int, int, int]:  # y, mean, rstd, BLOCK_D, num_warps, seed
     assert x.dim() == 2
     x = switch_to_contiguous_if_needed(x)
     N, D = x.shape

@@ -46,7 +46,7 @@ def _derive_seed(block_d: int) -> int:
     Knuth 乘法哈希将 shape 信息映射为一个固定 seed，两个平台完全一致。
     """
     raw = block_d * 2654435761 + 12345
-    return raw % (2 ** 62)
+    return raw % (2**62)
 
 
 @register("_ln_mul_dropout_fwd")
@@ -54,6 +54,7 @@ class LnMulDropoutFwdApi(BaseApi):
     """_ln_mul_dropout_fwd 算子的 API 封装：直调原生 wrapper"""
 
     def init_by_input_data(self, input_data: InputDataset):
+        # pylint: disable=attribute-defined-outside-init
         """预处理（不计时）：取 ATK 输入 -> 转目标设备 -> 校验约束 -> 确定性 seed"""
         device = get_device()
         if device == 'npu':
@@ -121,9 +122,7 @@ class LnMulDropoutFwdApi(BaseApi):
         if weight.ndim != 1 or bias.ndim != 1:
             raise ValueError("weight/bias must be 1D [D]")
         if weight.numel() != D or bias.numel() != D:
-            raise ValueError(
-                f"weight/bias numel must equal D={D}, got {weight.numel()}/{bias.numel()}"
-            )
+            raise ValueError(f"weight/bias numel must equal D={D}, got {weight.numel()}/{bias.numel()}")
 
         # u：2D [N, D] 或 3D [N, H, UD]（H*UD==D）
         if u.ndim == 2:
@@ -132,9 +131,7 @@ class LnMulDropoutFwdApi(BaseApi):
         elif u.ndim == 3:
             UN, UH, UD = u.shape
             if UN != N or UH * UD != D or UH <= 0 or UD <= 0:
-                raise ValueError(
-                    f"u(3D) must be [N, H, UD] with H*UD==D={D}, got {list(u.shape)}"
-                )
+                raise ValueError(f"u(3D) must be [N, H, UD] with H*UD==D={D}, got {list(u.shape)}")
         else:
             raise ValueError(f"u must be 2D or 3D, got {u.ndim}D")
 
@@ -143,12 +140,12 @@ class LnMulDropoutFwdApi(BaseApi):
         max_d = 65536 // elem_size
         if D > max_d:
             raise ValueError(
-                f"D={D} exceeds BLOCK_D max {max_d} for {dtype_name}; "
-                "Generator should keep D <= 65536//elem_size"
+                f"D={D} exceeds BLOCK_D max {max_d} for {dtype_name}; Generator should keep D <= 65536//elem_size"
             )
 
         # ====== 确定性 seed ======
         import triton
+
         block_d = min(max_d, triton.next_power_of_2(D))
         seed = _derive_seed(block_d)
 
@@ -165,6 +162,7 @@ class LnMulDropoutFwdApi(BaseApi):
         self._seed = seed
 
     def __call__(self, input_data: InputDataset, with_output: bool = False):
+        # pylint: disable=attribute-defined-outside-init
         """执行（计时）：只同步 + 调用原生 wrapper，返回真正输出 y"""
         device = self._device
         if device == 'npu':
@@ -172,25 +170,6 @@ class LnMulDropoutFwdApi(BaseApi):
         elif device == 'cuda':
             torch.cuda.synchronize()
 
-        '''
-        print('----------------------------------look at me----------------------------------!')
-        with open('./my_test.txt','a',encoding='utf-8') as f:
-            f.write(str(self._x.shape))
-            f.write(str(self._x.tolist()))
-            f.write(str(self._u.shape))
-            f.write(str(self._u.tolist()))
-            f.write(str(self._weight.shape))
-            f.write(str(self._weight))
-            f.write(str(self._bias.shape))
-            f.write(str(self._bias))
-            f.write(str(self._eps))
-            f.write(str(self._dropout_ratio))
-            f.write(str(self._training))
-            f.write(str(self._concat_ux))
-            f.write(str(self._seed))
-        print('----------------------------------look at me----------------------------------!')
-        '''
-        
         y, _, _, _, _, _ = triton_layer_norm_mul_dropout_fwd(
             x=self._x,
             u=self._u,

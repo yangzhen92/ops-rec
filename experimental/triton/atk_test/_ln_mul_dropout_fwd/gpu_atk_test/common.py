@@ -25,7 +25,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-# 
+#
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -45,23 +45,9 @@
 #!/usr/bin/env python3
 # pyre-strict
 
-'''
-import dataclasses
-from dataclasses import dataclass
-from enum import Enum, unique
-from typing import Any, Dict, List, Tuple, Union
-'''
+
 import torch
-'''
-# # torch 26.04 circular-import workaround for wrap_triton — do not remove
-# import torch._inductor.dependencies  # noqa: F401
 
-# @manual=//triton:triton
-import triton
-
-# @manual=//triton:triton
-from triton.runtime.autotuner import Autotuner
-'''
 
 def switch_to_contiguous_if_needed(x: torch.Tensor) -> torch.Tensor:
     if not torch.jit.is_scripting() and torch.compiler.is_compiling():

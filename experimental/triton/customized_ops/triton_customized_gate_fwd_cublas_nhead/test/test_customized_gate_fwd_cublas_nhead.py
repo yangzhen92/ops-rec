@@ -25,6 +25,7 @@
 """
 Pytest for CustomizedGateFwdCublasNhead: Triton NPU vs PyTorch reference.
 """
+# pylint: disable=redefined-outer-name, redefined-builtin, attribute-defined-outside-init
 
 import pytest
 import torch
@@ -196,7 +197,6 @@ def device():
 
 def _make_tensors(B, in_size, embedding_dim, num_heads, device, dtype=torch.bfloat16):
     """Create random tensors for the operator with CustomizedGate reference module."""
-    head_size = embedding_dim // num_heads
 
     torch.manual_seed(42)
 

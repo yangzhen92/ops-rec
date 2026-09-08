@@ -42,8 +42,8 @@ def gelu_mul_cpu_ref(input: torch.Tensor, approximate: str = "none") -> torch.Te
 def device():
     if not torch.npu.is_available():
         pytest.skip("NPU is not available")
-    torch.npu.set_device(2)
-    return torch.device("npu:2")
+    torch.npu.set_device(0)
+    return torch.device("npu:0")
 
 
 def _build_input(rows, d, dtype, device):

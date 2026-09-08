@@ -14,16 +14,7 @@
 # ==============================================================================
 
 # generate_group_norm_mul_dropout_fwd.py
-"""
-_group_norm_mul_dropout_fwd 算子参数约束生成器
-
-参数约束说明：
-1. X 和 U 的 shape 必须完全一致：[B, Heads, D]
-2. W 和 Bias 的 shape 必须完全一致: [Heads]
-3. W 和 Bias 的 shape 必须与 X 和 U 的第二维保持一致
-4. X, U, W, Bias 的 dtype 必须完全一致
-5. D（第三维）必须是 2 的幂次方，因为 triton arange 要求范围是 2 的幂次方
-"""
+"""_group_norm_mul_dropout_fwd 算子参数约束生成器。"""
 
 from atk.case_generator.generator.base_generator import CaseGenerator
 from atk.case_generator.generator.generate_types import GENERATOR_REGISTRY
@@ -37,36 +28,15 @@ def is_power_of_2(n):
 
 def get_next_power_of_2(n):
     """获取大于等于 n 的最小 2 的幂次方"""
-    if n <= 0:
-        return 1
-    n -= 1
-    n |= n >> 1
-    n |= n >> 2
-    n |= n >> 4
-    n |= n >> 8
-    n |= n >> 16
-    return n + 1
+    return 1 if n <= 0 else 1 << (n - 1).bit_length()
 
 
 @GENERATOR_REGISTRY.register("generate_group_norm_mul_dropout_fwd")
 class BwdPreprocessDoODotGenerator(CaseGenerator):
-    """
-    _group_norm_mul_dropout_fwd 算子参数约束生成器
-
-    参数约束：
-    1. X 和 U 的 shape 必须完全一致：[B, Heads, D]
-    2. W 和 Bias 的 shape 必须完全一致: [Heads]
-    3. W 和 Bias 的 shape 必须与 X 和 U 的第二维保持一致
-    4. X, U, W, Bias 的 dtype 必须完全一致
-    5. D（第三维）必须是 2 的幂次方，因为 triton arange 要求范围是 2 的幂次方
-    """
+    """使 X/U、W/Bias 的形状及四个输入的 dtype 满足算子约束。"""
 
     def after_case_config(self, case_config: CaseConfig) -> CaseConfig:
-        """
-        用例参数约束修改入口
-        :param case_config: 生成的用例信息
-        :return: 返回修改后符合参数间约束关系的用例
-        """
+        """返回满足输入关系约束的用例。"""
         # 获取输入参数
         X = case_config.inputs[0]
         U = case_config.inputs[1]

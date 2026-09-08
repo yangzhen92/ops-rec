@@ -1,4 +1,4 @@
-﻿# `_add_embeddings_bwd_kernel` 绠楀瓙鏂囨。
+# `_add_embeddings_bwd_kernel` 绠楀瓙鏂囨。
 
 ## 鏉ユ簮
 

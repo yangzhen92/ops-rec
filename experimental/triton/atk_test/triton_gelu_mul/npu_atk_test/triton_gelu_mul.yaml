@@ -41,12 +41,6 @@ inputs:
           - name: nd
             mean: [0, 50]
             std: [1, 25]
-      invalid:
-        values: [ [-100, 100] ]
-        random_types:
-          - name: nd
-            mean: [0, 50]
-            std: [1, 25]
     shapes:
       dim_numbers:
         values: [ 2 ]

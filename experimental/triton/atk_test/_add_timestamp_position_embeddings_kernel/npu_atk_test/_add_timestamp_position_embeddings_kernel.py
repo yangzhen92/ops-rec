@@ -21,15 +21,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-
 from typing import List
-
 import triton
 import triton.language as tl
 
 
 def get_autotune_config() -> List[triton.Config]:
-    """候选 (BLOCK_N, num_warps) 组合，num_stages 固定 2。"""
     return [
         triton.Config({"BLOCK_N": 16, "multibuffer": True}, num_warps=2, num_stages=2),
         triton.Config({"BLOCK_N": 16, "multibuffer": True}, num_warps=4, num_stages=2),
@@ -42,10 +39,7 @@ def get_autotune_config() -> List[triton.Config]:
     ]
 
 
-@triton.autotune(
-    configs=get_autotune_config(),
-    key=["AUTOTUNE_MAX_SEQ_LEN"],
-)
+@triton.autotune(configs=get_autotune_config(), key=["AUTOTUNE_MAX_SEQ_LEN"])
 @triton.jit
 def _add_timestamp_position_embeddings_kernel(
     SeqEmb,
@@ -90,7 +84,6 @@ def _add_timestamp_position_embeddings_kernel(
     seq_emb_offsets = offs_n[:, None] * stride_sn + offs_d[None, :]
     SeqEmb += seq_start.to(tl.int64) * stride_sn
     mask_n = offs_n < seq_len
-    # position encoding
     seq_len = tl.load(Lengths + off_b)
     if HAS_MULTIPLE_TARGETS:
         num_targets = tl.load(NumTargets + off_b)
@@ -107,7 +100,6 @@ def _add_timestamp_position_embeddings_kernel(
     if TRAINING:
         tl.store(PosInds + seq_start + offs_n, pos_inds, mask=mask_n)
     pos_emb_offsets = pos_inds[:, None] * stride_pn + offs_d[None, :]
-    # timestamp encoding
     ts = tl.load(TS + seq_start + offs_n, mask=mask_n)
     query_time = tl.load(TS + seq_end - 1)
     ts = query_time - ts + time_delta

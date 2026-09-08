@@ -12,9 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-
-# _add_timestamp_position_embeddings_kernel 精度测试配置（双标杆）。
-
 name: _add_timestamp_position_embeddings_kernel
 api: pytorch
 version: v2.1
@@ -22,24 +19,18 @@ api_type: _add_timestamp_position_embeddings_kernel
 triton_api_type: _add_timestamp_position_embeddings_kernel
 triton_name: triton_position._add_timestamp_position_embeddings_kernel
 generate: generate_add_timestamp_position_embeddings_kernel
-
 dtype_numbers: 3334
 outputs: 0
 standard:
   acc: double_benchmark
   perf: not_key
-
 inputs:
-  # SeqEmb: [jagged_size, D] jagged 序列 embedding（fwd 主输入）。
-  # dim_values 同池为两维提供候选，生成器收敛：第一维为 jagged_size
-  # （>= num_batches 且每序列 <= 4096），第二维为 D。
   - name: SeqEmb
     type: tensor
     required: true
     dtypes:
       values: [fp32, fp16, bf16]
     ranges:
-      # 前向只做加法与类型转换，值域适中以免 fp16/bf16 溢出。
       valid:
         values: [[-100.0, 100.0]]
       invalid:
@@ -47,7 +38,6 @@ inputs:
     shapes:
       dim_numbers:
         values: [2]
-      # 上限 8192：配合 num_batches>=2 保证每序列长度 <=4096（确定性前提）。
       dim_values:
         values: [[32, 1024], [1025, 4096], [4097, 8192]]
         weights: [0.3, 0.3, 0.4]
@@ -58,9 +48,6 @@ inputs:
       has_scalar: false
       has_upper_border: false
       has_lower_border: false
-
-  # num_batches: 批数 B，决定 Offsets/Lengths 长度为 B+1/B，NumTargets 长度为 B。
-  # 生成器保证 jagged_size >= B。
   - name: num_batches
     type: attr
     required: true
@@ -69,8 +56,6 @@ inputs:
     ranges:
       valid:
         values: [2, 4, 8]
-
-  # max_contextual_seq_len: 位置桶基准长度，决定 PosEmb 行数 N_p = mcs + max_seq_len。
   - name: max_contextual_seq_len
     type: attr
     required: true
@@ -79,8 +64,6 @@ inputs:
     ranges:
       valid:
         values: [64, 128, 256]
-
-  # time_bucket_fn: 时间桶函数，固定 "sqrt"（确定性要求，见文件头注释）。
   - name: time_bucket_fn
     type: attr
     required: true

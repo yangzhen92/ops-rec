@@ -12,28 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-
 # pylint: disable=attribute-defined-outside-init
-
-"""
-_add_timestamp_position_embeddings_kernel kernel 的 ATK API 封装（双标杆直测版）。
-"""
+"""_add_timestamp_position_embeddings_kernel 的 ATK 自定义 API(双标杆直测版)。"""
 
 from __future__ import annotations
-
 import sys
 from pathlib import Path
-
 import torch
 import triton
-
 from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
 from atk.tasks.api_execute.base_api import BaseApi
 
-
 _SUPPORTED_DTYPES = {torch.float32, torch.float16, torch.bfloat16}
-"""kernel 支持的 dtype。"""
 _NUM_TIME_BUCKETS = 2048
 _TIME_BUCKET_INCREMENTS = 1.0
 _TIME_BUCKET_SCALE = 1.0
@@ -112,24 +103,17 @@ def _compute_pos_inds(lengths, offsets, max_contextual_seq_len: int, max_pos_ind
 @register("_add_timestamp_position_embeddings_kernel")
 @register("triton_position._add_timestamp_position_embeddings_kernel")
 class AddTimestampPositionEmbeddingsKernelApi(BaseApi):
-    """_add_timestamp_position_embeddings_kernel kernel 的 API 封装。
-
-    固定 BLOCK_N=64（候选最大值）；Offsets/Lengths/TS/PosEmb/TsEmb 由
-    SeqEmb 与 attrs 确定性推导，保证 GPU/NPU 两端输入一致。
-    """
+    """_add_timestamp_position_embeddings_kernel kernel 的 API 封装，固定 BLOCK_N=64。"""
 
     def init_by_input_data(self, input_data: InputDataset):
-        # ── 1. 读取输入 ──
         seq_input = input_data.kwargs.get("SeqEmb")
         num_batches = int(input_data.kwargs.get("num_batches", 2))
         max_contextual_seq_len = int(input_data.kwargs.get("max_contextual_seq_len", 64))
         time_bucket_fn = str(input_data.kwargs.get("time_bucket_fn", "sqrt"))
-
         if seq_input is None or not isinstance(seq_input, torch.Tensor):
             raise ValueError("SeqEmb must be a tensor")
         if seq_input.ndim != 2:
             raise ValueError(f"SeqEmb must be 2D, got {seq_input.ndim}D")
-
         jagged_size, d = seq_input.shape
         if jagged_size == 0 or d == 0:
             raise ValueError(f"SeqEmb cannot have zero dim, got shape {seq_input.shape}")
@@ -139,19 +123,13 @@ class AddTimestampPositionEmbeddingsKernelApi(BaseApi):
                 f"num_batches={num_batches} > jagged_size={jagged_size}. "
                 f"Generator should ensure jagged_size >= num_batches"
             )
-
-        # ── 2. 统一 dtype（以 SeqEmb 为准）──
         x = seq_input
         if x.dtype == torch.float64:
             x = x.to(torch.float32).contiguous()
         if x.dtype not in _SUPPORTED_DTYPES:
             raise ValueError(f"Unsupported SeqEmb dtype: {x.dtype}")
         dtype = x.dtype
-
-        # CPU 上对齐到目标 dtype，保证两端输入一致。
         in_cpu = x.cpu().to(dtype).contiguous()
-
-        # ── 3. 确定性推导 Offsets / Lengths（均匀分段，余数放前）──
         base, rem = divmod(jagged_size, num_batches)
         lengths_cpu = torch.full((num_batches,), base, dtype=torch.int32)
         if rem:
@@ -164,8 +142,6 @@ class AddTimestampPositionEmbeddingsKernelApi(BaseApi):
                 f"max_seq_len={max_seq_len} > 4096 breaks exact-square guarantee. "
                 f"Generator should ensure jagged_size <= num_batches * 4096"
             )
-
-        # ── 4. 确定性推导 TS（完美平方间隔），保证 sqrt 桶索引精确 ──
         ts_cpu = torch.empty((jagged_size,), dtype=torch.float32)
         offs = offsets_cpu.tolist()
         lens = lengths_cpu.tolist()
@@ -176,8 +152,6 @@ class AddTimestampPositionEmbeddingsKernelApi(BaseApi):
             n = torch.arange(L, dtype=torch.int64)
             diff = (L - 1 - n) ** 2
             ts_cpu[s0:s1] = (C - diff).float()
-
-        # ── 5. 确定性构造 PosEmb / TsEmb（fp32，值域 [-1,1]）──
         max_pos_ind = max_contextual_seq_len + max_seq_len
         n_p = max_pos_ind
         n_t = _NUM_TIME_BUCKETS + 1
@@ -188,16 +162,11 @@ class AddTimestampPositionEmbeddingsKernelApi(BaseApi):
         row_t = torch.arange(n_t, dtype=torch.float32)
         ts_emb_cpu = ((row_t % 7).view(-1, 1) / 7.0 - 0.5) + ((col % 3).view(1, -1) / 8.0 - 0.2)
         ts_emb_cpu = ts_emb_cpu.contiguous()
-
-        # ── 6. 编译参数（固定 BLOCK_N / BLOCK_D）──
         block_d = _next_pow2(d) if d < 64 else 64
         grid = (num_batches, triton.cdiv(max_seq_len, _BLOCK_N))
-        # 调优 key 参数：kernel 内部未使用，固定值即可
         autotune_max_seq_len = 1 << (max_seq_len - 1).bit_length()
         if autotune_max_seq_len > max_seq_len:
             autotune_max_seq_len //= 2
-
-        # ── 7. 移到目标设备，分配 Out / PosInds / TsInds / NumTargets ──
         device = _resolve_device(seq_input)
         in_d = in_cpu.to(device)
         offsets_d = offsets_cpu.to(device)
@@ -209,8 +178,6 @@ class AddTimestampPositionEmbeddingsKernelApi(BaseApi):
         pos_inds = torch.empty((jagged_size,), dtype=torch.int32, device=device)
         ts_inds = torch.empty((jagged_size,), dtype=torch.int32, device=device)
         num_targets = torch.zeros((num_batches,), dtype=torch.int32, device=device)
-
-        # 保存实例变量
         self._device = device
         self._jagged_size = jagged_size
         self._d = d
@@ -236,7 +203,6 @@ class AddTimestampPositionEmbeddingsKernelApi(BaseApi):
         self._stride_pn = pos_emb_d.stride(0)
         self._stride_tn = ts_emb_d.stride(0)
         self._stride_on = out.stride(0)
-        # CPU golden 复用（CPU tensor 副本）
         self._in_cpu = in_cpu
         self._offsets_cpu = offsets_cpu.long()
         self._lengths_cpu = lengths_cpu
@@ -247,10 +213,7 @@ class AddTimestampPositionEmbeddingsKernelApi(BaseApi):
     def __call__(self, input_data: InputDataset, with_output: bool = False):
         if self._device == "cpu":
             pos_inds = _compute_pos_inds(
-                self._lengths_cpu,
-                self._offsets_cpu,
-                self._max_contextual_seq_len,
-                self._max_pos_ind,
+                self._lengths_cpu, self._offsets_cpu, self._max_contextual_seq_len, self._max_pos_ind
             )
             ts_inds = _compute_ts_inds(self._ts_cpu, self._offsets_cpu, self._time_bucket_fn)
             pos_emb = self._pos_emb_cpu.index_select(0, pos_inds.to(torch.int64))
@@ -258,10 +221,7 @@ class AddTimestampPositionEmbeddingsKernelApi(BaseApi):
             emb_sum = (pos_emb + ts_emb).to(self._in_cpu.dtype)
             ref = self._in_cpu + emb_sum
             return ref
-
         _synchronize(self._device)
-
-        # kernel 逐 token 全覆盖写 Out，无需归零
         _add_timestamp_position_embeddings_kernel[self._grid](
             SeqEmb=self._in,
             Offsets=self._offsets,
@@ -292,7 +252,5 @@ class AddTimestampPositionEmbeddingsKernelApi(BaseApi):
             BLOCK_D=self._block_d,
             BLOCK_N=_BLOCK_N,
         )
-
         _synchronize(self._device)
-
         return self._out

@@ -54,37 +54,17 @@ pos_inds = torch.empty(200, dtype=torch.int32, device="npu")
 ts_inds = torch.empty(200, dtype=torch.int32, device="npu")
 num_targets = torch.zeros(2, dtype=torch.int32, device="npu")
 out = torch.empty(200, 16, dtype=torch.float32, device="npu")
-
 grid = (2, triton.cdiv(100, 64))
 _add_timestamp_position_embeddings_kernel[grid](
-    SeqEmb=seq_emb,
-    Offsets=offsets,
-    Lengths=lengths,
-    PosEmb=pos_emb,
-    TsEmb=ts_emb,
-    Out=out,
-    TS=ts,
-    PosInds=pos_inds,
-    TsInds=ts_inds,
-    NumTargets=num_targets,
-    AUTOTUNE_MAX_SEQ_LEN=64,
-    D=16,
-    num_time_buckets=2048,
-    time_bucket_increments=1.0,
-    time_bucket_scale=1.0,
-    time_delta=0.0,
-    max_contextual_seq_len=64,
-    max_pos_ind=164,
-    stride_sn=seq_emb.stride(0),
-    stride_pn=pos_emb.stride(0),
-    stride_tn=ts_emb.stride(0),
-    stride_on=out.stride(0),
-    TRAINING=True,
-    HAS_MULTIPLE_TARGETS=False,
-    INTERLEAVE_TARGETS=False,
-    TIME_BUCKET_FN="sqrt",
-    BLOCK_D=16,
-    BLOCK_N=64,
+    SeqEmb=seq_emb, Offsets=offsets, Lengths=lengths, PosEmb=pos_emb,
+    TsEmb=ts_emb, Out=out, TS=ts, PosInds=pos_inds, TsInds=ts_inds,
+    NumTargets=num_targets, AUTOTUNE_MAX_SEQ_LEN=64, D=16,
+    num_time_buckets=2048, time_bucket_increments=1.0,
+    time_bucket_scale=1.0, time_delta=0.0,
+    max_contextual_seq_len=64, max_pos_ind=164,
+    stride_sn=seq_emb.stride(0), stride_pn=pos_emb.stride(0), stride_tn=ts_emb.stride(0), stride_on=out.stride(0),
+    TRAINING=True, HAS_MULTIPLE_TARGETS=False, INTERLEAVE_TARGETS=False,
+    TIME_BUCKET_FN="sqrt", BLOCK_D=16, BLOCK_N=64,
 )
 ```
 

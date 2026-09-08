@@ -68,4 +68,3 @@ inputs:
     ranges:
       valid:
         values: [16, 32, 64]
-

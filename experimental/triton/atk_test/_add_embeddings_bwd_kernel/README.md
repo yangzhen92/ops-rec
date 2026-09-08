@@ -93,7 +93,7 @@ _add_embeddings_bwd_kernel/
 
 - `npu_atk_test/` 部署到 NPU 端；`gpu_atk_test/` 部署到 GPU 端。
 - 精度测试用例在 NPU 端生成。
-- 性能测试用例复用 `npu_atk_test/_add_embeddings_bwd_kernel_performce.json`。
+- 性能测试用例复用 `npu_atk_test/all__add_embeddings_bwd_kernel.json`。
 - GPU 端启动 ATK server，NPU 端作为 ATK 客户端拉起精度/性能测试。
 
 ### 生成精度测试数据

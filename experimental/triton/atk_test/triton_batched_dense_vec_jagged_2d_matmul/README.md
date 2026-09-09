@@ -46,13 +46,13 @@ triton_batched_dense_vec_jagged_2d_matmul 是 batched dense vector 与 jagged 2D
 experimental/triton/atk_test/triton_batched_dense_vec_jagged_2d_matmul/
 ├── README.md
 ├── gpu_atk_test/
-│   ├── triton_batched_dense_vec_jagged_2d_matmul.py       # GPU(CUDA) 端 Triton kernel（FBGEMM 原生实现）
-│   └── triton_batched_dense_vec_jagged_2d_matmul_api.py   # GPU(CUDA) 端 ATK API 执行文件
+│   ├── triton_batched_dense_vec_jagged_2d_matmul.py       # GPU 端 Triton kernel（FBGEMM 原生实现）
+│   └── triton_batched_dense_vec_jagged_2d_matmul_api.py   # GPU 端 ATK API 执行文件
 └── npu_atk_test/
-    ├── triton_batched_dense_vec_jagged_2d_matmul.py           # NPU(Triton) kernel 实现（persistent grid + autotune）
+    ├── triton_batched_dense_vec_jagged_2d_matmul.py           # NPU kernel 实现（persistent grid + autotune）
     ├── triton_batched_dense_vec_jagged_2d_matmul.yaml         # ATK 用例设计（dtype/shape/约束）
     ├── generate_triton_batched_dense_vec_jagged_2d_matmul.py  # ATK 用例生成器（维度约束链）
-    ├── triton_batched_dense_vec_jagged_2d_matmul_api.py       # NPU(Triton) 端 ATK API 执行文件
+    ├── triton_batched_dense_vec_jagged_2d_matmul_api.py       # NPU 端 ATK API 执行文件
     └── all_triton_batched_dense_vec_jagged_2d_matmul.json     # ATK 生成的用例配置
 ```
 
@@ -100,7 +100,7 @@ atk case -f triton_batched_dense_vec_jagged_2d_matmul.yaml -p generate_triton_ba
 ### 3.2 精度对比
 
 ```bash
-atk node --backend npu --devices 0 node --backend npu --devices 0 task -c all_triton_batched_dense_vec_jagged_2d_matmul.json --task accuracy -p triton_batched_dense_vec_jagged_2d_matmul_api.py
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端监听端口} --devices 0 task -c all_triton_batched_dense_vec_jagged_2d_matmul.json --task accuracy -p triton_batched_dense_vec_jagged_2d_matmul_api.py
 ```
 
 注：如需保存精度对比数据则需要在指令后加 --save_data profile
@@ -108,7 +108,7 @@ atk node --backend npu --devices 0 node --backend npu --devices 0 task -c all_tr
 ### 3.3 性能对比
 
 ```bash
-atk node --backend npu --devices 0 node --backend npu --devices 0 task -c all_triton_batched_dense_vec_jagged_2d_matmul.json --task performance -p triton_batched_dense_vec_jagged_2d_matmul_api.py
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端监听端口} --devices 0 task -c all_triton_batched_dense_vec_jagged_2d_matmul.json --task performance -p triton_batched_dense_vec_jagged_2d_matmul_api.py
 ```
 
 注：如需保存性能对比数据则需要在指令后加 --save_data profile

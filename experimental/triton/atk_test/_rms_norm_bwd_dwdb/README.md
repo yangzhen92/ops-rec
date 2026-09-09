@@ -77,7 +77,7 @@ print(final_dw.shape)  # torch.Size([128])
 ## ATK 测试
 
 测试在 NPU / GPU 两端协同进行：
- 
+
 - `npu_atk_test/` 部署到 NPU 端；`gpu_atk_test/` 部署到 GPU 端。
 - GPU 端启动 ATK server，NPU 端作为 ATK 客户端拉起精度/性能测试。
 

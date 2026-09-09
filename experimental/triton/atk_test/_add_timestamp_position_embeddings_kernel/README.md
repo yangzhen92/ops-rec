@@ -85,7 +85,7 @@ _add_timestamp_position_embeddings_kernel/
     ├── _add_timestamp_position_embeddings_kernel_api.py   # NPU 端 ATK 自定义 API 封装
     ├── _add_timestamp_position_embeddings_kernel.yaml     # ATK 算子用例参数
     ├── generate_add_timestamp_position_embeddings_kernel.py  # 限制参数生成脚本
-    └── all__add_timestamp_position_embeddings_kernel.json    # 性能测试样例数据
+    └── add_timestamp_position_embeddings_kernel_performance.json    # 性能测试样例数据
 ```
 
 ## ATK 测试

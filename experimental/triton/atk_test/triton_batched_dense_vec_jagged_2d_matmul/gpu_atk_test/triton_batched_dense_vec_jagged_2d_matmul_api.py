@@ -109,7 +109,7 @@ class TritonBatchedDenseVecJagged2dMatmulApi(BaseApi):
 
         if dense.shape[0] != BH:
             raise ValueError(f"dense.shape[0] should be B*H={BH}, got {dense.shape[0]}")
-    
+
         if values.shape[1] != HD:
             raise ValueError(f"values.shape[1] should be H*D={HD}, got {values.shape[1]}")
 

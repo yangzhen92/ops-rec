@@ -33,13 +33,14 @@ triton_customized_gate_fwd_cublas_nhead 是一个基于 Triton 实现的 Ascend 
 ```text
 experimental/triton/
 ├── atk_test/
-│   ├── gpu_atk_test/
-│   │   └── customized_gate_fwd_cublas_nhead_api.py      # GPU(CUDA) 端 ATK API 执行文件
-│   └── npu_atk_test/
-│       ├── customized_gate_fwd_cublas_nhead.yaml        # ATK 用例设计（dtype/shape/约束）
-│       ├── generate_customized_gate_fwd_cublas_nhead.py # ATK 用例生成器
-│       ├── customized_gate_fwd_cublas_nhead_api.py      # NPU(Triton) 端 ATK API 执行文件
-│       └── all_customized_gate_fwd_cublas_nhead.json    # ATK 生成的用例配置
+│   └── triton_customized_gate_fwd_cublas_nhead/
+│       ├── gpu_atk_test/
+│       │   └── customized_gate_fwd_cublas_nhead_api.py      # GPU(CUDA) 端 ATK API 执行文件
+│       └── npu_atk_test/
+│           ├── customized_gate_fwd_cublas_nhead.yaml        # ATK 用例设计（dtype/shape/约束）
+│           ├── generate_customized_gate_fwd_cublas_nhead.py # ATK 用例生成器
+│           ├── customized_gate_fwd_cublas_nhead_api.py      # NPU(Triton) 端 ATK API 执行文件
+│           └── all_customized_gate_fwd_cublas_nhead.json    # ATK 生成的用例配置
 └── customized_ops/
     └── triton_customized_gate_fwd_cublas_nhead/
         ├── README.md
@@ -80,10 +81,10 @@ print(output.shape)  # torch.Size([1000, 256])
 
 ## ATK 测试
 
-ATK 脚本目录：`experimental/triton/atk_test/npu_atk_test/`（相对仓库根目录），以下命令均在该目录下执行：
+ATK 脚本目录：`experimental/triton/atk_test/triton_customized_gate_fwd_cublas_nhead/npu_atk_test/`（相对仓库根目录），以下命令均在该目录下执行：
 
 ```bash
-cd experimental/triton/atk_test/npu_atk_test
+cd experimental/triton/atk_test/triton_customized_gate_fwd_cublas_nhead/npu_atk_test
 ```
 
 ### 环境变量

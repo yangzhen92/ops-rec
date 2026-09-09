@@ -35,11 +35,11 @@ experimental/triton/
 ├── atk_test/
 │   └── triton_customized_gate_fwd_cublas_nhead/
 │       ├── gpu_atk_test/
-│       │   └── customized_gate_fwd_cublas_nhead_api.py      # GPU(CUDA) 端 ATK API 执行文件
+│       │   └── customized_gate_fwd_cublas_nhead_api.py      # GPU 端 ATK API 执行文件
 │       └── npu_atk_test/
 │           ├── customized_gate_fwd_cublas_nhead.yaml        # ATK 用例设计（dtype/shape/约束）
 │           ├── generate_customized_gate_fwd_cublas_nhead.py # ATK 用例生成器
-│           ├── customized_gate_fwd_cublas_nhead_api.py      # NPU(Triton) 端 ATK API 执行文件
+│           ├── customized_gate_fwd_cublas_nhead_api.py      # NPU 端 ATK API 执行文件
 │           └── all_customized_gate_fwd_cublas_nhead.json    # ATK 生成的用例配置
 └── customized_ops/
     └── triton_customized_gate_fwd_cublas_nhead/
@@ -108,7 +108,7 @@ atk case -f customized_gate_fwd_cublas_nhead.yaml -p generate_customized_gate_fw
 ### 3.2 精度对比
 
 ```bash
-atk node --backend npu --devices 0 node --backend npu --devices 0 task -c all_customized_gate_fwd_cublas_nhead.json --task accuracy -p customized_gate_fwd_cublas_nhead_api.py
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c all_customized_gate_fwd_cublas_nhead.json --task accuracy -p customized_gate_fwd_cublas_nhead_api.py
 ```
 
 注：如需保存精度对比数据则需要在指令后加 --save_data profile
@@ -116,7 +116,7 @@ atk node --backend npu --devices 0 node --backend npu --devices 0 task -c all_cu
 ### 3.3 性能对比
 
 ```bash
-atk node --backend npu --devices 0 node --backend npu --devices 0 task -c all_customized_gate_fwd_cublas_nhead.json --task performance -p customized_gate_fwd_cublas_nhead_api.py
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c all_customized_gate_fwd_cublas_nhead.json --task performance -p customized_gate_fwd_cublas_nhead_api.py
 ```
 
 注：如需保存性能对比数据则需要在指令后加 --save_data profile

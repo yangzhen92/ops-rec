@@ -17,8 +17,8 @@
 """
 _add_position_embeddings_bwd_kernel 的 ATK 自定义 API 执行文件
 """
+
 import torch
-import triton
 from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
 from atk.tasks.api_execute.base_api import BaseApi
@@ -42,6 +42,7 @@ def get_device():
 class AddPositionEmbeddingsBwdApi(BaseApi):
     """_add_position_embeddings_bwd_kernel 算子的 API 封装"""
 
+    # pylint: disable=attribute-defined-outside-init
     def init_by_input_data(self, input_data: InputDataset):
         """预处理（不计时）"""
         device = get_device()
@@ -156,9 +157,7 @@ class AddPositionEmbeddingsBwdApi(BaseApi):
         for i in range(B):
             # 尾部多余的分配给前几个batch
             extra = 1 if i < remainder else 0
-            seg_len = base_len + extra
-            if seg_len < 1:
-                seg_len = 1
+            seg_len = max(base_len + extra, 1)
             offsets.append(offsets[-1] + seg_len)
 
         # 确保最后一个元素正好是N
@@ -199,7 +198,7 @@ class AddPositionEmbeddingsBwdApi(BaseApi):
             self._seq_offsets,
             self._high_inds,
             self._DenseOut,
-            self._Jagged,     # JaggedOut: 复用Jagged（JaggedOut在SCALE_JAGGED时才写）
+            self._Jagged,  # JaggedOut: 复用Jagged（JaggedOut在SCALE_JAGGED时才写）
             self._B,
             self._D,
             self._scale,

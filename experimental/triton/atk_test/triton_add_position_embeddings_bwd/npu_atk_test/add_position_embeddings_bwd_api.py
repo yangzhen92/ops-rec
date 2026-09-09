@@ -16,6 +16,7 @@
 """
 _add_position_embeddings_bwd_kernel 的 ATK 自定义 API 执行文件
 """
+
 import torch
 import triton
 from atk.configs.dataset_config import InputDataset
@@ -23,6 +24,7 @@ from atk.tasks.api_execute import register
 from atk.tasks.api_execute.base_api import BaseApi
 
 from triton_add_position_embeddings_bwd_kernel import _add_position_embeddings_bwd_kernel
+
 
 def get_device():
     """获取可用的设备，优先NPU"""
@@ -40,6 +42,7 @@ def get_device():
 class AddPositionEmbeddingsBwdApi(BaseApi):
     """_add_position_embeddings_bwd_kernel 算子的 API 封装"""
 
+    # pylint: disable=attribute-defined-outside-init
     def init_by_input_data(self, input_data: InputDataset):
         """预处理（不计时）"""
         device = get_device()
@@ -102,8 +105,9 @@ class AddPositionEmbeddingsBwdApi(BaseApi):
         max_high_ind = int(high_inds.max().item())
         DenseOut = torch.zeros((max_high_ind + 1, D), dtype=Jagged.dtype, device=device)
 
-        # === NPU 亲和：固定 56 核，按 off_k 分片 ===
-        ncores = 56
+        # === NPU 亲和：从硬件读取向量核数，按 off_k 分片 ===
+        device_props = triton.runtime.driver.active.utils.get_device_properties(Jagged.device)
+        ncores = int(device_props.get("num_vectorcore", -1))
         total_rows = max_high_ind + 1
         rows_per_core = (total_rows + ncores - 1) // ncores
 
@@ -149,9 +153,7 @@ class AddPositionEmbeddingsBwdApi(BaseApi):
         offsets = [0]
         for i in range(B):
             extra = 1 if i < remainder else 0
-            seg_len = base_len + extra
-            if seg_len < 1:
-                seg_len = 1
+            seg_len = max(base_len + extra, 1)
             offsets.append(offsets[-1] + seg_len)
         offsets[-1] = N
         result = torch.tensor(offsets, dtype=seq_offsets_template.dtype, device=device)
@@ -183,7 +185,7 @@ class AddPositionEmbeddingsBwdApi(BaseApi):
             self._seq_offsets,
             self._high_inds,
             self._DenseOut,
-            self._Jagged,     # JaggedOut: 复用Jagged
+            self._Jagged,  # JaggedOut: 复用Jagged
             self._B,
             self._D,
             self._scale,

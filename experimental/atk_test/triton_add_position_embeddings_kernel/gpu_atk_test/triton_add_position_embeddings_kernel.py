@@ -24,7 +24,6 @@
 
 from typing import List
 
-import torch
 import triton
 import triton.language as tl
 from triton.runtime.autotuner import Autotuner
@@ -114,9 +113,7 @@ def _add_position_embeddings_kernel(
         clamped_offs_n = tl.where(offs_n >= max_ind, max_ind, offs_n)
     else:
         ind_offset = tl.load(ind_offsets + off_b)
-        clamped_offs_n = tl.where(
-            offs_n + ind_offset >= max_ind, max_ind, offs_n + ind_offset
-        )
+        clamped_offs_n = tl.where(offs_n + ind_offset >= max_ind, max_ind, offs_n + ind_offset)
     offs_d = tl.arange(0, BLOCK_D)
     Jagged += seq_start.to(tl.int64) * stride_jn
     jagged_ptr_offsets = offs_n[:, None] * stride_jn + offs_d[None, :]

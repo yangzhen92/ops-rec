@@ -23,6 +23,7 @@ add_position_embeddings 算子 ATK 自定义 API 执行文件
 - high_inds: 非负整数，每个 batch 的 max dense lookup index
 - ind_offsets: 存在时为非负整数（可选参数）
 """
+
 import torch
 import triton
 
@@ -100,6 +101,7 @@ def _generate_high_inds_deterministic(b_size: int, offsets: list, K: int) -> lis
 class AddPositionEmbeddingsApi(BaseApi):
     """add_position_embeddings 算子的 API 封装"""
 
+    # pylint: disable=attribute-defined-outside-init
     def init_by_input_data(self, input_data: InputDataset):
         """预处理操作（不计时）"""
         device = get_device()
@@ -200,7 +202,7 @@ class AddPositionEmbeddingsApi(BaseApi):
         else:
             autotune_max_seq_len = int(autotune_max_seq_len)
         # 实际最大 seq_len，保证 grid 能覆盖所有 batch 的数据
-        actual_max_seq_len = max(offsets_values[i+1] - offsets_values[i] for i in range(b_size))
+        actual_max_seq_len = max(offsets_values[i + 1] - offsets_values[i] for i in range(b_size))
         autotune_max_seq_len = max(autotune_max_seq_len, actual_max_seq_len)  # 保证 grid 覆盖全量数据
 
         # SCALE_JAGGED
@@ -270,7 +272,6 @@ class AddPositionEmbeddingsApi(BaseApi):
             self._high_inds,
             self._dense,
             self._out,
-
             self._autotune_max_seq_len,
             self._d_dim,
             self._scale,

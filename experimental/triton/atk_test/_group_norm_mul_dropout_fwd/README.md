@@ -73,7 +73,7 @@ import triton
 from _group_norm_mul_dropout_fwd_kernel import _group_norm_mul_dropout_fwd
 
 B, Heads, D = 8, 32, 128
-device = "cuda"
+device = "npu"
 x = torch.randn((B, Heads, D), dtype=torch.float32, device=device)
 u = torch.randn_like(x)
 w = torch.randn((Heads,), dtype=x.dtype, device=device)
@@ -110,17 +110,15 @@ print(y.shape, mean.shape, rstd.shape)
 
 ## ATK 测试
 
-ATK 脚本目录：
-`experimental/triton/atk_test/_group_norm_mul_dropout_fwd/npu_atk_test/`（相对仓库根目录）。以下命令均在该目录下执行：
-
-```bash
-cd experimental/triton/atk_test/_group_norm_mul_dropout_fwd/npu_atk_test
-```
+测试在 NPU / GPU 两端协同进行：
+ 
+- `npu_atk_test/` 部署到 NPU 端；`gpu_atk_test/` 部署到 GPU 端。
+- GPU 端启动 ATK server，NPU 端作为 ATK 客户端拉起精度/性能测试。
 
 ### 3.1 远端 NPU 服务器启动监听
 
 ```bash
-atk server --devices 0 --plugin_path _group_norm_mul_dropout_fwd_api.py
+atk server --devices 0 --plugin_path /path/to/api文件所在文件夹
 ```
 
 ### 3.2 生成测试数据
@@ -143,7 +141,7 @@ atk node --backend npu --devices 0 task -c all__group_norm_mul_dropout_fwd.json 
 ### 3.4 性能对比
 
 ```bash
-atk node --backend npu --devices 0 task -c all__group_norm_mul_dropout_fwd.json --task performance -p _group_norm_mul_dropout_fwd_api.py
+atk node --backend npu --devices 0 task -c all__group_norm_mul_dropout_fwd.json --task performance_device -p _group_norm_mul_dropout_fwd_api.py
 ```
 
 如需保存性能对比数据，在命令末尾增加 `--save_data profile`。

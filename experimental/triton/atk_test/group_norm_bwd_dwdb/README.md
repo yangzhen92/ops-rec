@@ -45,7 +45,7 @@ group_norm_bwd_dwdb/
     ├── group_norm_bwd_dwdb.yaml     # ATK 用例设计（dtype/shape/约束）
     ├── generate_group_norm_bwd_dwdb.py  # ATK 用例生成器
     ├── group_norm_bwd_dwdb_api.py   # NPU 端 ATK API 执行文件
-    └── group_norm_bwd_dwdb_performence.json  # ATK 生成的用例配置
+    └── group_norm_bwd_dwdb_performance.json  # ATK 生成的用例配置
 ```
 
 ## 调用示例

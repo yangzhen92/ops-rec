@@ -1,0 +1,147 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
+# jagged_dense_bmm_broadcast_add_kernel 精度测试配置。
+# 输入顺序与 kernel 的真实数据参数一致：offsets、Jagged、Dense、Bias。
+name: triton_jagged_dense_bmm_broadcast_add
+api: pytorch
+version: v2.1
+api_type: triton_jagged_dense_bmm_broadcast_add
+triton_api_type: triton_jagged_dense_bmm_broadcast_add
+triton_name: triton_jagged.jagged_dense_bmm_broadcast_add_kernel
+generate: generate_jagged_dense_bmm_broadcast_add
+
+dtype_numbers: 3334
+outputs: 0
+standard:
+  acc: single_bm
+  perf: not_key
+
+inputs:
+  - name: seq_offsets
+    type: tensor
+    required: true
+    dtypes:
+      values: [int64]
+    ranges:
+      valid:
+        values: [[0, 1]]
+      invalid:
+        values: [[0, 1]]
+    shapes:
+      dim_numbers:
+        values: [1]
+      dim_values:
+        values: [[4, 32]]
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: Jagged
+    type: tensor
+    required: true
+    dtypes:
+      values: [fp32, fp16, bf16]
+    ranges:
+      valid:
+        values: [[-4.0, 4.0]]
+        random_types:
+          - name: nd
+            mean: [0.0,2.0]
+            std: [1.0, 1.0]
+      invalid:
+        values: [[-4.0, 4.0]]
+        random_types:
+          - name: nd
+            mean: [0.0,2.0]
+            std: [1.0, 1.0]
+    shapes:
+      dim_numbers:
+        values: [2]
+      dim_values:
+        values: [[2, 1024], [2049, 4096], [4097, 8192]]
+        weights: [0.30, 0.20, 0.50]
+      max_length: 67108864
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: Dense
+    type: tensor
+    required: true
+    dtypes:
+      values: [fp32, fp16, bf16]
+    ranges:
+      valid:
+        values: [[-4.0, 4.0]]
+        random_types:
+          - name: nd
+            mean: [0.0,0.0]
+            std: [1.0, 1.0]
+      invalid:
+        values: [[-4.0, 4.0]]
+        random_types:
+          - name: nd
+            mean: [0.0,0.0]
+            std: [1.0, 1.0]
+    shapes:
+      dim_numbers:
+        values: [3]
+      dim_values:
+        values: [[2, 1024], [2049, 4096], [4097, 8192]]
+        weights: [0.30, 0.20, 0.50]
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: Bias
+    type: tensor
+    required: true
+    dtypes:
+      values: [fp32, fp16, bf16]
+    ranges:
+      valid:
+        values: [[-4.0, 4.0]]
+        random_types:
+          - name: nd
+            mean: [0.0,0.0]
+            std: [1.0, 1.0]
+      invalid:
+        values: [[-4.0, 4.0]]
+        random_types:
+          - name: nd
+            mean: [0.0,0.0]
+            std: [1.0, 1.0]
+    shapes:
+      dim_numbers:
+        values: [2]
+      dim_values:
+        values: [[2, 1024], [2049, 4096], [4097, 8192]]
+        weights: [0.30, 0.20, 0.50]
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false

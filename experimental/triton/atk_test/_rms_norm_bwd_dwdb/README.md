@@ -36,14 +36,14 @@ FINAL_DW[d] = sum(DW[n, d] for n in range(N))
 experimental/triton/atk_test/_rms_norm_bwd_dwdb/
 ├── README.md
 ├── gpu_atk_test/
-│   ├── _rms_norm_bwd_dwdb_kernel.py   # GPU(CUDA) 端 Triton kernel 实现
-│   └── _rms_norm_bwd_dwdb_api.py      # GPU(CUDA) 端 ATK API 执行文件
+│   ├── _rms_norm_bwd_dwdb_kernel.py   # GPU 端 Triton kernel 实现
+│   └── _rms_norm_bwd_dwdb_api.py      # GPU 端 ATK API 执行文件
 └── npu_atk_test/
-    ├── _rms_norm_bwd_dwdb_kernel.py   # NPU(Triton) kernel 实现
+    ├── _rms_norm_bwd_dwdb_kernel.py   # NPU端 Triton kernel 实现
     ├── _rms_norm_bwd_dwdb.yaml        # ATK 用例设计（dtype/shape/约束）
     ├── generate_rms_norm_bwd_dwdb.py  # ATK 用例生成器
-    ├── _rms_norm_bwd_dwdb_api.py      # NPU(Triton) 端 ATK API 执行文件
-    └── all__rms_norm_bwd_dwdb.json    # ATK 生成的用例配置
+    ├── _rms_norm_bwd_dwdb_api.py      # NPU 端 ATK API 执行文件
+    └── _rms_norm_bwd_dwdb_performance.json    # ATK 生成的用例配置
 ```
 
 ## 调用示例
@@ -98,7 +98,7 @@ atk case -f _rms_norm_bwd_dwdb.yaml -p generate_rms_norm_bwd_dwdb.py
 ### 3.2 精度对比
 
 ```bash
-atk node --backend npu --devices 0 node --backend npu --devices 0 task -c all__rms_norm_bwd_dwdb.json --task accuracy -p _rms_norm_bwd_dwdb_api.py
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c all__rms_norm_bwd_dwdb.json --task accuracy -p _rms_norm_bwd_dwdb_api.py
 ```
 
 注：如需保存精度对比数据，需要在命令后加 `--save_data profile`。
@@ -106,7 +106,7 @@ atk node --backend npu --devices 0 node --backend npu --devices 0 task -c all__r
 ### 3.3 性能对比
 
 ```bash
-atk node --backend npu --devices 0 node --backend npu --devices 0 task -c all__rms_norm_bwd_dwdb.json --task performance_device -p _rms_norm_bwd_dwdb_api.py
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c all__rms_norm_bwd_dwdb.json --task performance_device -p _rms_norm_bwd_dwdb_api.py
 ```
 
 注：如需保存性能对比数据，需要在命令后加 `--save_data profile`。

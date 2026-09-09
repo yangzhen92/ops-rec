@@ -44,13 +44,13 @@ triton_add_position_embeddings_kernel 是一个基于 Triton 实现的 Ascend NP
 experimental/atk_test/triton_add_position_embeddings_kernel/
 ├── README.md
 ├── gpu_atk_test/
-│   ├── triton_add_position_embeddings_kernel.py   # GPU(CUDA) 端 Triton kernel 实现（含 triton_autotune）
-│   └── add_position_embeddings_api.py             # GPU(CUDA) 端 ATK API 执行文件
+│   ├── triton_add_position_embeddings_kernel.py   # GPU 端 Triton kernel 实现（含 triton_autotune）
+│   └── add_position_embeddings_api.py             # GPU 端 ATK API 执行文件
 └── npu_atk_test/
-    ├── triton_add_position_embeddings_kernel.py   # NPU(Triton) kernel 实现与对外 Python API
+    ├── triton_add_position_embeddings_kernel.py   # NPU 端 Triton kernel 实现与对外 Python API
     ├── add_position_embeddings.yaml               # ATK 用例设计（dtype/shape/约束）
     ├── generate_add_position_embeddings.py        # ATK 用例生成器（保证 B/总行数/D 维度一致）
-    ├── add_position_embeddings_api.py             # NPU(Triton) 端 ATK API 执行文件
+    ├── add_position_embeddings_api.py             # NPU 端 ATK API 执行文件
     └── all_add_position_embeddings.json           # ATK 生成的用例配置
 ```
 
@@ -96,7 +96,7 @@ atk case -f add_position_embeddings.yaml -p generate_add_position_embeddings.py
 ### 3.2 精度对比
 
 ```bash
-atk node --backend npu --devices 0 node --backend npu --devices 0 task -c all_add_position_embeddings.json --task accuracy -p add_position_embeddings_api.py
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c all_add_position_embeddings.json --task accuracy -p add_position_embeddings_api.py
 ```
 
 注：如需保存精度对比数据则需要在指令后加 --save_data profile
@@ -104,7 +104,7 @@ atk node --backend npu --devices 0 node --backend npu --devices 0 task -c all_ad
 ### 3.3 性能对比
 
 ```bash
-atk node --backend npu --devices 0 node --backend npu --devices 0 task -c all_add_position_embeddings.json --task performance -p add_position_embeddings_api.py
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c all_add_position_embeddings.json --task performance -p add_position_embeddings_api.py
 ```
 
 注：如需保存性能对比数据则需要在指令后加 --save_data profile

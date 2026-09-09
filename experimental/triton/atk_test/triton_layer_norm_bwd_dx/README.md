@@ -110,7 +110,7 @@ triton_layer_norm_bwd_dx/
     ├── triton_layer_norm_bwd_dx_api.py              # NPU 侧 ATK 自定义 API 封装
     ├── triton_layer_norm_bwd_dx.yaml                # ATK 算子用例参数
     ├── generate_triton_layer_norm_bwd_dx.py         # shape 约束生成脚本
-    └── triton_layer_norm_bwd_dx_performace.json     # 性能测试样例数据
+    └── triton_layer_norm_bwd_dx_performance.json    # 性能测试样例数据
 ```
 
 ---
@@ -121,7 +121,7 @@ triton_layer_norm_bwd_dx/
 
 - `npu_atk_test/` 部署到 NPU 侧；`gpu_atk_test/` 部署到 GPU 侧。
 - 精度测试用例在 NPU 侧生成。
-- 性能测试用例复用 `npu_atk_test/triton_layer_norm_bwd_dx_performace.json`。
+- 性能测试用例复用 `npu_atk_test/triton_layer_norm_bwd_dx_performance.json`。
 - GPU 侧启动 ATK server，NPU 侧作为 ATK 客户端拉起精度 / 性能测试。
 
 ### 生成精度测试数据
@@ -150,6 +150,6 @@ atk node --backend triton --devices 0 node --backend npu --devices 0 \
 
 ```bash
 atk node --backend triton --devices 0 node --backend npu --devices 0 \
-    task -c triton_layer_norm_bwd_dx_performace.json --task performance_device \
+    task -c triton_layer_norm_bwd_dx_performance.json --task performance_device \
     -p triton_layer_norm_bwd_dx_api.py
 ```

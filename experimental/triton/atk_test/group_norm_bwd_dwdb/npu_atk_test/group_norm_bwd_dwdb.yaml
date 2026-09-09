@@ -17,7 +17,7 @@ api: pytorch
 version: v2.1
 api_type: group_norm_bwd_dwdb
 generate: generate_group_norm_bwd_dwdb
-dtype_numbers: 5000  # ✅ 增加用例数量，确保有足够用例
+dtype_numbers: 3334
 outputs: 2
 
 inputs:

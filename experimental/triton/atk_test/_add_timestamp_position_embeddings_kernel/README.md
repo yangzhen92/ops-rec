@@ -112,15 +112,15 @@ atk server --devices 0 --plugin_path /path/to/api文件所在文件夹
 ```
 
 ### 精度测试
- 
+
 ```bash
 atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 \
     task -c all__add_timestamp_position_embeddings_kernel.json --task accuracy \
     -p _add_timestamp_position_embeddings_kernel_api.py
 ```
- 
+
 ### 性能测试
- 
+
 ```bash
 atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 \
     task -c _add_timestamp_position_embeddings_kernel_performce.json --task performance_device \

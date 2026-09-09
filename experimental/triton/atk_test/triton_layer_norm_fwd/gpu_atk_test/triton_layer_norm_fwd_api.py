@@ -86,16 +86,6 @@ class LayerNormFwdApi(BaseApi):
         self._num_warps = None
         self._grid = None
 
-    # @staticmethod
-    # def _make_case_id(x_input: torch.Tensor, eps) -> str:
-    #     """根据输入值构造跨后端一致的 case ID，用于 dump 目录命名。
-
-    #     NPU/GPU 使用相同输入时会生成相同 ID，便于对比两侧结果。
-    #     """
-    #     flat = x_input.cpu().flatten().float()
-    #     avg = flat[:10].mean().item()
-    #     return f"X{avg:.6f}_eps{float(eps):.6g}"
-
     def init_by_input_data(self, input_data: InputDataset):
         """根据 ATK InputDataset 组装 kernel 入参（不计时）。"""
         # ── 1. 读取输入参数 ──

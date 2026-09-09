@@ -43,13 +43,13 @@ delta[b, t] = sum(Out[b, t, d] * do[b, t, d] for d in range(D))
 experimental/triton/atk_test/_bwd_preprocess_do_o_dot/
 ├── README.md
 ├── gpu_atk_test/
-│   ├── _bwd_preprocess_do_o_dot_kernel.py       # GPU(CUDA) 端 Triton kernel
-│   └── _bwd_preprocess_do_o_dot_api.py          # GPU(CUDA) 端 ATK API
+│   ├── _bwd_preprocess_do_o_dot_kernel.py       # GPU 端 Triton kernel
+│   └── _bwd_preprocess_do_o_dot_api.py          # GPU 端 ATK API
 └── npu_atk_test/
-    ├── _bwd_preprocess_do_o_dot_kernel.py       # NPU(Triton) kernel
+    ├── _bwd_preprocess_do_o_dot_kernel.py       # NPU 端 Triton kernel
     ├── _bwd_preprocess_do_o_dot.yaml            # ATK 用例设计
     ├── generate__bwd_preprocess_do_o_dot.py     # ATK 用例生成器
-    ├── _bwd_preprocess_do_o_dot_api.py          # NPU(Triton) 端 ATK API
+    ├── _bwd_preprocess_do_o_dot_api.py          # NPU 端 ATK API
     └── _bwd_preprocess_do_o_dot_performance.json # 150 个 ATK 用例
 ```
 
@@ -114,7 +114,7 @@ atk case -f _bwd_preprocess_do_o_dot.yaml -p generate__bwd_preprocess_do_o_dot.p
 ### 精度对比
 
 ```bash
-atk node --backend npu --devices 0 task -c _bwd_preprocess_do_o_dot_performance.json --task accuracy -p _bwd_preprocess_do_o_dot_api.py
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c _bwd_preprocess_do_o_dot_performance.json --task accuracy -p _bwd_preprocess_do_o_dot_api.py
 ```
 
 如需保存精度数据，在命令末尾增加 `--save_data profile`。
@@ -122,7 +122,7 @@ atk node --backend npu --devices 0 task -c _bwd_preprocess_do_o_dot_performance.
 ### 性能对比
 
 ```bash
-atk node --backend npu --devices 0 task -c _bwd_preprocess_do_o_dot_performance.json --task performance_device -p _bwd_preprocess_do_o_dot_api.py
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c _bwd_preprocess_do_o_dot_performance.json --task performance_device -p _bwd_preprocess_do_o_dot_api.py
 ```
 
 如需保存性能数据，在命令末尾增加 `--save_data profile`。

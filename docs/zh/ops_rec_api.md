@@ -26,9 +26,9 @@ ops-rec 是面向大规模推荐场景的高性能算子库，基于昇腾 CANN 
 
 | 构建变体 | 芯片型号 | 说明 |
 | --- | --- | --- |
-| `atlas_950` | Ascend950* | Atlas 950系列 |
-| `atlas_a3` | Ascend910_93* | Atlas A3 训练/推理系列 |
 | `atlas_a2` | Ascend910B* | Atlas A2 训练/推理系列 |
+| `atlas_a3` | Ascend910_93* | Atlas A3 训练/推理系列 |
+| `atlas_950` | Ascend950* | Atlas 950系列 |
 
 > 运行时 `import ops_rec` 会通过 `acl.get_soc_name()` 自动检测芯片型号，并按 `cmake/soc_ops_config.cmake` 中的白名单加载对应算子实现。不同 SOC 支持的算子集合不同，同一算子在 950 上可能提供 FP8 等额外能力。
 
@@ -52,7 +52,7 @@ ops-rec 是面向大规模推荐场景的高性能算子库，基于昇腾 CANN 
 | [hstu_dense_backward](../../ascendc/attention/hstu_v1/hstu_backward_v1/docs/torch_hstu_dense_backward.md) | `ops_rec.ascendc.attention.hstu_dense_backward(grad, q, k, v, mask=None, attn_bias=None, mask_type=0, max_seq_len=0, silu_scale=0.0)` | HSTU 反向（dense 格式），计算 q/k/v/attn_bias 梯度 | Atlas A2, Atlas A3, Atlas 950 |
 | [hstu_jagged_backward](../../ascendc/attention/hstu_v1/hstu_backward_v1/docs/torch_hstu_jagged_backward.md) | `ops_rec.ascendc.attention.hstu_jagged_backward(grad, q, k, v, mask=None, attn_bias=None, mask_type=0, max_seq_len_q=0, max_seq_len_k=0, silu_scale=0.0, seq_offset_q=None, seq_offset_k=None, ...)` | HSTU 反向（jagged 格式），支持 equal / delta 双 overload | Atlas A2, Atlas A3, Atlas 950 |
 | [hstu_backward_v2](../../ascendc/attention/hstu_v2/docs/torch_hstu_backward_v2.md) | `ops_rec.ascendc.attention.hstu_backward_v2(grad, q, k, v, max_seqlen_q, max_seqlen_k, seq_offset_q, seq_offset_k, rab=None, ...)` | HSTU V2 反向，统一 jagged 格式，支持窗口掩码（causal / no mask） | Atlas 950 |
-| [disentangle_attention](../../ascendc/attention/disentangle_attention/docs/torch_disentangle_attention.md) | `ops_rec.ascendc.attention.disentangle_attention(query_layer, key_layer, value_layer, pos_key_layer, pos_query_layer, relative_pos, attn_mask, pos_attr_type="c2p∣p2c", score_scale=1.0)` | DeBERTa 解耦注意力，支持 c2p / p2c / c2p∣p2c 三种位置编码模式 | Atlas A2, Atlas A3, Atlas 950 |
+| [disentangle_attention](../../ascendc/attention/disentangle_attention/docs/torch_disentangle_attention.md) | `ops_rec.ascendc.attention.disentangle_attention(query_layer, key_layer, value_layer, pos_key_layer, pos_query_layer, relative_pos, attn_mask, pos_attr_type="c2p\|p2c", score_scale=1.0)` | DeBERTa 解耦注意力，支持 c2p / p2c 与双向三种位置编码模式 | Atlas A2, Atlas A3, Atlas 950 |
 | [create_q2k_block_sparse_from_func](../../ascendc/attention/block_sparse_func/docs/torch_create_q2k_block_sparse_from_func.md) | `ops_rec.ascendc.attention.create_q2k_block_sparse_from_func(func_tensor, q_len, kv_len, q_block_size, kv_block_size, check_q_boundary, debug=False)` | Q2K（正向）块稀疏张量生成，输出 mask/full 块数与块索引表 | Atlas 950 |
 | [create_k2q_block_sparse_from_func](../../ascendc/attention/block_sparse_func/docs/torch_create_k2q_block_sparse_from_func.md) | `ops_rec.ascendc.attention.create_k2q_block_sparse_from_func(func_tensor, q_len, kv_len, q_block_size, kv_block_size, debug=False)` | K2Q（反向/transpose）块稀疏张量生成，内部含 kv-range 优化 | Atlas 950 |
 | [compact_no_sync](../../ascendc/attention/block_sparse_func/docs/torch_compact_no_sync.md) | `ops_rec.ascendc.attention.compact_no_sync(mask_block_cnt, full_block_cnt, block_idx)` | 块索引无同步压缩，输出 CSR 风格 offset 与压缩索引缓冲 | Atlas 950 |

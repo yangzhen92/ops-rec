@@ -80,7 +80,7 @@ print(final_dw.shape)  # torch.Size([8])
 
 - `npu_atk_test/` 部署到 NPU 端；`gpu_atk_test/` 部署到 GPU 端。
 - 精度测试用例在 NPU 端生成。
-- 性能测试用例复用 `npu_atk_test/group_norm_bwd_dwdb_performence.json`。
+- 性能测试用例复用 `npu_atk_test/group_norm_bwd_dwdb_performance.json`。
 - GPU 端启动 ATK server，NPU 端作为 ATK 客户端拉起精度/性能测试。
 
 ### 生成测试数据
@@ -109,7 +109,7 @@ atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端�
 
 ```bash
 atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 \
-    task -c group_norm_bwd_dwdb_performence.json --task performance_device \
+    task -c group_norm_bwd_dwdb_performance.json --task performance_device \
     -p group_norm_bwd_dwdb_api.py
 ```
 

@@ -27,11 +27,8 @@ TILING_DATA_FIELD_DEF(int64_t, maxSeqLen);
 TILING_DATA_FIELD_DEF(int64_t, dataDim);
 TILING_DATA_FIELD_DEF(int64_t, left);
 TILING_DATA_FIELD_DEF(int64_t, handleTotalCount);
-// 单条data数据bytes数为： unAlignBytes + alignBytes
-TILING_DATA_FIELD_DEF(uint32_t, alignBytes);            // 单条data数据对齐32bytes部分的字节
-TILING_DATA_FIELD_DEF(uint32_t, unAlignBytes);          // 单条data数据非对齐32bytes部分的字节
-TILING_DATA_FIELD_DEF(uint32_t, alignNumberCount);      // 单条data数据对齐32bytes部分有多少个数值
-TILING_DATA_FIELD_DEF(uint32_t, overAlignNumberCount);  // 单条data数据对齐32bytes向上取整后的数值个数
+TILING_DATA_FIELD_DEF(uint32_t, rowsPerTile);    // 单个 UB tile 容纳的行数（DataCopyPad blockCount 上限内）
+TILING_DATA_FIELD_DEF(uint32_t, rowAlignCount);  // 单行按 32B 对齐后的元素个数，即 UB 内的行 stride
 
 END_TILING_DATA_DEF;
 

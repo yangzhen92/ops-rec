@@ -57,7 +57,7 @@ import triton
 from _rms_norm_bwd_dwdb_kernel import _rms_norm_bwd_dwdb_kernel
 
 N, D = 1024, 128
-device = "cuda"
+device = "npu"
 dw = torch.randn((N, D), dtype=torch.bfloat16, device=device)
 final_dw = torch.empty((D,), dtype=dw.dtype, device=device)
 
@@ -76,16 +76,15 @@ print(final_dw.shape)  # torch.Size([128])
 
 ## ATK 测试
 
-ATK 脚本目录：`experimental/triton/atk_test/_rms_norm_bwd_dwdb/npu_atk_test/`（相对仓库根目录），以下命令均在该目录下执行：
+测试在 NPU / GPU 两端协同进行：
+ 
+- `npu_atk_test/` 部署到 NPU 端；`gpu_atk_test/` 部署到 GPU 端。
+- GPU 端启动 ATK server，NPU 端作为 ATK 客户端拉起精度/性能测试。
+
+### 远端 GPU 服务器起监听命令
 
 ```bash
-cd experimental/triton/atk_test/_rms_norm_bwd_dwdb/npu_atk_test
-```
-
-### 远端 NPU 服务器起监听命令
-
-```bash
-atk server --devices 0 --plugin_path _rms_norm_bwd_dwdb_api.py
+atk server --devices 0 --plugin_path /path/to/api文件所在文件夹
 ```
 
 ### 3.1 生成测试数据
@@ -107,7 +106,7 @@ atk node --backend npu --devices 0 node --backend npu --devices 0 task -c all__r
 ### 3.3 性能对比
 
 ```bash
-atk node --backend npu --devices 0 node --backend npu --devices 0 task -c all__rms_norm_bwd_dwdb.json --task performance -p _rms_norm_bwd_dwdb_api.py
+atk node --backend npu --devices 0 node --backend npu --devices 0 task -c all__rms_norm_bwd_dwdb.json --task performance_device -p _rms_norm_bwd_dwdb_api.py
 ```
 
 注：如需保存性能对比数据，需要在命令后加 `--save_data profile`。

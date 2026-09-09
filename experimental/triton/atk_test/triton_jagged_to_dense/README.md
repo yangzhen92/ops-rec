@@ -8,10 +8,10 @@
 
 ## 算子功能
 
-`triton_jagged_to_dense` 用于将 **jagged tensor（不规则张量）** 转换为 **dense tensor（稠密张量）**，并支持在写回时与一个 dense tensor 做元素级算术融合（`add` 或 `mul`）。
+`triton_jagged_to_dense` 用于将 **jagged tensor（不规则张量）** 转换为 **dense tensor（稠密张量）**，并支持在写回时与一个 dense tensor 做元素级算术融合（`add` 或 `mul`）
 
 - 通过 `jagged_max_lengths` 控制每一维的目标尺寸，不足部分以 `padding_value` 填充；越界部分直接截断。
-- 可选地将 `jagged` 与同形状的 `operation_dense` 做元素级融合，结果直接写回 `output_dense`，无需中间临时张量。   
+- 可选地将 `jagged` 与同形状的 `operation_dense` 做元素级融合，结果直接写回 `output_dense`，无需中间临时张量。
 
 ---
 
@@ -91,14 +91,14 @@ print("output_dense:", kernel_out.tolist())
 triton_jagged_to_dense/
 ├── README.md
 ├── gpu_atk_test/
-│   ├── triton_jagged_to_dense.py              # 原版算子 kernel 实现
-│   └── triton_jagged_to_dense_api.py          # GPU 端 ATK 自定义 API 封装
+│   ├── triton_jagged_to_dense.py                # 原版算子 kernel 实现
+│   └── triton_jagged_to_dense_api.py            # GPU 端 ATK 自定义 API 封装
 └── npu_atk_test/
-    ├── triton_jagged_to_dense.py              # NPU 适配优化后算子 kernel 实现
-    ├── triton_jagged_to_dense_api.py          # NPU 端 ATK 自定义 API 封装
-    ├── triton_jagged_to_dense.yaml            # ATK 算子用例参数
-    ├── generate_triton_jagged_to_dense.py     # 限制参数生成脚本
-    └── triton_jagged_to_dense_performce.json  # 性能测试样例数据
+    ├── triton_jagged_to_dense.py                # NPU 适配优化后算子 kernel 实现
+    ├── triton_jagged_to_dense_api.py            # NPU 端 ATK 自定义 API 封装
+    ├── triton_jagged_to_dense.yaml              # ATK 算子用例参数
+    ├── generate_triton_jagged_to_dense.py       # 限制参数生成脚本
+    └── triton_jagged_to_dense_performance.json  # 性能测试样例数据
 ```
 
 ---
@@ -109,7 +109,7 @@ triton_jagged_to_dense/
 
 - `npu_atk_test/` 部署到 NPU 端；`gpu_atk_test/` 部署到 GPU 端。
 - 精度测试用例在 NPU 端生成。
-- 性能测试用例复用 `npu_atk_test/triton_jagged_to_dense_performce.json`。
+- 性能测试用例复用 `npu_atk_test/triton_jagged_to_dense_performance.json`。
 - GPU 端启动 ATK server，NPU 端作为 ATK 客户端拉起精度/性能测试。
 
 ### 生成精度测试数据
@@ -129,7 +129,7 @@ atk server --devices 0 --plugin_path /path/to/api文件所在文件夹
 ### 精度测试
 
 ```bash
-atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 \
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端监听端口} --devices 0 \
     task -c all_triton_jagged_to_dense.json --task accuracy \
     -p triton_jagged_to_dense_api.py
 ```
@@ -137,7 +137,7 @@ atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端�
 ### 性能测试
 
 ```bash
-atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 \
-    task -c triton_jagged_to_dense_performce.json --task performance_device \
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端监听端口} --devices 0 \
+    task -c triton_jagged_to_dense_performance.json --task performance_device \
     -p triton_jagged_to_dense_api.py
 ```

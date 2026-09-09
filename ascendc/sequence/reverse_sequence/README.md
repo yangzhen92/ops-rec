@@ -28,12 +28,12 @@ output[b, i, :] = input[b, i, :]                    (i >= seq_len[b])
 
 ## 算子实现原理
 
-算子采用 AscendC 进行开发，将 `batch_size * max_seq_len` 个序列行均摊到各 AI Vector 核处理（余数行由前 `left` 个核各多承担 1 行）。每个核按行循环执行以下步骤：
+算子采用 AscendC 进行开发，将 `batch_size * max_seq_len` 个序列行均摊到 AI Vector 核处理（启动核数按 `min(AIV核数, 总行数)` 裁剪，余数行由前 `left` 个核各多承担 1 行）。每个核对自己覆盖的连续行区间按 batch 分段处理：
 
-1. **CopyIn**：当前行数据从 GM 搬入 UB——32B 对齐部分走 `DataCopy`，非对齐尾部走 `DataCopyPad` 补齐；
-2. **行内转存**：UB 内将数据从输入队列拷贝到输出队列（按 32B 对齐后的元素数）；
-3. **计算归属**：由行号计算所属 batch（`row / max_seq_len`），读取该 batch 的 `seq_len`（超出 `max_seq_len` 时截断）；
-4. **条件 CopyOut**：若行号 < `seq_len`，将数据写回逆序目标行（`batch * max_seq_len + seq_len - 1 - row`）；否则不写入，该行由调用侧预置的 input 拷贝保留原值。
+1. **seq_lengths 缓存**：本核覆盖的 batch 区间的 seq_lengths 经 `DataCopyPad` 一次搬入 UB（batch 数超 2048 时分 chunk 多次），之后按 batch 直接读 UB，避免逐行标量读 GM；
+2. **有效行筛选**：读取本 batch 的 `seq_len`（超出 `max_seq_len` 时截断），仅行号 < `seq_len` 的行需要搬运，其余行整段跳过、不做任何读写，由调用侧预置的 input 拷贝保留原值；
+3. **批量 CopyIn**：有效行在 GM 上连续，按 tile（至多 `rowsPerTile` 行）以 `DataCopyPad` blockCount 模式一次搬入 UB，UB 内每行按 32B 对齐 stride 存放；
+4. **逐行 CopyOut**：tile 内每行经 `DataCopyPad` 写到逆序目标行（`batch * max_seq_len + seq_len - 1 - 行号`），GM 侧非对齐地址由 `DataCopyPad` 自动处理。
 
 ## 参数说明
 

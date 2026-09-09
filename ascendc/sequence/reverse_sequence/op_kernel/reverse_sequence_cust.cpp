@@ -20,6 +20,9 @@ using namespace AscendC;
 
 namespace ReverseSequence_Kernel {
 
+// seq_lengths 分 chunk 缓存进 UB，单个 chunk 最多缓存的 batch 个数
+constexpr int64_t SEQ_CACHE_CHUNK = 2048;
+
 struct ReverseSequenceArgs {
     GM_ADDR input;
     GM_ADDR seqLengths;
@@ -32,10 +35,8 @@ struct ReverseSequenceArgs {
     int64_t left;
     int64_t handleTotalCount;
 
-    uint32_t alignLen;
-    uint32_t unAlignLen;
-    uint32_t alignNumberCount;
-    uint32_t overAlignNumberCount;
+    uint32_t rowsPerTile;
+    uint32_t rowAlignCount;
 };
 
 template <typename dType, typename tType>
@@ -47,13 +48,16 @@ public:
     {
         this->args = &args;
 
-        thisId = GetBlockIdx();
+        // 行区间均摊：前 left 个核各多承担 1 行
+        int64_t thisId = GetBlockIdx();
+        int64_t rowCount = args.handleTotalCount;
         if (thisId < args.left) {
-            args.handleTotalCount += 1;
-            offsetStartPos = thisId * args.handleTotalCount;
+            rowCount += 1;
+            rowStart = thisId * rowCount;
         } else {
-            offsetStartPos = (args.handleTotalCount + 1) * args.left + (thisId - args.left) * args.handleTotalCount;
+            rowStart = (args.handleTotalCount + 1) * args.left + (thisId - args.left) * rowCount;
         }
+        rowEnd = rowStart + rowCount;
 
         inputGM.SetGlobalBuffer(reinterpret_cast<__gm__ dType*>(args.input),
                                 args.batchSize * args.maxSeqLen * args.dataDim);
@@ -61,77 +65,133 @@ public:
         outputGM.SetGlobalBuffer(reinterpret_cast<__gm__ dType*>(args.output),
                                  args.batchSize * args.maxSeqLen * args.dataDim);
 
-        // UB buffer 直接按 32B 对齐后的单行字节数申请，与 UB->UB 拷贝长度一致，
-        // 不依赖分配器的对齐取整行为
-        pipe.InitBuffer(inQueue, 1, args.overAlignNumberCount * sizeof(dType));
-        pipe.InitBuffer(outQueue, 1, args.overAlignNumberCount * sizeof(dType));
+        // 行 tile buffer：rowsPerTile 行，UB 内每行按 32B 对齐后的 stride（rowAlignCount 个元素）存放
+        pipe.InitBuffer(rowBuf, static_cast<uint32_t>(args.rowsPerTile * args.rowAlignCount * sizeof(dType)));
+        pipe.InitBuffer(seqBuf, static_cast<uint32_t>(SEQ_CACHE_CHUNK * sizeof(tType)));
+
+        eventMte2Mte3 = pipe.FetchEventID(HardEvent::MTE2_MTE3);
+        eventMte3Mte2 = pipe.FetchEventID(HardEvent::MTE3_MTE2);
+        eventMte2S = pipe.FetchEventID(HardEvent::MTE2_S);
     }
 
     __aicore__ inline void Compute()
     {
-        for (int i = 0; i < args->handleTotalCount; ++i) {
-            int64_t currentDataIndex = offsetStartPos + i;
-            LocalTensor<dType> localIn = inQueue.AllocTensor<dType>();
-            CpGm2Local(localIn, inputGM[currentDataIndex * args->dataDim], args->dataDim);
-            inQueue.EnQue(localIn);
+        if (rowStart >= rowEnd || args->maxSeqLen <= 0) {
+            return;
+        }
+        const int64_t msl = args->maxSeqLen;
+        // 本核行区间覆盖的 batch 区间，仅在入口处做两次除法，行内全部用递增计数
+        const int64_t batchBegin = rowStart / msl;
+        const int64_t batchEnd = (rowEnd - 1) / msl;
 
-            LocalTensor<dType> localOut = outQueue.AllocTensor<dType>();
-            LocalTensor<dType> localInCopy = inQueue.DeQue<dType>();
-            DataCopy(localOut, localInCopy, args->overAlignNumberCount);
-            outQueue.EnQue(localOut);
-            LocalTensor<dType> localOutCopy = outQueue.DeQue<dType>();
-
-            int64_t bsIndex = currentDataIndex / args->maxSeqLen;
-            int64_t seqLenValue = seqLengthsGM.GetValue(bsIndex);
-            // 防御性截断：seq_len 超过 max_seq_len 时按 max_seq_len 处理，避免越界写 GM
-            if (seqLenValue > args->maxSeqLen) {
-                seqLenValue = args->maxSeqLen;
+        for (int64_t chunkBegin = batchBegin; chunkBegin <= batchEnd; chunkBegin += SEQ_CACHE_CHUNK) {
+            int64_t batchCount = batchEnd - chunkBegin + 1;
+            if (batchCount > SEQ_CACHE_CHUNK) {
+                batchCount = SEQ_CACHE_CHUNK;
             }
-            int64_t maxSeqLenIndex = currentDataIndex % args->maxSeqLen;
-            if (maxSeqLenIndex < seqLenValue) {
-                int64_t maxSeqLenReverseIndex = seqLenValue - maxSeqLenIndex - 1;
-                int64_t globalTargetIndex = bsIndex * args->maxSeqLen + maxSeqLenReverseIndex;
-                CpLocal2Gm(outputGM[globalTargetIndex * args->dataDim], localOutCopy, args->dataDim);
+            LoadSeqLengths(chunkBegin, batchCount);
+            for (int64_t b = chunkBegin; b < chunkBegin + batchCount; ++b) {
+                ProcessBatch(b, seqBuf.Get<tType>().GetValue(b - chunkBegin));
             }
-            inQueue.FreeTensor(localInCopy);
-            outQueue.FreeTensor(localOutCopy);
         }
     }
 
 private:
-    template <typename T>
-    __aicore__ inline void CpGm2Local(const LocalTensor<T>& lt, const GlobalTensor<T>& gt, int64_t len)
+    // 将 [batchBegin, batchBegin + batchCount) 的 seq_lengths 一次搬入 UB，
+    // 替代逐行 GlobalTensor::GetValue 标量读 GM（效率极低，生产代码禁用）
+    __aicore__ inline void LoadSeqLengths(int64_t batchBegin, int64_t batchCount)
     {
-        DataCopy(lt, gt, args->alignNumberCount);
-        if (args->unAlignLen != 0) {
-            // DataCopyExtParams.blockLen 单位为字节，unAlignLen 即未对齐尾部的字节数
-            const DataCopyExtParams dataCopyExtParams{1, static_cast<uint32_t>(args->unAlignLen), 0, 0, 0};
-            const DataCopyPadExtParams<T> dataCopyPadExtParams{false, 0, 0, 0};
-            DataCopyPad(lt[args->alignNumberCount], gt[args->alignNumberCount], dataCopyExtParams,
-                        dataCopyPadExtParams);
+        LocalTensor<tType> seqLocal = seqBuf.Get<tType>();
+        DataCopyExtParams params;
+        params.blockCount = 1;
+        params.blockLen = static_cast<uint32_t>(batchCount * sizeof(tType));
+        params.srcStride = 0;
+        params.dstStride = 0;
+        params.rsv = 0;
+        DataCopyPadExtParams<tType> padParams;
+        padParams.isPad = false;
+        padParams.leftPadding = 0;
+        padParams.rightPadding = 0;
+        padParams.paddingValue = 0;
+        DataCopyPad(seqLocal, seqLengthsGM[batchBegin], params, padParams);
+        SetFlag<HardEvent::MTE2_S>(eventMte2S);
+        WaitFlag<HardEvent::MTE2_S>(eventMte2S);
+    }
+
+    __aicore__ inline void ProcessBatch(int64_t batchIdx, int64_t seqLen)
+    {
+        const int64_t msl = args->maxSeqLen;
+        const int64_t dataDim = args->dataDim;
+        // 防御性截断：seq_len 超过 max_seq_len 时按 max_seq_len 处理，避免越界写 GM
+        if (seqLen > msl) {
+            seqLen = msl;
+        }
+        const int64_t batchRowBase = batchIdx * msl;
+        // 本核需搬运的行区间：行号属于本核行范围且 < seqLen。
+        // seqLen<=0 或区间不相交时为空，整段跳过（这些行保持 output 原值，不做任何搬运）
+        int64_t sLo = rowStart > batchRowBase ? rowStart : batchRowBase;
+        int64_t sHi = batchRowBase + seqLen;
+        if (sHi > rowEnd) {
+            sHi = rowEnd;
+        }
+        if (sLo >= sHi) {
+            return;
+        }
+
+        const uint32_t rowBytes = static_cast<uint32_t>(dataDim * sizeof(dType));
+        LocalTensor<dType> rowLocal = rowBuf.Get<dType>();
+        for (int64_t tileBegin = sLo; tileBegin < sHi; tileBegin += args->rowsPerTile) {
+            const int64_t remain = sHi - tileBegin;
+            const uint32_t tileRows =
+                remain < static_cast<int64_t>(args->rowsPerTile) ? static_cast<uint32_t>(remain) : args->rowsPerTile;
+            // 有效行在 GM 上连续，blockCount 模式一次搬入 tileRows 行；
+            // UB 内每行按 32B 对齐 stride 存放，保证后续逐行写出的 UB 起址 32B 对齐
+            DataCopyExtParams inParams;
+            inParams.blockCount = static_cast<uint16_t>(tileRows);
+            inParams.blockLen = rowBytes;
+            inParams.srcStride = 0;
+            inParams.dstStride = 0;
+            inParams.rsv = 0;
+            DataCopyPadExtParams<dType> inPadParams;
+            inPadParams.isPad = false;
+            inPadParams.leftPadding = 0;
+            inPadParams.rightPadding = static_cast<uint8_t>(args->rowAlignCount - dataDim);
+            inPadParams.paddingValue = 0;
+            DataCopyPad(rowLocal, inputGM[tileBegin * dataDim], inParams, inPadParams);
+            SetFlag<HardEvent::MTE2_MTE3>(eventMte2Mte3);
+            WaitFlag<HardEvent::MTE2_MTE3>(eventMte2Mte3);
+
+            for (uint32_t r = 0; r < tileRows; ++r) {
+                const int64_t seqIdx = tileBegin + r - batchRowBase;
+                const int64_t revRow = batchRowBase + seqLen - 1 - seqIdx;
+                DataCopyExtParams outParams;
+                outParams.blockCount = 1;
+                outParams.blockLen = rowBytes;
+                outParams.srcStride = 0;
+                outParams.dstStride = 0;
+                outParams.rsv = 0;
+                DataCopyPad(outputGM[revRow * dataDim], rowLocal[r * args->rowAlignCount], outParams);
+            }
+            // 单 buffer：本 tile 写出完成后，下一 tile 的搬入才允许覆盖 UB
+            SetFlag<HardEvent::MTE3_MTE2>(eventMte3Mte2);
+            WaitFlag<HardEvent::MTE3_MTE2>(eventMte3Mte2);
         }
     }
 
-    template <typename T>
-    __aicore__ inline void CpLocal2Gm(const GlobalTensor<T>& gt, const LocalTensor<T>& lt, int64_t len)
-    {
-        DataCopy(gt, lt, args->alignNumberCount);
-        if (args->unAlignLen != 0) {
-            const DataCopyExtParams dataCopyExtParams{1, static_cast<uint32_t>(args->unAlignLen), 0, 0, 0};
-            DataCopyPad(gt[args->alignNumberCount], lt[args->alignNumberCount], dataCopyExtParams);
-        }
-    }
-
-    int64_t thisId;
-    int64_t offsetStartPos;
+    int64_t rowStart;
+    int64_t rowEnd;
     ReverseSequenceArgs* args;
 
     GlobalTensor<dType> inputGM;
     GlobalTensor<tType> seqLengthsGM;
     GlobalTensor<dType> outputGM;
 
-    TQue<QuePosition::VECIN, 1> inQueue;
-    TQue<QuePosition::VECOUT, 1> outQueue;
+    TBuf<TPosition::VECCALC> rowBuf;
+    TBuf<TPosition::VECCALC> seqBuf;
+
+    event_t eventMte2Mte3;
+    event_t eventMte3Mte2;
+    event_t eventMte2S;
 };
 }  // namespace ReverseSequence_Kernel
 
@@ -149,10 +209,8 @@ extern "C" __global__ __aicore__ void reverse_sequence_cust(GM_ADDR input, GM_AD
                                                      tiling_data.dataDim,
                                                      tiling_data.left,
                                                      tiling_data.handleTotalCount,
-                                                     tiling_data.alignBytes,
-                                                     tiling_data.unAlignBytes,
-                                                     tiling_data.alignNumberCount,
-                                                     tiling_data.overAlignNumberCount};
+                                                     tiling_data.rowsPerTile,
+                                                     tiling_data.rowAlignCount};
 
     TPipe pipe;
     ReverseSequence_Kernel::ReverseSequence<DTYPE_INPUT, DTYPE_SEQ_LENGTHS> kernel;

@@ -133,80 +133,123 @@ __simt_vf__ __aicore__ LAUNCH_BOUND(BLOCK_THREAD_NUM_256) inline void create_k2q
             // 加载 func 值并计算状态
             // =====================================================================
             uint32_t local_state_mask = 0;
-            token_active_mask_k2q = 0;
+            if constexpr (USE_WARP_LEVEL_K2Q) {
+                token_active_mask_k2q = 0;
 
-            // 加载 func 值到寄存器
+                // 加载 func 值到寄存器
 #pragma unroll
-            for (int32_t t = 0; t < TOKENS_PER_THREAD_K2Q; t++) {
-                int32_t local_q_idx;
-                if constexpr (USE_WARP_LEVEL_K2Q) {
-                    local_q_idx = lane_id * TOKENS_PER_THREAD_K2Q + t;
-                } else {
-                    local_q_idx = tid;
-                }
-                const int32_t q_idx = q_start + local_q_idx;
+                for (int32_t t = 0; t < TOKENS_PER_THREAD_K2Q; t++) {
+                    const int32_t local_q_idx = lane_id * TOKENS_PER_THREAD_K2Q + t;
+                    const int32_t q_idx = q_start + local_q_idx;
 
-                if (local_q_idx < num_active_tokens) {
-                    token_active_mask_k2q |= (1u << t);
-                    const __gm__ int32_t* my_func_ptr = base_func_ptr + q_idx * stride_q;
-                    if constexpr (N_FUNC > 0) {
-                        if (stride_f == 1) {
-                            constexpr bool NUM_4 = N_FUNC % 4 == 0;
-                            if constexpr (NUM_4) {
-                                constexpr int32_t NUM_PAIRS = N_FUNC / 4;
+                    if (local_q_idx < num_active_tokens) {
+                        token_active_mask_k2q |= (1u << t);
+                        const __gm__ int32_t* my_func_ptr = base_func_ptr + q_idx * stride_q;
+                        if constexpr (N_FUNC > 0) {
+                            if (stride_f == 1) {
+                                constexpr bool NUM_4 = N_FUNC % 4 == 0;
+                                if constexpr (NUM_4) {
+                                    constexpr int32_t NUM_PAIRS = N_FUNC / 4;
 #pragma unroll
-                                for (int32_t i = 0; i < NUM_PAIRS; i++) {
-                                    const __gm__ int4* func_ptr2 =
-                                        reinterpret_cast<const __gm__ int4*>(my_func_ptr + 4 * i);
-                                    func_regs_k2q[t][4 * i] = (*func_ptr2).x;
-                                    func_regs_k2q[t][4 * i + 1] = (*func_ptr2).y;
-                                    func_regs_k2q[t][4 * i + 2] = (*func_ptr2).z;
-                                    func_regs_k2q[t][4 * i + 3] = (*func_ptr2).w;
+                                    for (int32_t i = 0; i < NUM_PAIRS; i++) {
+                                        const __gm__ int4* func_ptr2 =
+                                            reinterpret_cast<const __gm__ int4*>(my_func_ptr + 4 * i);
+                                        func_regs_k2q[t][4 * i] = (*func_ptr2).x;
+                                        func_regs_k2q[t][4 * i + 1] = (*func_ptr2).y;
+                                        func_regs_k2q[t][4 * i + 2] = (*func_ptr2).z;
+                                        func_regs_k2q[t][4 * i + 3] = (*func_ptr2).w;
+                                    }
+                                } else {
+                                    constexpr int32_t NUM_PAIRS = N_FUNC / 2;
+#pragma unroll
+                                    for (int32_t i = 0; i < NUM_PAIRS; i++) {
+                                        const __gm__ int2* func_ptr2 =
+                                            reinterpret_cast<const __gm__ int2*>(my_func_ptr + 2 * i);
+                                        func_regs_k2q[t][2 * i] = (*func_ptr2).x;
+                                        func_regs_k2q[t][2 * i + 1] = (*func_ptr2).y;
+                                    }
                                 }
                             } else {
-                                constexpr int32_t NUM_PAIRS = N_FUNC / 2;
 #pragma unroll
-                                for (int32_t i = 0; i < NUM_PAIRS; i++) {
-                                    const __gm__ int2* func_ptr2 =
-                                        reinterpret_cast<const __gm__ int2*>(my_func_ptr + 2 * i);
-                                    func_regs_k2q[t][2 * i] = (*func_ptr2).x;
-                                    func_regs_k2q[t][2 * i + 1] = (*func_ptr2).y;
+                                for (int32_t f = 0; f < N_FUNC; f++) {
+                                    func_regs_k2q[t][f] = my_func_ptr[f * stride_f];
                                 }
                             }
-                        } else {
-#pragma unroll
-                            for (int32_t f = 0; f < N_FUNC; f++) {
-                                func_regs_k2q[t][f] = my_func_ptr[f * stride_f];
-                            }
                         }
                     }
                 }
-            }
 
-            // 计算每个 token 的状态
+                // 计算每个 token 的状态
 #pragma unroll
-            for (int32_t t = 0; t < TOKENS_PER_THREAD_K2Q; t++) {
-                int32_t token_state;
-                if (token_active_mask_k2q & (1 << t)) {
-                    if constexpr (N_FUNC > 0) {
-                        token_state = block_sparse_func::get_token_kv_block_state_from_regs<N_FUNC / 2>(
-                            func_regs_k2q[t], kv_start, kv_end);
-                    } else {
-                        int32_t local_q_idx;
-                        if constexpr (USE_WARP_LEVEL_K2Q) {
-                            local_q_idx = lane_id * TOKENS_PER_THREAD_K2Q + t;
+                for (int32_t t = 0; t < TOKENS_PER_THREAD_K2Q; t++) {
+                    int32_t token_state;
+                    if (token_active_mask_k2q & (1 << t)) {
+                        if constexpr (N_FUNC > 0) {
+                            token_state = block_sparse_func::get_token_kv_block_state_from_regs<N_FUNC / 2>(
+                                func_regs_k2q[t], kv_start, kv_end);
                         } else {
-                            local_q_idx = tid;
+                            const int32_t local_q_idx = lane_id * TOKENS_PER_THREAD_K2Q + t;
+                            const __gm__ int32_t* ptr = base_func_ptr + (q_start + local_q_idx) * stride_q;
+                            token_state = block_sparse_func::get_token_kv_block_state<N_FUNC>(ptr, n_func, stride_f,
+                                                                                              kv_start, kv_end);
                         }
-                        const __gm__ int32_t* ptr = base_func_ptr + (q_start + local_q_idx) * stride_q;
-                        token_state = block_sparse_func::get_token_kv_block_state<N_FUNC>(ptr, n_func, stride_f,
-                                                                                          kv_start, kv_end);
+                    } else {
+                        // K2Q 始终进行 q_boundary 检查：inactive（padding）token 贡献 STATE_EMPTY。
+                        token_state = STATE_EMPTY;
                     }
-                } else {
-                    // K2Q 始终进行 q_boundary 检查：inactive（padding）token 贡献 STATE_EMPTY。
-                    token_state = STATE_EMPTY;
+                    local_state_mask |= (1u << token_state);
                 }
-                local_state_mask |= (1u << token_state);
+            } else {
+                // block 级：块线程数 = min(qBlockSize, 256)，按 block_threads 步长遍历所负责的 q_token
+                const int32_t block_threads = AscendC::Simt::GetThreadNum();
+                const int32_t tpt = DIVUP(num_active_tokens, block_threads);
+                for (int32_t tt = 0; tt < tpt; tt++) {
+                    const int32_t local_q_idx = tt * block_threads + tid;
+                    int32_t token_state;
+                    if (local_q_idx < num_active_tokens) {
+                        const __gm__ int32_t* my_func_ptr = base_func_ptr + (q_start + local_q_idx) * stride_q;
+                        if constexpr (N_FUNC > 0) {
+                            if (stride_f == 1) {
+                                constexpr bool NUM_4 = N_FUNC % 4 == 0;
+                                if constexpr (NUM_4) {
+                                    constexpr int32_t NUM_PAIRS = N_FUNC / 4;
+#pragma unroll
+                                    for (int32_t i = 0; i < NUM_PAIRS; i++) {
+                                        const __gm__ int4* func_ptr2 =
+                                            reinterpret_cast<const __gm__ int4*>(my_func_ptr + 4 * i);
+                                        func_regs_k2q[0][4 * i] = (*func_ptr2).x;
+                                        func_regs_k2q[0][4 * i + 1] = (*func_ptr2).y;
+                                        func_regs_k2q[0][4 * i + 2] = (*func_ptr2).z;
+                                        func_regs_k2q[0][4 * i + 3] = (*func_ptr2).w;
+                                    }
+                                } else {
+                                    constexpr int32_t NUM_PAIRS = N_FUNC / 2;
+#pragma unroll
+                                    for (int32_t i = 0; i < NUM_PAIRS; i++) {
+                                        const __gm__ int2* func_ptr2 =
+                                            reinterpret_cast<const __gm__ int2*>(my_func_ptr + 2 * i);
+                                        func_regs_k2q[0][2 * i] = (*func_ptr2).x;
+                                        func_regs_k2q[0][2 * i + 1] = (*func_ptr2).y;
+                                    }
+                                }
+                            } else {
+#pragma unroll
+                                for (int32_t f = 0; f < N_FUNC; f++) {
+                                    func_regs_k2q[0][f] = my_func_ptr[f * stride_f];
+                                }
+                            }
+                            token_state = block_sparse_func::get_token_kv_block_state_from_regs<N_FUNC / 2>(
+                                func_regs_k2q[0], kv_start, kv_end);
+                        } else {
+                            token_state = block_sparse_func::get_token_kv_block_state<N_FUNC>(
+                                my_func_ptr, n_func, stride_f, kv_start, kv_end);
+                        }
+                    } else {
+                        // K2Q 始终进行 q_boundary 检查：inactive（padding）token 贡献 STATE_EMPTY。
+                        token_state = STATE_EMPTY;
+                    }
+                    local_state_mask |= (1u << token_state);
+                }
             }
 
             // =====================================================================
@@ -336,19 +379,27 @@ extern "C" __global__ __aicore__ void create_k2q_block_sparse_from_func(GM_ADDR 
 
 #ifdef ENABLE_WARP_LEVEL_OPT
     int32_t blockSize = WARP_LEVEL_NUM * WARP_SIZE_CONST;
-    if (qBlockSize == 128 && kvBlockSize == 128) {
-        DISPATCH_K2Q_BY_NFUNC(nFunc, 128, 128, blockSize);
-    } else if (qBlockSize == 256 && kvBlockSize == 128) {
-        DISPATCH_K2Q_BY_NFUNC(nFunc, 256, 128, blockSize);
-    } else if (qBlockSize == 64 && kvBlockSize == 64) {
+    if (qBlockSize == 64 && kvBlockSize == 64) {
         DISPATCH_K2Q_BY_NFUNC(nFunc, 64, 64, blockSize);
     } else if (qBlockSize == 64 && kvBlockSize == 128) {
         DISPATCH_K2Q_BY_NFUNC(nFunc, 64, 128, blockSize);
+    } else if (qBlockSize == 64 && kvBlockSize == 256) {
+        DISPATCH_K2Q_BY_NFUNC(nFunc, 64, 256, blockSize);
     } else if (qBlockSize == 128 && kvBlockSize == 64) {
         DISPATCH_K2Q_BY_NFUNC(nFunc, 128, 64, blockSize);
+    } else if (qBlockSize == 128 && kvBlockSize == 128) {
+        DISPATCH_K2Q_BY_NFUNC(nFunc, 128, 128, blockSize);
+    } else if (qBlockSize == 128 && kvBlockSize == 256) {
+        DISPATCH_K2Q_BY_NFUNC(nFunc, 128, 256, blockSize);
+    } else if (qBlockSize == 256 && kvBlockSize == 64) {
+        DISPATCH_K2Q_BY_NFUNC(nFunc, 256, 64, blockSize);
+    } else if (qBlockSize == 256 && kvBlockSize == 128) {
+        DISPATCH_K2Q_BY_NFUNC(nFunc, 256, 128, blockSize);
+    } else if (qBlockSize == 256 && kvBlockSize == 256) {
+        DISPATCH_K2Q_BY_NFUNC(nFunc, 256, 256, blockSize);
     } else {
-        blockSize = qBlockSize;
-        DISPATCH_K2Q_BY_NFUNC(nFunc, 0, 0, qBlockSize);
+        blockSize = min(qBlockSize, static_cast<int32_t>(BLOCK_THREAD_NUM_256));
+        DISPATCH_K2Q_BY_NFUNC(nFunc, 0, 0, blockSize);
     }
 #else
     int32_t blockSize = qBlockSize;
@@ -359,6 +410,7 @@ extern "C" __global__ __aicore__ void create_k2q_block_sparse_from_func(GM_ADDR 
     } else if (qBlockSize == 64 && kvBlockSize == 64) {
         DISPATCH_K2Q_BY_NFUNC(nFunc, 64, 64, blockSize);
     } else {
+        blockSize = min(qBlockSize, static_cast<int32_t>(BLOCK_THREAD_NUM_256));
         DISPATCH_K2Q_BY_NFUNC(nFunc, 0, 0, blockSize);
     }
 #endif  // ENABLE_WARP_LEVEL_OPT

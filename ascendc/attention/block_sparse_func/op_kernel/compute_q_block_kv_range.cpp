@@ -48,7 +48,6 @@ __simt_vf__ __aicore__ LAUNCH_BOUND(BLOCK_THREAD_NUM_256) inline void compute_q_
 {
     const int32_t total_blocks = num_q_blocks * H * B;
     const int32_t Q_BLOCK_SIZE = (Q_BLOCK_SIZE_T > 0) ? Q_BLOCK_SIZE_T : Q_BLOCK_SIZE_RT;
-    constexpr int32_t TOKENS_PER_THREAD = (Q_BLOCK_SIZE_T > 0) ? (Q_BLOCK_SIZE_T / WARP_SIZE_CONST) : 1;
 
     const int32_t tid = AscendC::Simt::GetThreadIdx();
     const int32_t warp_id = tid / WARP_SIZE_CONST;  // [0..WARP_LEVEL_NUM-1]
@@ -71,13 +70,28 @@ __simt_vf__ __aicore__ LAUNCH_BOUND(BLOCK_THREAD_NUM_256) inline void compute_q_
         int32_t thread_min_kv = INT_MAX;
         int32_t thread_max_kv = 0;
 
+        if constexpr (Q_BLOCK_SIZE_T > 0) {
+            // 编译期块大小：保留 unroll 展开（hot path 不变）TOKENS_PER_THREAD
+            constexpr int32_t TPT = Q_BLOCK_SIZE_T / WARP_SIZE_CONST;
 #pragma unroll
-        for (int32_t t = 0; t < TOKENS_PER_THREAD; t++) {
-            const int32_t local_q_idx = lane_id * TOKENS_PER_THREAD + t;
-            const int32_t q_idx = q_start + local_q_idx;
-            const bool is_active = (local_q_idx < num_active_tokens);
-
-            if (is_active) {
+            for (int32_t t = 0; t < TPT; t++) {
+                const int32_t local_q_idx = lane_id * TPT + t;
+                if (local_q_idx >= num_active_tokens) {
+                    continue;
+                }
+                const int32_t q_idx = q_start + local_q_idx;
+                const __gm__ int32_t* my_func_ptr = func_tensor + b * stride_b + h * stride_h + q_idx * stride_q;
+                int32_t token_min_kv = INT_MAX;
+                int32_t token_max_kv = 0;
+                block_sparse_func::get_token_kv_range<N_FUNC>(my_func_ptr, n_func, stride_f, token_min_kv,
+                                                              token_max_kv);
+                thread_min_kv = min(thread_min_kv, token_min_kv);
+                thread_max_kv = max(thread_max_kv, token_max_kv);
+            }
+        } else {
+            // 运行期块大小（含512）：每个 lane 按 warp 步长遍历所有 q_token
+            for (int32_t local_q_idx = lane_id; local_q_idx < num_active_tokens; local_q_idx += WARP_SIZE_CONST) {
+                const int32_t q_idx = q_start + local_q_idx;
                 const __gm__ int32_t* my_func_ptr = func_tensor + b * stride_b + h * stride_h + q_idx * stride_q;
                 int32_t token_min_kv = INT_MAX;
                 int32_t token_max_kv = 0;
@@ -113,7 +127,9 @@ __simt_vf__ __aicore__ LAUNCH_BOUND(BLOCK_THREAD_NUM_256) inline void compute_q_
 
 // 按 Q_BLOCK_SIZE 分发（对应原始 dynamic_emb 中的 DISPATCH_K2Q_BY_NFUNC_BS）
 #define DISPATCH_KVRANGE_BY_BLOCK_SIZE(NF) \
-    if (qBlockSize == 256) {               \
+    if (qBlockSize == 512) {               \
+        KVRANGE_LAUNCH_VF(NF, 512);        \
+    } else if (qBlockSize == 256) {        \
         KVRANGE_LAUNCH_VF(NF, 256);        \
     } else if (qBlockSize == 128) {        \
         KVRANGE_LAUNCH_VF(NF, 128);        \

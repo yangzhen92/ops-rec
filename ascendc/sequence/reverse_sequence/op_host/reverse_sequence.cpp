@@ -115,6 +115,12 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
         if (tileRows > DATA_COPY_PAD_MAX_BLOCK_COUNT) {
             tileRows = DATA_COPY_PAD_MAX_BLOCK_COUNT;
         }
+        // UB 预算可容纳整个单核行区间时收敛 rowsPerTile，kernel 据此走单 span 模式：
+        // 行区间一次搬入、全程仅一次流水同步（小 shape 收益）
+        const int64_t maxRowsPerCore = handleTotalCount + 1;
+        if (tileRows > maxRowsPerCore) {
+            tileRows = maxRowsPerCore;
+        }
         rowsPerTile = static_cast<uint32_t>(tileRows);
     }
 

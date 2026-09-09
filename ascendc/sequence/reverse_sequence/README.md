@@ -32,8 +32,10 @@ output[b, i, :] = input[b, i, :]                    (i >= seq_len[b])
 
 1. **seq_lengths 缓存**：本核覆盖的 batch 区间的 seq_lengths 经 `DataCopyPad` 一次搬入 UB（batch 数超 2048 时分 chunk 多次），之后按 batch 直接读 UB，避免逐行标量读 GM；
 2. **有效行筛选**：读取本 batch 的 `seq_len`（超出 `max_seq_len` 时截断），仅行号 < `seq_len` 的行需要搬运，其余行整段跳过、不做任何读写，由调用侧预置的 input 拷贝保留原值；
-3. **批量 CopyIn**：有效行在 GM 上连续，按 tile（至多 `rowsPerTile` 行）以 `DataCopyPad` blockCount 模式一次搬入 UB，UB 内每行按 32B 对齐 stride 存放；
-4. **逐行 CopyOut**：tile 内每行经 `DataCopyPad` 写到逆序目标行（`batch * max_seq_len + seq_len - 1 - 行号`），GM 侧非对齐地址由 `DataCopyPad` 自动处理。
+3. **批量 CopyIn**：有效行在 GM 上连续，以 `DataCopyPad` blockCount 模式批量搬入 UB，UB 内每行按 32B 对齐 stride 存放。按 shape 分两种模式：
+   - **span 模式（小 shape）**：单核行区间可整个放入 UB（`行数 ≤ rowsPerTile`）时，一次搬入整个连续行区间（无效行只读不写），全程仅 seq_lengths 就绪一次流水同步；
+   - **tile 模式（大 shape）**：按 tile（至多 `rowsPerTile` 行）逐 tile 搬入，单 buffer 下相邻 tile 间串行；
+4. **逐行 CopyOut**：每行经 `DataCopyPad` 写到逆序目标行（`batch * max_seq_len + seq_len - 1 - 行号`），GM 侧非对齐地址由 `DataCopyPad` 自动处理；span 模式下 UB 无复用，不需要 MTE3→MTE2 回同步。
 
 ## 参数说明
 

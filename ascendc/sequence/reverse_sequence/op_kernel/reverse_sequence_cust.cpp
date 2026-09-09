@@ -84,6 +84,19 @@ public:
         const int64_t batchBegin = rowStart / msl;
         const int64_t batchEnd = (rowEnd - 1) / msl;
 
+        // span 模式：本核行区间可整个放入 UB 时一次搬入（无效行只读不写），
+        // 全程仅 seq 就绪一次流水同步（MTE2 保序，span 搬入先于该同步完成），
+        // 消除 per-batch/per-tile 的串行等待，小 shape 收益最大
+        const bool spanMode = (rowEnd - rowStart) <= static_cast<int64_t>(args->rowsPerTile);
+        if (spanMode) {
+            CopyInSpan();
+        }
+        ProcessBatches(batchBegin, batchEnd, spanMode);
+    }
+
+private:
+    __aicore__ inline void ProcessBatches(int64_t batchBegin, int64_t batchEnd, bool spanMode)
+    {
         for (int64_t chunkBegin = batchBegin; chunkBegin <= batchEnd; chunkBegin += SEQ_CACHE_CHUNK) {
             int64_t batchCount = batchEnd - chunkBegin + 1;
             if (batchCount > SEQ_CACHE_CHUNK) {
@@ -91,12 +104,70 @@ public:
             }
             LoadSeqLengths(chunkBegin, batchCount);
             for (int64_t b = chunkBegin; b < chunkBegin + batchCount; ++b) {
-                ProcessBatch(b, seqBuf.Get<tType>().GetValue(b - chunkBegin));
+                const int64_t seqLen = seqBuf.Get<tType>().GetValue(b - chunkBegin);
+                if (spanMode) {
+                    ProcessBatchFromSpan(b, seqLen);
+                } else {
+                    ProcessBatch(b, seqLen);
+                }
             }
         }
     }
 
-private:
+    // span 模式：本核行区间 [rowStart, rowEnd) 在 GM 上连续（与 batch 边界无关），一次搬入
+    __aicore__ inline void CopyInSpan()
+    {
+        const int64_t dataDim = args->dataDim;
+        const uint32_t spanRows = static_cast<uint32_t>(rowEnd - rowStart);
+        LocalTensor<dType> rowLocal = rowBuf.Get<dType>();
+        DataCopyExtParams inParams;
+        inParams.blockCount = static_cast<uint16_t>(spanRows);
+        inParams.blockLen = static_cast<uint32_t>(dataDim * sizeof(dType));
+        inParams.srcStride = 0;
+        inParams.dstStride = 0;
+        inParams.rsv = 0;
+        DataCopyPadExtParams<dType> inPadParams;
+        inPadParams.isPad = false;
+        inPadParams.leftPadding = 0;
+        inPadParams.rightPadding = static_cast<uint8_t>(args->rowAlignCount - dataDim);
+        inPadParams.paddingValue = 0;
+        DataCopyPad(rowLocal, inputGM[rowStart * dataDim], inParams, inPadParams);
+    }
+
+    // span 模式的逐行写回：行数据已在 UB 的 (row - rowStart) 槽位，直接写到逆序目标行。
+    // span buffer 无复用，无需 MTE3->MTE2 回同步，kernel 退出时硬件自动排干 MTE3
+    __aicore__ inline void ProcessBatchFromSpan(int64_t batchIdx, int64_t seqLen)
+    {
+        const int64_t msl = args->maxSeqLen;
+        const int64_t dataDim = args->dataDim;
+        // 防御性截断：seq_len 超过 max_seq_len 时按 max_seq_len 处理，避免越界写 GM
+        if (seqLen > msl) {
+            seqLen = msl;
+        }
+        const int64_t batchRowBase = batchIdx * msl;
+        int64_t sLo = rowStart > batchRowBase ? rowStart : batchRowBase;
+        int64_t sHi = batchRowBase + seqLen;
+        if (sHi > rowEnd) {
+            sHi = rowEnd;
+        }
+        if (sLo >= sHi) {
+            return;
+        }
+
+        const uint32_t rowBytes = static_cast<uint32_t>(dataDim * sizeof(dType));
+        LocalTensor<dType> rowLocal = rowBuf.Get<dType>();
+        for (int64_t row = sLo; row < sHi; ++row) {
+            const int64_t revRow = batchRowBase + seqLen - 1 - (row - batchRowBase);
+            DataCopyExtParams outParams;
+            outParams.blockCount = 1;
+            outParams.blockLen = rowBytes;
+            outParams.srcStride = 0;
+            outParams.dstStride = 0;
+            outParams.rsv = 0;
+            DataCopyPad(outputGM[revRow * dataDim], rowLocal[(row - rowStart) * args->rowAlignCount], outParams);
+        }
+    }
+
     // 将 [batchBegin, batchBegin + batchCount) 的 seq_lengths 一次搬入 UB，
     // 替代逐行 GlobalTensor::GetValue 标量读 GM（效率极低，生产代码禁用）
     __aicore__ inline void LoadSeqLengths(int64_t batchBegin, int64_t batchCount)

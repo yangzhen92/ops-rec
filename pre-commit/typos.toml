@@ -42,6 +42,7 @@ depthwise_seperable_CNN = "depthwise_seperable_CNN"
 [default.extend-words]
 iy = "iy"
 tendencias = "tendencias"
+nd = "nd"
 # intel cpu features
 tme = "tme"
 dout = "dout"

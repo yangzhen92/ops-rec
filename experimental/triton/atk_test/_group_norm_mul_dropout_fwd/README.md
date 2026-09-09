@@ -52,14 +52,14 @@ Y[b, h, d] = ((X[b, h, d] - Mean[b, h]) * Rstd[b, h] * W[h] + Bias[h]) * U[b, h,
 experimental/triton/atk_test/_group_norm_mul_dropout_fwd/
 ├── README.md
 ├── gpu_atk_test/
-│   ├── _group_norm_mul_dropout_fwd_kernel.py   # GPU(CUDA) 端 Triton kernel 实现
-│   └── _group_norm_mul_dropout_fwd_api.py      # GPU(CUDA) 端 ATK API 执行文件
+│   ├── _group_norm_mul_dropout_fwd_kernel.py   # GPU 端 Triton kernel 实现
+│   └── _group_norm_mul_dropout_fwd_api.py      # GPU 端 ATK API 执行文件
 └── npu_atk_test/
-    ├── _group_norm_mul_dropout_fwd_kernel.py   # NPU(Triton) kernel 实现
+    ├── _group_norm_mul_dropout_fwd_kernel.py   # NPU 端 Triton kernel 实现
     ├── _group_norm_mul_dropout_fwd.yaml        # ATK 用例设计（dtype/shape/约束）
     ├── generate_group_norm_mul_dropout_fwd.py  # ATK 用例生成器
-    ├── _group_norm_mul_dropout_fwd_api.py      # NPU(Triton) 端 ATK API 执行文件
-    └── all__group_norm_mul_dropout_fwd.json    # ATK 生成的用例配置
+    ├── _group_norm_mul_dropout_fwd_api.py      # NPU 端 ATK API 执行文件
+    └── _group_norm_mul_dropout_fwd_performance.json    # ATK 生成的用例配置
 ```
 
 ## 调用示例
@@ -133,7 +133,7 @@ atk case -f _group_norm_mul_dropout_fwd.yaml -p generate_group_norm_mul_dropout_
 ### 3.3 精度对比
 
 ```bash
-atk node --backend npu --devices 0 task -c all__group_norm_mul_dropout_fwd.json --task accuracy -p _group_norm_mul_dropout_fwd_api.py
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c all__group_norm_mul_dropout_fwd.json --task accuracy -p _group_norm_mul_dropout_fwd_api.py
 ```
 
 如需保存精度对比数据，在命令末尾增加 `--save_data profile`。
@@ -141,7 +141,7 @@ atk node --backend npu --devices 0 task -c all__group_norm_mul_dropout_fwd.json 
 ### 3.4 性能对比
 
 ```bash
-atk node --backend npu --devices 0 task -c all__group_norm_mul_dropout_fwd.json --task performance_device -p _group_norm_mul_dropout_fwd_api.py
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c all__group_norm_mul_dropout_fwd.json --task performance_device -p _group_norm_mul_dropout_fwd_api.py
 ```
 
 如需保存性能对比数据，在命令末尾增加 `--save_data profile`。

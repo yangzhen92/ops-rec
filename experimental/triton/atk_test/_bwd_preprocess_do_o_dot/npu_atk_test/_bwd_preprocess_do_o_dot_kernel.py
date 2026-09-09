@@ -14,22 +14,6 @@
 # limitations under the License.
 # ==============================================================================
 
-# _bwd_preprocess_do_o_dot_api.py
-"""
-_bwd_preprocess_do_o_dot 算子的ATK自定义API执行文件
-
-用于 Flash Attention 反向传播的预处理步骤：
-- 输入：Out [B, T, D], do [B, T, D]
-- 输出：delta [B, T]
-
-delta = sum(Out * do, axis=1)，即每个时间步的 dot product 求和
-
-计算公式：
-- o: [B, T, D] - 前向传播的输出
-- do: [B, T, D] - 反向传播传入的梯度
-- delta: [B, T] - delta[t] = sum_d(o[b, t, d] * do[b, t, d])
-"""
-
 import triton
 import triton.language as tl
 

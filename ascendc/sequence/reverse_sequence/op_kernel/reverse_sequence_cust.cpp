@@ -189,9 +189,9 @@ private:
     TBuf<TPosition::VECCALC> rowBuf;
     TBuf<TPosition::VECCALC> seqBuf;
 
-    event_t eventMte2Mte3;
-    event_t eventMte3Mte2;
-    event_t eventMte2S;
+    TEventID eventMte2Mte3;
+    TEventID eventMte3Mte2;
+    TEventID eventMte2S;
 };
 }  // namespace ReverseSequence_Kernel
 

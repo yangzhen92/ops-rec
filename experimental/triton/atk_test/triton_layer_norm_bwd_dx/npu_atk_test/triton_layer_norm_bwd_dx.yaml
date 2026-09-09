@@ -1,0 +1,114 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
+# _layer_norm_bwd_dx 精度/性能测试配置。
+#
+# 该 kernel 是 layer norm（非 learnable 分支）的反向，计算输入 X 的梯度 DX。
+# 公式（对每一行 row）：
+#   xhat = (X[row] - Mean[row]) * Rstd[row]
+#   c1   = sum(xhat * DY[row]) / D
+#   c2   = sum(DY[row]) / D
+#   DX[row] = (DY[row] - (xhat * c1 + c2)) * Rstd[row]
+#
+# Kernel 参数（见 triton_layer_norm.py:133-167）：
+#   _layer_norm_bwd_dx(DX, DY, X, Mean, Rstd,
+#                      stride_dx, stride_dy, stride_x, D, eps,
+#                      BLOCK_D: constexpr)
+#   grid = (N,)；每个 program 处理一行（row = program_id(0)）
+#
+# 输入定义：
+#   X : [N, D] 前向输入
+#   DY: [N, D] 上游梯度（与 X 同形）
+#   Mean/Rstd: [N] 前向均值与标准差倒数——由 API 从 X 确定性推导，不作为输入定义
+#   eps: 标量 attr
+name: triton_layer_norm_bwd_dx
+api: pytorch
+version: v2.1
+api_type: triton_layer_norm_bwd_dx
+triton_api_type: triton_layer_norm_bwd_dx
+triton_name: triton_layer_norm._layer_norm_bwd_dx
+generate: generate_triton_layer_norm_bwd_dx
+
+dtype_numbers: 3334
+outputs: 0
+standard:
+  acc: double_benchmark
+  perf: not_key
+
+inputs:
+  # X: [N, D] 前向输入。D 由生成器限制在 BLOCK_D 编译安全上限内。
+  # dim_values 同池为 N、D 提供候选，生成器收敛第二维。
+  - name: X
+    type: tensor
+    required: true
+    dtypes:
+      values: [fp32, fp16, bf16]
+    ranges:
+      # 归一化/梯度计算含除法与累加，值域不宜过大以免 fp16/bf16 溢出。
+      valid:
+        values: [[-100.0, 100.0]]
+      invalid:
+        values: [[-100.0, 100.0]]
+    shapes:
+      dim_numbers:
+        values: [2]
+      # 小(30%)：16~1024；大(70%)：1025~8192；第二维收敛后为 D。
+      dim_values:
+        values: [[16, 1024], [1025, 4096], [4097, 8192]]
+        weights: [0.3, 0.35, 0.35]
+      max_length: 67108864
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  # DY: [N, D] 上游梯度，与 X 完全同形（生成器强制）。
+  - name: DY
+    type: tensor
+    required: true
+    dtypes:
+      values: [fp32, fp16, bf16]
+    ranges:
+      valid:
+        values: [[-100.0, 100.0]]
+      invalid:
+        values: [[-100.0, 100.0]]
+    shapes:
+      dim_numbers:
+        values: [2]
+      # 与 X 同池：小(30%)：16~1024；大(70%)：1025~8192。
+      dim_values:
+        values: [[16, 1024], [1025, 4096], [4097, 8192]]
+        weights: [0.3, 0.35, 0.35]
+      max_length: 67108864
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  # eps: 前向归一化的数值稳定常数，反向只需它参与 Mean/Rstd 推导。
+  - name: eps
+    type: attr
+    required: true
+    dtypes:
+      values: [float]
+    ranges:
+      valid:
+        values: [[0.00001, 0.00001], [0.000001, 0.000001]]
+        weights: [0.8, 0.2]

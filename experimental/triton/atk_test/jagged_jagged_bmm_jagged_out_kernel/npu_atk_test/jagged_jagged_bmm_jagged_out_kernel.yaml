@@ -1,0 +1,180 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
+# jagged_jagged_bmm_jagged_out_kernel.yaml
+# Jagged-Jagged batch matrix multiplication，输出也是 jagged
+# 基于：triton_jagged_bmm_jagged_out.py - jagged_jagged_bmm_jagged_out_kernel
+# 语义：C = A x B^T
+#   jagged_A [sum(lengths_m), K]，每 batch 有 M_i 行
+#   jagged_B [K, sum(lengths_n)]，wrapper 接收转置后的布局
+#   jagged_C [sum(lengths_m * lengths_n)]，1D 展平输出
+# 约束：lengths_n = lengths_m，lengths_mn = lengths_m * lengths_n
+# 复杂度：复杂算子（矩阵乘法，分界线 500μs）
+name: jagged_jagged_bmm_jagged_out_kernel
+api: pytorch
+version: v2.1
+api_type: jagged_jagged_bmm_jagged_out_kernel
+triton_api_type: jagged_jagged_bmm_jagged_out_kernel
+triton_name: triton_jagged_bmm_jagged_out.jagged_jagged_bmm_jagged_out_kernel
+generate: generate_jagged_jagged_bmm_jagged_out_kernel
+dtype_numbers: 50
+outputs: 0
+standard:
+  acc: double_benchmark
+  perf: not_key
+
+inputs:
+  # jagged_A: [sum(lengths_m), K]，Generator 会覆盖 shape
+  - name: jagged_A
+    type: tensor
+    required: true
+    dtypes:
+      values: [ fp32, fp16, bf16 ]
+    shapes:
+      dim_numbers:
+        values: [ 2 ]
+      dim_values:
+        values: [ [16, 1024], [1025, 2048], [2049, 4096] ]
+        weights: [ 0.3, 0.3, 0.4 ]
+    ranges:
+      valid:
+        values: [ [-100, 100] ]
+        random_types:
+          - name: nd
+            mean: [0, 50]
+            std: [1, 10]
+      invalid:
+        values: [ [-100, 100] ]
+    boundary:
+      has_empty: false
+      has_infnan: false   # single_bm 直接对比 GPU/NPU，inf/nan 会破坏一致性
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  # jagged_B: [K, sum(lengths_n)]，Generator 会覆盖 shape
+  - name: jagged_B
+    type: tensor
+    required: true
+    dtypes:
+      values: [ fp32, fp16, bf16 ]
+    shapes:
+      dim_numbers:
+        values: [ 2 ]
+      dim_values:
+        values: [ [16, 1024], [1025, 2048], [2049, 4096] ]
+        weights: [ 0.3, 0.3, 0.4 ]
+    ranges:
+      valid:
+        values: [ [-100, 100] ]
+        random_types:
+          - name: nd
+            mean: [0, 50]
+            std: [1, 10]
+      invalid:
+        values: [ [-100, 100] ]
+    boundary:
+      has_empty: false
+      has_infnan: false   # single_bm 直接对比 GPU/NPU，inf/nan 会破坏一致性
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  # offsets_m: [B+1]，A 的行 offset
+  # 说明：offset 的「长度」可信（决定 B），但每 batch 的切分方式无法通过 tensor 注入
+  # （outlier_values 只能塞 2 个数），故由 API 用 ATK 采样的 total_m 均匀切分后 cumsum 重建。
+  # shape 的多样性（B、total_m、K）由 ATK 采样，Generator 只保证自洽。
+  - name: offsets_m
+    type: tensor
+    required: true
+    dtypes:
+      values: [ int32 ]
+    shapes:
+      dim_numbers:
+        values: [ 1 ]
+      dim_values:
+        values: [ [3, 17], [17, 65], [65, 129] ]
+        weights: [ 0.3, 0.3, 0.4 ]
+    ranges:
+      valid:
+        values: [ [0, 2047] ]
+      invalid:
+        values: [ [0, 2047] ]
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  # offsets_n: [B+1]，B 的列 offset（约束 = offsets_m，由 API 重建）
+  - name: offsets_n
+    type: tensor
+    required: true
+    dtypes:
+      values: [ int32 ]
+    shapes:
+      dim_numbers:
+        values: [ 1 ]
+      dim_values:
+        values: [ [3, 17], [17, 65], [65, 129] ]
+        weights: [ 0.3, 0.3, 0.4 ]
+    ranges:
+      valid:
+        values: [ [0, 2047] ]
+      invalid:
+        values: [ [0, 2047] ]
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  # offsets_mn: [B+1]，C 的展平 offset（= cumsum(m_i * n_i)，由 API 重建）
+  - name: offsets_mn
+    type: tensor
+    required: true
+    dtypes:
+      values: [ int32 ]
+    shapes:
+      dim_numbers:
+        values: [ 1 ]
+      dim_values:
+        values: [ [3, 17], [17, 65], [65, 129] ]
+        weights: [ 0.3, 0.3, 0.4 ]
+    ranges:
+      valid:
+        values: [ [0, 65535] ]
+      invalid:
+        values: [ [0, 65535] ]
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  # max_seq_len: 标量，截断序列长度
+  - name: max_seq_len
+    type: attrs
+    required: true
+    dtypes:
+      values: [ int ]
+    ranges:
+      valid:
+        values: [ [16, 4096] ]
+      invalid:
+        values: [ [16, 4096] ]

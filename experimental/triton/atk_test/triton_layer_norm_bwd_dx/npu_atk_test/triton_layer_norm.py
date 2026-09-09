@@ -56,7 +56,7 @@ def _layer_norm_bwd_dx_prune_configs(configs, named_args, **kwargs):
     - BLOCK_D 必须覆盖整行：BLOCK_D >= next_pow2(D)，否则输出会缺列；
     - BLOCK_D 受 64KB/元素 限制：BLOCK_D <= 65536 // element_size()。
     """
-    d = kwargs.get("D", 0)
+    d = named_args.get("D", 0)
     x = named_args.get("X")
     element_size = 1
     if x is not None:

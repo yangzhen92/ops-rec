@@ -23,6 +23,7 @@ add_position_embeddings 算子 ATK 自定义 API 执行文件
 - high_inds: 非负整数，每个 batch 的 max dense lookup index
 - ind_offsets: 存在时为非负整数（可选参数）
 """
+
 import torch
 import triton
 
@@ -85,6 +86,7 @@ def _generate_high_inds_deterministic(b_size: int, offsets: list, K: int) -> lis
 class AddPositionEmbeddingsApi(BaseApi):
     """add_position_embeddings 算子的 API 封装"""
 
+    # pylint: disable=attribute-defined-outside-init
     def init_by_input_data(self, input_data: InputDataset):
         """预处理操作（不计时）"""
         device = get_device()
@@ -182,7 +184,7 @@ class AddPositionEmbeddingsApi(BaseApi):
             autotune_max_seq_len = int(autotune_max_seq_len.item())
         else:
             autotune_max_seq_len = int(autotune_max_seq_len)
-        actual_max_seq_len = max(offsets_values[i+1] - offsets_values[i] for i in range(b_size))
+        actual_max_seq_len = max(offsets_values[i + 1] - offsets_values[i] for i in range(b_size))
         autotune_max_seq_len = max(autotune_max_seq_len, actual_max_seq_len)
 
         # SCALE_JAGGED
@@ -210,11 +212,8 @@ class AddPositionEmbeddingsApi(BaseApi):
         out = torch.empty_like(jagged, device=device)
 
         # ---- 10. 硬件核数 ----
-        try:
-            device_props = triton.runtime.driver.active.utils.get_device_properties(device)
-            ncores = int(device_props.get("num_vectorcore", 56))
-        except Exception:
-            ncores = 56
+        device_props = triton.runtime.driver.active.utils.get_device_properties(jagged.device)
+        ncores = int(device_props.get("num_vectorcore", -1))
         ncores = min(b_size, ncores)
 
         # ---- 11. BLOCK_D = D（不再对齐） ----
@@ -255,16 +254,16 @@ class AddPositionEmbeddingsApi(BaseApi):
             self._high_inds,
             self._dense,
             self._out,
-            self._total_n,   # B（总行数，用于按 core 划分）
-            self._d_dim,     # D
-            self._ncores,    # ncores
-            self._scale,     # scale
+            self._total_n,  # B（总行数，用于按 core 划分）
+            self._d_dim,  # D
+            self._ncores,  # ncores
+            self._scale,  # scale
             self._ind_offsets,
             self._stride_jn,
             self._stride_dk,
             self._stride_on,
             SCALE_JAGGED=self._scale_jagged,
-            BLOCK_D=self._block_d,   # 固定为 D
+            BLOCK_D=self._block_d,  # 固定为 D
             hfusion_enable_multiple_consumer_fusion=True,
         )
 

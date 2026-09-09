@@ -36,6 +36,9 @@ constexpr int64_t DATA_BYTE_FP16 = 2;
 constexpr int64_t DATA_BYTE_BF16 = 2;
 constexpr int64_t DATA_BYTE_INT64 = 8;
 
+constexpr uint32_t ROW_TILE_UB_BYTES = 64 * 1024;         // 行 tile 的 UB 预算
+constexpr uint32_t DATA_COPY_PAD_MAX_BLOCK_COUNT = 4095;  // DataCopyPad blockCount 上限
+
 static ge::graphStatus TilingFunc(gert::TilingContext* context)
 {
     OPS_LOG_E_IF_NULL("context", context, return ge::GRAPH_FAILED);
@@ -82,17 +85,44 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
     }
 
     OPS_CHECK(coreNum == 0, OPS_LOG_E("[ERROR]", "aiv core num == 0"), return ge::GRAPH_FAILED);
-    // 单个核总共要处理的数据条数
-    int handleTotalCount = totalDataNum / coreNum;
-    int left = totalDataNum % coreNum;  // 前left个ai core处理 handleTotalCount + 1 条数据
 
     auto dataDim = inputShape.GetDim(DIM2);
-    auto oneDataBytes = dataBytes * dataDim;
-    uint32_t alignBytes = oneDataBytes / ALIGN_32 * ALIGN_32;
-    uint32_t unAlignBytes = oneDataBytes - alignBytes;
-    uint32_t alignNumberCount = alignBytes / dataBytes;
-    // 向上取整到 32B 对齐后的【元素个数】，需除以 dataBytes（源实现漏除导致 UB 内拷贝越界）
-    uint32_t overAlignNumberCount = (oneDataBytes + ALIGN_32 - 1) / ALIGN_32 * ALIGN_32 / dataBytes;
+
+    // 空输入（batch/seq/data 任一维度为 0）时退化为单核空转，避免除零与零字节 UB 申请
+    int64_t usedCoreNum = 1;
+    int64_t handleTotalCount = 0;
+    int64_t left = 0;
+    uint32_t rowAlignCount = static_cast<uint32_t>(ALIGN_32 / dataBytes);  // 占位，保证 UB 申请非零
+    uint32_t rowsPerTile = 1;
+    if (totalDataNum > 0 && dataDim > 0) {
+        // 小 shape 下裁剪 blockDim 到实际行数，避免启动大量空转核
+        usedCoreNum = static_cast<int64_t>(coreNum);
+        if (totalDataNum < usedCoreNum) {
+            usedCoreNum = totalDataNum;
+        }
+        // 单个核总共要处理的数据条数，余数行由前 left 个核各多承担 1 行
+        handleTotalCount = totalDataNum / usedCoreNum;
+        left = totalDataNum % usedCoreNum;
+
+        // UB 内行 stride：单行字节数向上取整到 32B 对齐后的【元素个数】
+        int64_t oneDataBytes = dataBytes * dataDim;
+        int64_t rowAlignBytes = (oneDataBytes + ALIGN_32 - 1) / ALIGN_32 * ALIGN_32;
+        rowAlignCount = static_cast<uint32_t>(rowAlignBytes / dataBytes);
+        int64_t tileRows = ROW_TILE_UB_BYTES / rowAlignBytes;
+        if (tileRows < 1) {
+            tileRows = 1;
+        }
+        if (tileRows > DATA_COPY_PAD_MAX_BLOCK_COUNT) {
+            tileRows = DATA_COPY_PAD_MAX_BLOCK_COUNT;
+        }
+        // UB 预算可容纳整个单核行区间时收敛 rowsPerTile，kernel 据此走单 span 模式：
+        // 行区间一次搬入、全程仅一次流水同步（小 shape 收益）
+        const int64_t maxRowsPerCore = handleTotalCount + 1;
+        if (tileRows > maxRowsPerCore) {
+            tileRows = maxRowsPerCore;
+        }
+        rowsPerTile = static_cast<uint32_t>(tileRows);
+    }
 
     // 设置分片数据
     ReverseSequenceTilling tilingData;
@@ -101,14 +131,12 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
     tilingData.set_dataDim(dataDim);
     tilingData.set_handleTotalCount(handleTotalCount);
     tilingData.set_left(left);
-    tilingData.set_alignBytes(alignBytes);
-    tilingData.set_unAlignBytes(unAlignBytes);
-    tilingData.set_alignNumberCount(alignNumberCount);
-    tilingData.set_overAlignNumberCount(overAlignNumberCount);
+    tilingData.set_rowsPerTile(rowsPerTile);
+    tilingData.set_rowAlignCount(rowAlignCount);
 
     // 保存分片数据
     OPS_LOG_E_IF_NULL("raw tilingData", context->GetRawTilingData(), return ge::GRAPH_FAILED);
-    context->SetBlockDim(coreNum);
+    context->SetBlockDim(static_cast<uint32_t>(usedCoreNum));
     tilingData.SaveToBuffer(context->GetRawTilingData()->GetData(), context->GetRawTilingData()->GetCapacity());
     context->GetRawTilingData()->SetDataSize(tilingData.GetDataSize());
 

@@ -111,15 +111,15 @@ atk server --devices 0 --plugin_path /path/to/api文件所在文件夹
 ```
 
 ### 精度测试
- 
+
 ```bash
 atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 \
     task -c all__add_embeddings_bwd_kernel.json --task accuracy \
     -p _add_embeddings_bwd_kernel_api.py
 ```
- 
+
 ### 性能测试
- 
+
 ```bash
 atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 \
     task -c _add_embeddings_bwd_kernel_performence.json --task performance_device \

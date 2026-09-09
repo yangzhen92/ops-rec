@@ -2,9 +2,9 @@
 
 ## 来源
 
-`_bwd_preprocess_do_o_dot` 算子源自 Dao-AILab FlashAttention 的 Triton 实现：
+`_bwd_preprocess_do_o_dot` 算子源自 pytorch FBGEMM 代码仓：
 
-<https://github.com/Dao-AILab/flash-attention/blob/main/flash_attn/flash_attn_triton.py>
+<https://github.com/pytorch/FBGEMM/blob/v1.5.0-release/fbgemm_gpu/fbgemm_gpu/sll/triton/triton_jagged_dense_flash_attention.py>
 
 原始算子按 batch、head 和序列位置计算输出与输出梯度的点积。本目录中的 ATK
 实现将 batch 与 head 统一表示为 `B`，输入形状简化为 `[B, T, D]`。

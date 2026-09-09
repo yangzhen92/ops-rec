@@ -28,14 +28,14 @@ import triton.language as tl
 
 def get_autotune_config() -> List[triton.Config]:
     return [
-        triton.Config({"BLOCK_N": 16, "multibuffer": True}, num_warps=2, num_stages=2),
-        triton.Config({"BLOCK_N": 16, "multibuffer": True}, num_warps=4, num_stages=2),
-        triton.Config({"BLOCK_N": 32, "multibuffer": True}, num_warps=2, num_stages=2),
-        triton.Config({"BLOCK_N": 32, "multibuffer": True}, num_warps=4, num_stages=2),
-        triton.Config({"BLOCK_N": 32, "multibuffer": True}, num_warps=8, num_stages=2),
-        triton.Config({"BLOCK_N": 64, "multibuffer": True}, num_warps=2, num_stages=2),
-        triton.Config({"BLOCK_N": 64, "multibuffer": True}, num_warps=4, num_stages=2),
-        triton.Config({"BLOCK_N": 64, "multibuffer": True}, num_warps=8, num_stages=2),
+        triton.Config({"BLOCK_N": 16, "multibuffer": True}),
+        triton.Config({"BLOCK_N": 16, "multibuffer": True}),
+        triton.Config({"BLOCK_N": 32, "multibuffer": True}),
+        triton.Config({"BLOCK_N": 32, "multibuffer": True}),
+        triton.Config({"BLOCK_N": 32, "multibuffer": True}),
+        triton.Config({"BLOCK_N": 64, "multibuffer": True}),
+        triton.Config({"BLOCK_N": 64, "multibuffer": True}),
+        triton.Config({"BLOCK_N": 64, "multibuffer": True}),
     ]
 
 

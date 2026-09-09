@@ -26,9 +26,11 @@ _add_position_embeddings_bwd_kernel 算子参数约束生成器
 6. seq_offsets单调递增, 首0尾sum
 7. JaggedOut.shape == Jagged.shape (当SCALE_JAGGED时)
 """
+
 from atk.case_generator.generator.generate_types import GENERATOR_REGISTRY
 from atk.case_generator.generator.base_generator import CaseGenerator
 from atk.configs.case_config import CaseConfig
+
 
 @GENERATOR_REGISTRY.register("generate_add_position_embeddings_bwd")
 class AddPositionEmbeddingsBwdGenerator(CaseGenerator):

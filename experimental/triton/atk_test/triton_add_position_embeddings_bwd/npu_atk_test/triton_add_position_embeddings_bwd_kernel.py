@@ -13,9 +13,9 @@
 # limitations under the License.
 # ==============================================================================
 
-import torch
 import triton
 import triton.language as tl
+
 
 @triton.jit
 def _add_position_embeddings_bwd_kernel(
@@ -46,11 +46,7 @@ def _add_position_embeddings_bwd_kernel(
             max_ind = tl.load(high_inds + off_b)
             if off_k < max_ind:
                 seq_start = tl.load(seq_offsets + off_b)
-                jagged_ptr = (
-                    Jagged
-                    + seq_start * stride_jn
-                    + off_k * stride_jn
-                )
+                jagged_ptr = Jagged + seq_start * stride_jn + off_k * stride_jn
                 jagged_ptrs = jagged_ptr + offs_d
                 jg = tl.load(
                     jagged_ptrs,
@@ -58,11 +54,7 @@ def _add_position_embeddings_bwd_kernel(
                 )
                 accumulator += jg
                 if SCALE_JAGGED:
-                    out_jagged_ptr = (
-                        JaggedOut
-                        + seq_start * stride_jon
-                        + off_k * stride_jon
-                    )
+                    out_jagged_ptr = JaggedOut + seq_start * stride_jon + off_k * stride_jon
                     out_jagged_ptrs = out_jagged_ptr + offs_d
                     tl.store(
                         out_jagged_ptrs,

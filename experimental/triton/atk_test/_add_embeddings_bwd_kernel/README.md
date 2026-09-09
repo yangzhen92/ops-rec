@@ -84,7 +84,7 @@ _add_embeddings_bwd_kernel/
     ├── _add_embeddings_bwd_kernel_api.py          # NPU 端 ATK 自定义 API 封装
     ├── _add_embeddings_bwd_kernel.yaml            # ATK 算子用例参数
     ├── generate_add_embeddings_bwd_kernel.py      # 限制参数生成脚本
-    └── _add_embeddings_bwd_kernel_performence.json        # 性能测试样例数据
+    └── _add_embeddings_bwd_kernel_performance.json        # 性能测试样例数据
  ```
 
 ## ATK 测试

@@ -36,8 +36,8 @@ constexpr int64_t DATA_BYTE_FP16 = 2;
 constexpr int64_t DATA_BYTE_BF16 = 2;
 constexpr int64_t DATA_BYTE_INT64 = 8;
 
-constexpr uint32_t ROW_TILE_UB_BYTES = 64 * 1024;            // 行 tile 的 UB 预算
-constexpr uint32_t DATA_COPY_PAD_MAX_BLOCK_COUNT = 4095;     // DataCopyPad blockCount 上限
+constexpr uint32_t ROW_TILE_UB_BYTES = 64 * 1024;         // 行 tile 的 UB 预算
+constexpr uint32_t DATA_COPY_PAD_MAX_BLOCK_COUNT = 4095;  // DataCopyPad blockCount 上限
 
 static ge::graphStatus TilingFunc(gert::TilingContext* context)
 {

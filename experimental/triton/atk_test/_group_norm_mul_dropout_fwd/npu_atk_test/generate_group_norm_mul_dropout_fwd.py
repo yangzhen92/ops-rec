@@ -32,7 +32,7 @@ def get_next_power_of_2(n):
 
 
 @GENERATOR_REGISTRY.register("generate_group_norm_mul_dropout_fwd")
-class BwdPreprocessDoODotGenerator(CaseGenerator):
+class GroupNormMulDropoutFwdGenerator(CaseGenerator):
     """使 X/U、W/Bias 的形状及四个输入的 dtype 满足算子约束。"""
 
     def after_case_config(self, case_config: CaseConfig) -> CaseConfig:

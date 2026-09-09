@@ -21,6 +21,7 @@ add_position_embeddings 算子 ATK 约束生成器
 2. Jagged.shape[0] 必须等于 seq_offsets[-1]
 3. Dense.shape[1] 必须等于 Jagged.shape[1]（D 维度一致）
 """
+
 from typing import Optional
 
 from atk.case_generator.generator.generate_types import GENERATOR_REGISTRY
@@ -31,6 +32,7 @@ from atk.case_generator.generator.base_generator import CaseGenerator
 class AddPositionEmbeddingsGenerator(CaseGenerator):
     """add_position_embeddings 算子的 Generator"""
 
+    # pylint: disable=unsubscriptable-object,unsupported-assignment-operation
     def after_case_config(self, case_config):
         """
         调整 case_config 中的参数 shape 以满足算子约束。

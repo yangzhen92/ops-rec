@@ -56,7 +56,7 @@ def get_device():
 
 
 # 从被测代码直接引用 triton kernel
-from triton_dense_to_jagged import triton_dense_to_jagged
+from triton_dense_to_jagged import triton_dense_to_jagged, _jagged_offsets_to_dense_indice
 
 
 def _generate_jagged_offsets(dense: torch.Tensor, jagged_offsets_input: list, device: str) -> list:
@@ -109,9 +109,9 @@ def _generate_jagged_offsets(dense: torch.Tensor, jagged_offsets_input: list, de
                     seg_len = avg_len
                 segment_lengths.append(seg_len)
 
-            cumulative = [0]
-            for seg_len in segment_lengths:
-                cumulative.append(cumulative[-1] + seg_len)
+        cumulative = [0]
+        for seg_len in segment_lengths:
+            cumulative.append(cumulative[-1] + seg_len)
 
             offset0 = torch.tensor(cumulative, dtype=offset0.dtype, device=device)
             adjusted_offsets.append(offset0)
@@ -184,63 +184,6 @@ def _generate_jagged_offsets(dense: torch.Tensor, jagged_offsets_input: list, de
     return adjusted_offsets
 
 
-def _jagged_offsets_to_dense_indice(
-    offsets: list[torch.Tensor], dense_strides: list[int], dense_sizes: list[int]
-) -> torch.Tensor:
-    """计算 jagged offsets 对应的 dense indices
-
-    用于将 jagged tensor 的索引转换为 dense tensor 的索引。
-    这是 dense_to_jagged 转换的核心逻辑。
-
-    参数:
-        offsets: jagged_offsets 列表
-        dense_strides: dense tensor 各维度的 stride
-        dense_sizes: dense tensor 各维度的大小
-
-    返回:
-        对应的 dense indices
-    """
-    device = get_device()
-    output_offset = torch.zeros(len(offsets[-1]) - 1, device="cpu", dtype=torch.int32)
-
-    offsets_cpu = [offset.cpu() for offset in offsets]
-
-    for i in range(len(offsets_cpu[-1]) - 1):
-        idx = i
-        result = 0
-        in_range = True
-
-        for j in range(len(offsets_cpu) - 2, -1, -1):
-            left, right = 0, offsets_cpu[j].size(0)
-            while left < right:
-                mid = left + (right - left) // 2
-                if offsets_cpu[j][mid] > idx:
-                    right = mid
-                else:
-                    left = mid + 1
-
-            cur_val = idx - offsets_cpu[j][left - 1]
-            if dense_sizes and cur_val >= dense_sizes[j + 1]:
-                in_range = False
-                break
-            result += cur_val * dense_strides[j + 1]
-            idx = left - 1
-
-        if in_range:
-            result += idx * dense_strides[0]
-            if dense_sizes and idx > dense_sizes[0]:
-                result = -1
-            output_offset[i] = result
-        else:
-            output_offset[i] = -1
-
-    if device == 'npu':
-        return output_offset.npu()
-    elif device == 'cuda':
-        return output_offset.cuda()
-    return output_offset
-
-
 @register("triton_dense_to_jagged")
 class TritonDenseToJaggedApi(BaseApi):
     """dense_to_jagged 算子的 ATK API 封装
@@ -310,7 +253,10 @@ class TritonDenseToJaggedApi(BaseApi):
         # 值都为 operation_jagged_value 的 tensor
         operation_jagged_values = None
         if operation_function is not None and operation_function not in ['null', 'None', '']:
-            if operation_jagged_value_input is not None:
+            if operation_jagged_value_input is None:
+                # 关闭融合以避免 kernel 对 None 指针做算术
+                operation_function = None
+            else:
                 op_value = float(operation_jagged_value_input)
                 # 生成与 output_jagged_value 相同 shape 的 tensor，值都为 op_value
                 # 数据类型与 dense 保持一致
@@ -335,7 +281,6 @@ class TritonDenseToJaggedApi(BaseApi):
         # JAGGED_DIM: jagged tensor 的维度，等于 offset 数量 + 1
         JAGGED_DIM = len(jagged_offsets) + 1
 
-        # 如果有 2 个 offset（4D dense），需要计算 dense_indices
         dense_indices = None
         if len(jagged_offsets) > 1:
             dense_indices = _jagged_offsets_to_dense_indice(
@@ -343,6 +288,10 @@ class TritonDenseToJaggedApi(BaseApi):
                 dense.stride()[:-2],
                 dense.size()[:-2],
             )
+            if device == 'npu':
+                dense_indices = dense_indices.npu()
+            elif device == 'cuda':
+                dense_indices = dense_indices.cuda()
 
         # 获取 dense 的 stride 信息，用于 kernel 计算
         dense_col_stride = dense.stride(-1)      # 最后一维的 stride
@@ -390,7 +339,7 @@ class TritonDenseToJaggedApi(BaseApi):
             self._jagged_offsets[-1],            # 输入：offsets
             self._output_jagged_value.stride(0), # 输出 tensor 的 stride
             self._dense,                         # 输入：dense tensor
-            self._dense_indices,                 # dense indices（4D 时需要）
+            self._dense_indices,                 # dense indices
             self._dense_col_stride,              # dense 最后一维 stride
             self._dense_row_stride,              # dense 倒数第二维 stride
             self._dense_matrix_stride,           # dense 倒数第三维 stride

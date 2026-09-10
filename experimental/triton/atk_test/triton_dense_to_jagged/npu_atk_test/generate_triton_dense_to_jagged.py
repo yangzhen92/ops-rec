@@ -41,7 +41,7 @@ from atk.case_generator.generator.base_generator import CaseGenerator
 from atk.configs.case_config import CaseConfig
 
 
-@GENERATOR_REGISTRY.register("generate_dense_to_jagged")
+@GENERATOR_REGISTRY.register("generate_triton_dense_to_jagged")
 class DenseToJaggedGenerator(CaseGenerator):
     """dense_to_jagged 算子参数约束生成器
 

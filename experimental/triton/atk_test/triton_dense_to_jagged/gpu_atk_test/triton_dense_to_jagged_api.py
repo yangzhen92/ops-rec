@@ -13,28 +13,6 @@
 #     limitations under the License.
 # ==============================================================================
 
-"""
-dense_to_jagged 功能：
-    将规则的 dense tensor 转换为不规则的 jagged tensor。
-    例如：dense [B, seq, D] -> jagged [total_elements, D]
-
-支持的输入维度：
-    - 3D dense [B, seq, D]: 生成 2D jagged tensor，jagged_offsets 长度 1
-    - 4D dense [B1, B2, seq, D]: 生成 3D jagged tensor，jagged_offsets 长度 2
-
-限制条件（根据 limit.txt）：
-1. dense 是 3 维或 4 维，最后一维 D（特征维度）<= 8192
-2. 3D dense [B, seq, D]: B < seq < D < 8192
-   - jagged_offsets 长度 1，shape [B+1]
-   - jagged_offsets[0][0] = 0（偏移从 0 开始）
-   - jagged_offsets[0][-1] <= B*seq（最后一个偏移不超过总元素数）
-   - 相邻差值不超过 seq（每个 batch 元素的长度不超过 seq）
-3. 4D dense [B1, B2, seq, D]: B1 < B2 < seq < D < 8192
-   - jagged_offsets 长度 2，shape [B1+1] 和 [B1*B2+1]
-   - jagged_offsets[0][0] = 0, jagged_offsets[0][-1] = B1*B2，相邻差值不超过 B2
-   - jagged_offsets[1][0] = 0, jagged_offsets[1][-1] <= B1*B2*seq，相邻差值不超过 seq
-4. operation_jagged_values 的数据类型与 dense 一致
-"""
 import torch
 import triton
 
@@ -56,7 +34,7 @@ def get_device():
 
 
 # 从被测代码直接引用 triton kernel
-from triton_dense_to_jagged import triton_dense_to_jagged
+from triton_dense_to_jagged import triton_dense_to_jagged, _jagged_offsets_to_dense_indice
 
 
 def _generate_jagged_offsets(dense: torch.Tensor, jagged_offsets_input: list, device: str) -> list:
@@ -85,36 +63,38 @@ def _generate_jagged_offsets(dense: torch.Tensor, jagged_offsets_input: list, de
         B = dense_shape[0]
         seq = dense_shape[1]
 
-        if len(jagged_offsets_input) >= 1:
-            offset0 = jagged_offsets_input[0].to(device)
+        # 参考 offset 仅用于取 dtype/device；其数值完全由下面按 dense 维度重建，
+        # 因此不依赖输入的 offset 层数。3D dense 必须且只会生成 1 层 offset。
+        if jagged_offsets_input:
+            ref_offset = jagged_offsets_input[0].to(device)
+        else:
+            ref_offset = torch.zeros(1, dtype=torch.int64, device=device)
 
-            # 计算目标最后一个值：取中间值
-            min_last = 2 * B
-            max_last = B * seq
-            target_last = (min_last + max_last) // 2
+        # 计算目标最后一个值：取中间值
+        min_last = 2 * B
+        max_last = B * seq
+        target_last = (min_last + max_last) // 2
 
-            # 每个元素的平均长度
-            avg_len = target_last // B
-            if avg_len < 1:
-                avg_len = 1
-            avg_len = min(avg_len, seq)  # 不超过 seq
+        # 每个元素的平均长度
+        avg_len = max(target_last // B, 1)
+        avg_len = min(avg_len, seq)  # 不超过 seq
 
-            # 分配长度
-            remainder = target_last - avg_len * B
-            segment_lengths = []
-            for i in range(B):
-                if i < remainder:
-                    seg_len = avg_len + 1
-                else:
-                    seg_len = avg_len
-                segment_lengths.append(seg_len)
+        # 分配长度
+        remainder = target_last - avg_len * B
+        segment_lengths = []
+        for i in range(B):
+            if i < remainder:
+                seg_len = avg_len + 1
+            else:
+                seg_len = avg_len
+            segment_lengths.append(seg_len)
 
-            cumulative = [0]
-            for seg_len in segment_lengths:
-                cumulative.append(cumulative[-1] + seg_len)
+        cumulative = [0]
+        for seg_len in segment_lengths:
+            cumulative.append(cumulative[-1] + seg_len)
 
-            offset0 = torch.tensor(cumulative, dtype=offset0.dtype, device=device)
-            adjusted_offsets.append(offset0)
+        offset0 = torch.tensor(cumulative, dtype=ref_offset.dtype, device=device)
+        adjusted_offsets.append(offset0)
 
     elif dense_dim == 4:
         # ==================== 4D dense [B1, B2, seq, D] ====================
@@ -125,53 +105,54 @@ def _generate_jagged_offsets(dense: torch.Tensor, jagged_offsets_input: list, de
         B2 = dense_shape[1]
         seq = dense_shape[2]
 
-        if len(jagged_offsets_input) >= 1:
-            # 第一个 offset：对应 B1 维度
-            # 约束：jagged_offsets[0][-1] = B1*B2，相邻差值不超过 B2
-            offset0 = jagged_offsets_input[0].to(device)
+        # 参考 offset 仅用于取 dtype/device；其数值完全由下面按 dense 维度重建，
+        # 因此不依赖输入的 offset 层数。4D dense 必须且只会生成 2 层 offset，
+        # 保证 len(adjusted_offsets) == dense.ndim - 2 == 2。
+        if jagged_offsets_input:
+            ref_offset = jagged_offsets_input[0].to(device)
+        else:
+            # 兜底：jagged_offsets 输入为空时仍能按 int64 构建 2 层 offset
+            ref_offset = torch.zeros(1, dtype=torch.int64, device=device)
 
-            # 每个 batch 元素应该有 B2 个元素
-            segment_lengths = [B2] * B1
-            cumulative = [0]
-            for seg_len in segment_lengths:
-                cumulative.append(cumulative[-1] + seg_len)
+        # 第一个 offset：对应 B1 维度
+        # 约束：jagged_offsets[0][-1] = B1*B2，相邻差值不超过 B2
+        # 每个 batch 元素应该有 B2 个元素
+        segment_lengths = [B2] * B1
+        cumulative = [0]
+        for seg_len in segment_lengths:
+            cumulative.append(cumulative[-1] + seg_len)
 
-            offset0 = torch.tensor(cumulative, dtype=offset0.dtype, device=device)
-            adjusted_offsets.append(offset0)
+        offset0 = torch.tensor(cumulative, dtype=ref_offset.dtype, device=device)
+        adjusted_offsets.append(offset0)
 
-        if len(jagged_offsets_input) >= 2:
-            # 第二个 offset：对应 B1*B2 维度
-            # 约束：2*B1*B2 <= jagged_offsets[1][-1] <= B1*B2*seq，相邻差值不超过 seq
-            offset1 = jagged_offsets_input[1].to(device)
+        # 第二个 offset：对应 B1*B2 维度
+        # 约束：2*B1*B2 <= jagged_offsets[1][-1] <= B1*B2*seq，相邻差值不超过 seq
+        total_inner = B1 * B2
+        # 取中间值：2*B1*B2 和 B1*B2*seq 的中间
+        min_last = 2 * total_inner
+        max_last = total_inner * seq
+        target_last = (min_last + max_last) // 2
 
-            total_inner = B1 * B2
-            # 取中间值：2*B1*B2 和 B1*B2*seq 的中间
-            min_last = 2 * total_inner
-            max_last = total_inner * seq
-            target_last = (min_last + max_last) // 2
+        # 每个元素的平均长度
+        avg_len = max(target_last // total_inner, 1)
+        avg_len = min(avg_len, seq)  # 不超过 seq
 
-            # 每个元素的平均长度
-            avg_len = target_last // total_inner
-            avg_len = min(avg_len, seq)  # 不超过 seq
-            if avg_len < 1:
-                avg_len = 1
+        # 分配长度：前几个元素多分配1
+        remainder = target_last - avg_len * total_inner
+        segment_lengths = []
+        for i in range(total_inner):
+            if i < remainder:
+                seg_len = avg_len + 1
+            else:
+                seg_len = avg_len
+            segment_lengths.append(seg_len)
 
-            # 分配长度：前几个元素多分配1
-            remainder = target_last - avg_len * total_inner
-            segment_lengths = []
-            for i in range(total_inner):
-                if i < remainder:
-                    seg_len = avg_len + 1
-                else:
-                    seg_len = avg_len
-                segment_lengths.append(seg_len)
+        cumulative = [0]
+        for seg_len in segment_lengths:
+            cumulative.append(cumulative[-1] + seg_len)
 
-            cumulative = [0]
-            for seg_len in segment_lengths:
-                cumulative.append(cumulative[-1] + seg_len)
-
-            offset1 = torch.tensor(cumulative, dtype=offset1.dtype, device=device)
-            adjusted_offsets.append(offset1)
+        offset1 = torch.tensor(cumulative, dtype=ref_offset.dtype, device=device)
+        adjusted_offsets.append(offset1)
     else:
         # 其他维度，直接使用
         adjusted_offsets = [offset.to(device) for offset in jagged_offsets_input]
@@ -182,63 +163,6 @@ def _generate_jagged_offsets(dense: torch.Tensor, jagged_offsets_input: list, de
             offset[0] = torch.tensor(0, dtype=offset.dtype, device=device)
 
     return adjusted_offsets
-
-
-def _jagged_offsets_to_dense_indice(
-    offsets: list[torch.Tensor], dense_strides: list[int], dense_sizes: list[int]
-) -> torch.Tensor:
-    """计算 jagged offsets 对应的 dense indices
-
-    用于将 jagged tensor 的索引转换为 dense tensor 的索引。
-    这是 dense_to_jagged 转换的核心逻辑。
-
-    参数:
-        offsets: jagged_offsets 列表
-        dense_strides: dense tensor 各维度的 stride
-        dense_sizes: dense tensor 各维度的大小
-
-    返回:
-        对应的 dense indices
-    """
-    device = get_device()
-    output_offset = torch.zeros(len(offsets[-1]) - 1, device="cpu", dtype=torch.int32)
-
-    offsets_cpu = [offset.cpu() for offset in offsets]
-
-    for i in range(len(offsets_cpu[-1]) - 1):
-        idx = i
-        result = 0
-        in_range = True
-
-        for j in range(len(offsets_cpu) - 2, -1, -1):
-            left, right = 0, offsets_cpu[j].size(0)
-            while left < right:
-                mid = left + (right - left) // 2
-                if offsets_cpu[j][mid] > idx:
-                    right = mid
-                else:
-                    left = mid + 1
-
-            cur_val = idx - offsets_cpu[j][left - 1]
-            if dense_sizes and cur_val >= dense_sizes[j + 1]:
-                in_range = False
-                break
-            result += cur_val * dense_strides[j + 1]
-            idx = left - 1
-
-        if in_range:
-            result += idx * dense_strides[0]
-            if dense_sizes and idx > dense_sizes[0]:
-                result = -1
-            output_offset[i] = result
-        else:
-            output_offset[i] = -1
-
-    if device == 'npu':
-        return output_offset.npu()
-    elif device == 'cuda':
-        return output_offset.cuda()
-    return output_offset
 
 
 @register("triton_dense_to_jagged")
@@ -310,7 +234,10 @@ class TritonDenseToJaggedApi(BaseApi):
         # 值都为 operation_jagged_value 的 tensor
         operation_jagged_values = None
         if operation_function is not None and operation_function not in ['null', 'None', '']:
-            if operation_jagged_value_input is not None:
+            if operation_jagged_value_input is None:
+                # 关闭融合以避免 kernel 对 None 指针做算术
+                operation_function = None
+            else:
                 op_value = float(operation_jagged_value_input)
                 # 生成与 output_jagged_value 相同 shape 的 tensor，值都为 op_value
                 # 数据类型与 dense 保持一致
@@ -335,7 +262,6 @@ class TritonDenseToJaggedApi(BaseApi):
         # JAGGED_DIM: jagged tensor 的维度，等于 offset 数量 + 1
         JAGGED_DIM = len(jagged_offsets) + 1
 
-        # 如果有 2 个 offset（4D dense），需要计算 dense_indices
         dense_indices = None
         if len(jagged_offsets) > 1:
             dense_indices = _jagged_offsets_to_dense_indice(
@@ -343,6 +269,10 @@ class TritonDenseToJaggedApi(BaseApi):
                 dense.stride()[:-2],
                 dense.size()[:-2],
             )
+            if device == 'npu':
+                dense_indices = dense_indices.npu()
+            elif device == 'cuda':
+                dense_indices = dense_indices.cuda()
 
         # 获取 dense 的 stride 信息，用于 kernel 计算
         dense_col_stride = dense.stride(-1)      # 最后一维的 stride
@@ -390,7 +320,7 @@ class TritonDenseToJaggedApi(BaseApi):
             self._jagged_offsets[-1],            # 输入：offsets
             self._output_jagged_value.stride(0), # 输出 tensor 的 stride
             self._dense,                         # 输入：dense tensor
-            self._dense_indices,                 # dense indices（4D 时需要）
+            self._dense_indices,                 # dense indices
             self._dense_col_stride,              # dense 最后一维 stride
             self._dense_row_stride,              # dense 倒数第二维 stride
             self._dense_matrix_stride,           # dense 倒数第三维 stride

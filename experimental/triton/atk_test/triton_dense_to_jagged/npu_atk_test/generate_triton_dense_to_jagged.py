@@ -12,36 +12,15 @@
 # See the License for the specific language governing permissions and
 #     limitations under the License.
 # ==============================================================================
-"""
-dense_to_jagged 算子参数约束生成器
-
-本文件用于在 ATK 用例生成时，对参数进行约束检查和修正。
-确保生成的用例满足算子的限制条件。
-
-限制条件（根据 limit.txt）：
-1. dense 是 3 维或 4 维，最后一维 D（特征维度）<= 8192
-2. 3D dense [B, seq, D]: B < seq < D < 8192
-   - jagged_offsets 长度 1，shape [B+1]
-   - jagged_offsets[0][0] = 0（偏移从 0 开始）
-   - 2*B <= jagged_offsets[0][-1] <= B*seq（最后一个偏移）
-   - 相邻差值不超过 seq（每个 batch 元素的长度不超过 seq）
-3. 4D dense [B1, B2, seq, D]: B1 < B2 < seq < D < 8192
-   - jagged_offsets 长度 2，shape [B1+1] 和 [B1*B2+1]
-   - jagged_offsets[i][0] = 0（偏移从 0 开始）
-   - jagged_offsets[0][-1] = B1*B2（第一个 offset 的最后一个值等于总元素数）
-   - jagged_offsets[0] 相邻差值不超过 B2
-   - 2*B1*B2 <= jagged_offsets[1][-1] <= B1*B2*seq
-   - jagged_offsets[1] 相邻差值不超过 seq
-4. operation_jagged_value 的数据类型（fp32/fp16/bf16）与 dense 一致
-"""
+import copy
 import random
 import torch
 from atk.case_generator.generator.generate_types import GENERATOR_REGISTRY
 from atk.case_generator.generator.base_generator import CaseGenerator
-from atk.configs.case_config import CaseConfig
+from atk.configs.case_config import CaseConfig, InputCaseConfig
 
 
-@GENERATOR_REGISTRY.register("generate_dense_to_jagged")
+@GENERATOR_REGISTRY.register("generate_triton_dense_to_jagged")
 class DenseToJaggedGenerator(CaseGenerator):
     """dense_to_jagged 算子参数约束生成器
 
@@ -49,18 +28,6 @@ class DenseToJaggedGenerator(CaseGenerator):
     """
 
     def after_case_config(self, case_config: CaseConfig) -> CaseConfig:
-        """
-        用例参数约束修改入口
-
-        ATK 工具在生成用例后会调用这个函数，
-        可以在此处修改用例参数以满足约束条件。
-
-        参数:
-            case_config: 生成的用例信息，包含所有输入参数
-
-        返回:
-            修改后的用例信息
-        """
         # 获取输入参数（按 yaml 中定义的顺序）
         dense = case_config.inputs[0]
         jagged_offsets_input = case_config.inputs[1]
@@ -140,18 +107,27 @@ class DenseToJaggedGenerator(CaseGenerator):
             # jagged_offsets[1] shape 为 [B1*B2+1]
             needed_offsets_count = 2
             if jagged_offsets_input is not None and hasattr(jagged_offsets_input, '__len__'):
-                # 截断多余的 offset
+                # 截断多余的 offset，保证层数不超过 2
                 jagged_offsets_input[:] = jagged_offsets_input[:needed_offsets_count]
 
-                if len(jagged_offsets_input) > 0:
+                if len(jagged_offsets_input) == 0:
+                    # 极少见：yaml 未生成任何 offset 层时，无法仅靠 shape 声明补齐，
+                    # 这里不猜测 dtype/数值，保持为空，交由运行时 _generate_jagged_offsets 兜底。
+                    pass
+                else:
                     offset0_tensor = jagged_offsets_input[0]
                     if hasattr(offset0_tensor, 'shape'):
                         offset0_tensor.shape = [B1 + 1]
 
-                if len(jagged_offsets_input) > 1:
-                    offset1_tensor = jagged_offsets_input[1]
-                    if hasattr(offset1_tensor, 'shape'):
-                        offset1_tensor.shape = [B1 * B2 + 1]
+                    if len(jagged_offsets_input) < needed_offsets_count:
+                        # yaml 随机出的 offset 层数不足（如 dense 4D 却只有 1 层 offset）。
+                        # 这里只声明第 2 层的 shape，具体数值由 ATK 按 range_values 生成，
+                        # 运行时再由 api 的 _generate_jagged_offsets 按 dense 维度重建。
+                        second_level = copy.deepcopy(offset0_tensor)
+                        second_level.shape = [B1 * B2 + 1]
+                        jagged_offsets_input.append(second_level)
+                    else:
+                        jagged_offsets_input[1].shape = [B1 * B2 + 1]
 
         # ==================== 约束2：jagged_offsets 数据类型一致 ====================
         # 所有 offset tensor 必须使用相同的数据类型（int32 或 int64）

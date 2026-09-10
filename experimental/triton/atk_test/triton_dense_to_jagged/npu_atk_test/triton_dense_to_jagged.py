@@ -147,3 +147,60 @@ def triton_dense_to_jagged(
             offset_col += thread_block_col_size
             block_offset += thread_block_col_size
         offset_row += thread_block_row_size
+
+
+# this function parse the jagged tensor offsets to corresponding dense index position
+# to see the detail of it see the quip note : https://fb.quip.com/gnzpA7d13vqO
+# the FBGEMM implementation refer : https://www.internalfb.com/code/fbsource/[308212b2902c3182edcb5b204768321e032e8175]/fbcode/deeplearning/fbgemm/fbgemm_gpu/src/jagged_tensor_ops.cu?lines=280
+# In FBGEMM it was computed by GPU but in triton currently has some compilation issue so we use CUP computation method as workaround
+# However in real-world case if we only dealing with 2d jagged tensor we don't need to use this function at all
+def _jagged_offsets_to_dense_indice(
+    offsets: list[torch.Tensor], dense_strides: list[int], dense_sizes: list[int]
+) -> torch.Tensor:
+
+    output_offset = torch.zeros(len(offsets[-1]) - 1, device="cpu", dtype=torch.int32)
+
+    offsets_cpu = []
+
+    for offset in offsets:
+        offsets_cpu.append(offset.cpu())
+
+    for i in range(0, len(offsets_cpu[-1]) - 1):
+        idx = i
+        result = 0
+
+        # flag to check if current offset is in the range of dense
+        in_range = True
+        for j in range(len(offsets_cpu) - 2, -1, -1):
+            left = 0
+            right = offsets_cpu[j].size(0)
+
+            # binary search found the corresponding offset group of current index
+            while left < right:
+                mid = left + (right - left) // 2
+
+                if offsets_cpu[j][mid] > idx:
+                    right = mid
+                else:
+                    left = mid + 1
+
+            cur_val = idx - offsets_cpu[j][left - 1]
+
+            if dense_sizes and cur_val >= dense_sizes[j + 1]:
+                in_range = False
+                break
+
+            result += cur_val * dense_strides[j + 1]
+            idx = left - 1
+
+        if in_range:
+            result += idx * dense_strides[0]
+
+            # another out of output dense range case
+            if dense_sizes and idx > dense_sizes[0]:
+                result = -1
+            output_offset[i] = result
+        else:
+            output_offset[i] = -1
+
+    return output_offset

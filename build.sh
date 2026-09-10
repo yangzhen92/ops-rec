@@ -186,23 +186,6 @@ init_common_cmake_args() {
 }
 
 # ---------------------------------------------------------------------------
-# 工具函数：同步 experimental/triton/ -> ops_rec/experimental/triton/
-# 仅拷贝 .py 文件（不含 test/、README.md 等），清除非 .py 文件。
-# ---------------------------------------------------------------------------
-sync_triton() {
-    local triton_src="${SCRIPT_DIR}/experimental/triton"
-    local triton_dst="${SCRIPT_DIR}/ops_rec/experimental/triton"
-    if [ -d "${triton_src}" ]; then
-        rm -rf "${triton_dst}"
-        cp -a "${triton_src}" "${triton_dst}"
-        find "${triton_dst}" -type f ! -name '*.py' -exec rm -f {} +
-        find "${triton_dst}" -type d -name 'test' -exec rm -rf {} + 2>/dev/null || true
-        find "${triton_dst}" -type d -empty -delete 2>/dev/null || true
-        echo "[INFO] Synced experimental/triton/ -> ${triton_dst} (source only)"
-    fi
-}
-
-# ---------------------------------------------------------------------------
 # 工具函数：同步各算子的 Python autograd 源码 -> 打包 merge 目录 ops_rec/autograd/
 # 源码约定位于每个算子的 torch_extension/ 目录（与 *_plugin.cpp 同处），
 # 打包阶段拷贝到 merge 树 ops_rec/autograd/ 子目录（源码树保留 __init__.py 作为
@@ -230,24 +213,6 @@ sync_autograd() {
         cp -a "${f}" "${dst}/$(basename "${f}")"
         echo "[INFO] Synced ${f#${SCRIPT_DIR}/} -> ops_rec/autograd/$(basename "${f}")"
     done
-}
-
-# ---------------------------------------------------------------------------
-# 工具函数：某真实 vendor 是否以 CANN RUN 模式打包（源码 CMakeLists 中
-# npu_op_package(... TYPE RUN)）。RUN 与 SHARED 的 install 结构不同：
-# RUN 装 packages/vendors/<v>/op_impl，SHARED 走 opp/vendors/<v>/op_impl。
-# 返回 0=是 RUN；1=非 RUN（SHARED）。
-# ---------------------------------------------------------------------------
-op_is_run_type() {
-    local op="$1"
-    local f
-    while IFS= read -r f; do
-        if grep -q "TYPE[[:space:]]*RUN" "${f}" 2>/dev/null; then
-            return 0
-        fi
-    done < <(find "${SCRIPT_DIR}/ascendc" -name CMakeLists.txt \
-                -path "*/${op}/CMakeLists.txt" 2>/dev/null)
-    return 1
 }
 
 # 打印错误并以非零退出（替代隐式依赖 set -e，确保失败被显式传播）。
@@ -299,14 +264,22 @@ build_one_kernel() {
 
     cmake --build "${bdir}" -j"${INNER_JOBS}" || return 1
 
-    if op_is_run_type "${op}"; then
+    local RUN_KERNEL_BUILT=""
+    if cmake --build "${bdir}" --target help 2>/dev/null | grep -q '^\.\.\. binary$'; then
+        RUN_KERNEL_BUILT=1
         echo "[INFO] ${soc}/${op}: building 'binary' hub target (RUN kernel)"
         cmake --build "${bdir}" --target binary -j"${INNER_JOBS}" || return 1
     fi
 
     cmake --install "${bdir}" || return 1
 
-    if op_is_run_type "${op}"; then
+    if [ -n "${RUN_KERNEL_BUILT}" ]; then
+        # RUN 模式（探测到 binary 目标的算子）下，内核 op_impl 由 install 阶段受
+        # binary 产物是否存在决定；若上面 binary 探测失配（CANN 目标名或 help
+        # 排版变化），install 不会产出 op_impl，最终只会被 collect 阶段报成笼统的
+        # "no vendor dirs"，与真实原因脱节。这里在 install 后直接断言 RUN kernel
+        # 结构确实落盘（RUN 的 op_impl 位于 packages/ 而非 opp/），缺则显式失败。
+        # 非 RUN 型算子（无 binary 目标）不做此检查。
         local vendors_pkg="${stage}/packages/vendors"
         if [ ! -d "${vendors_pkg}" ] \
            || ! find "${vendors_pkg}" -type d \
@@ -388,9 +361,6 @@ main() {
             OP_ARRAY[$i]="$(echo "${OP_ARRAY[$i]}" | xargs)"
         done
     fi
-
-    # 同步 experimental/triton -> ops_rec（每次构建前做一次）
-    sync_triton
 
     # 累积"实际构建"的 (soc leaf) 对，供 verify_merged_ops 校验
     local -a BUILT_OPS=()

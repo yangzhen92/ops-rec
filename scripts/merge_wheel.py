@@ -90,6 +90,10 @@ def build_final_wheel(merge_dir: str, out_dir: str, version: str | None = None) 
         # 复制合并后的内容
         shutil.copytree(merge_path, pkg_dst)
 
+        # 实验性 triton 算子源码在仓库 experimental/triton 单独维护，
+        # 组装 wheel 时同步进最终包树，避免构建过程污染 ops_rec/ 源码树。
+        _sync_experimental_triton(pkg_dst)
+
         dist_info_dir = tmp_path / f"ops_rec-{version}.dist-info"
         dist_info_dir.mkdir(parents=True, exist_ok=True)
 
@@ -217,6 +221,33 @@ def _write_record(tmp_path: Path, dist_info_dir: Path, version: str) -> None:
             record_lines.append(f"{arcname},sha256=,{size}")
     record_lines.append(f"ops_rec-{version}.dist-info/RECORD,,")
     (dist_info_dir / "RECORD").write_text("\n".join(record_lines), encoding="utf-8")
+
+
+def _sync_experimental_triton(pkg_dst: Path) -> None:
+    """将仓库 experimental/triton/ 的 .py 源码同步进最终包树 ops_rec/experimental/triton/。
+
+    该目录以仓库根下 experimental/triton 为唯一源码出处，源码只维护 .py 文件
+    （缓存、test 等均不入包）。路径需保持仓库根目录运行本脚本才能命中；
+    找不到源码目录时视为无实验算子，静默跳过。
+    """
+    src_root = Path(__file__).resolve().parents[1]
+    src = src_root / "experimental" / "triton"
+    dst = pkg_dst / "experimental" / "triton"
+    if not src.is_dir():
+        return
+    if dst.exists():
+        shutil.rmtree(dst)
+    shutil.copytree(
+        src,
+        dst,
+        ignore=shutil.ignore_patterns("*.pyc", "*__pycache__*", "test"),
+    )
+    for item in dst.rglob("*"):
+        if item.is_file() and item.suffix != ".py":
+            item.unlink()
+    for item in dst.rglob("*"):
+        if item.is_dir() and not any(item.iterdir()):
+            item.rmdir()
 
 
 def _skip_item(name: str) -> bool:

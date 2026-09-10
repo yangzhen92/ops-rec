@@ -45,8 +45,6 @@ inputs:
         random_types:
           - name: nd
             mean: [0, 5000]
-      invalid:
-        values: [ [-10000, 10000] ]
     boundary:
       has_empty: false
       has_infnan: true
@@ -68,8 +66,6 @@ inputs:
     ranges:
       valid:
         values: [ [0, 256] ]
-      invalid:
-        values: [ [0, 256] ]
     boundary:
       has_empty: false
       has_infnan: false
@@ -88,8 +84,6 @@ inputs:
       valid:
         values: [ [4, 16], [16, 64], [64, 128], [128, 256] ]
         weights: [ 0.3, 0.3, 0.25, 0.15 ]
-      invalid:
-        values: [ [4, 16] ]
 
   - name: padding_value
     type: attr
@@ -100,8 +94,6 @@ inputs:
       valid:
         values: [ [0.0, 0.0], [-1.0, -1.0] ]
         weights: [ 0.8, 0.2 ]
-      invalid:
-        values: [ [0.0, 0.0] ]
 
   - name: operation_function
     type: attr

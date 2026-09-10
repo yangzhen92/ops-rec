@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-
 name: _fbgemm_grouped_gemm_fp8_rowwise
 api: pytorch
 version: v2.1
@@ -22,19 +21,14 @@ triton_name: kernel.grouped_gemm_fp8_rowwise
 generate: generate__fbgemm_grouped_gemm_fp8_rowwise
 dtype_numbers: 50
 outputs: 0
-standard:
-  acc: double_benchmark
-  perf: not_key
-
+standard: { acc: double_benchmark, perf: not_key }
 inputs:
   - name: x
     type: tensor
     required: true
-    dtypes:
-      values: [ bf16, fp16, fp32 ]
+    dtypes: { values: [ bf16, fp16, fp32 ] }
     shapes:
-      dim_numbers:
-        values: [ 2 ]
+      dim_numbers: { values: [ 2 ] }
       dim_values:
         - values: [ 1024, 2048, 8192, 16384, 32768, 65536 ]   # M
           weights: [ 0.01, 0.01, 0.02, 0.16, 0.50, 0.30 ]     # 71.5%在大shape(>10us)
@@ -55,15 +49,12 @@ inputs:
       has_scalar: false
       has_upper_border: false
       has_lower_border: false
-
   - name: w
     type: tensor
     required: true
-    dtypes:
-      values: [ bf16 ]
+    dtypes: { values: [ bf16 ] }
     shapes:
-      dim_numbers:
-        values: [ 2 ]
+      dim_numbers: { values: [ 2 ] }
       dim_values:
         - values: [ 256 ]                 # N，原生固定 256
           weights: [ 1.0 ]
@@ -84,15 +75,12 @@ inputs:
       has_scalar: false
       has_upper_border: false
       has_lower_border: false
-
   - name: m_sizes
     type: tensor
     required: true
-    dtypes:
-      values: [ int32 ]
+    dtypes: { values: [ int32 ] }
     shapes:
-      dim_numbers:
-        values: [ 1 ]
+      dim_numbers: { values: [ 1 ] }
       dim_values:
         values: [ 1, 4, 16 ]
         weights: [ 0.2, 0.4, 0.4 ]

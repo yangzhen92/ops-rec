@@ -21,7 +21,7 @@ api: pytorch
 version: v2.1
 api_type: triton_jagged_jagged_bmm_reduce_sum
 triton_api_type: triton_jagged_jagged_bmm_reduce_sum
-triton_name: triton_jagged._jagged_jagged_bmm_reduce_sum
+triton_name: triton_jagged_jagged_bmm_reduce_sum_kernel._jagged_jagged_bmm_reduce_sum
 generate: generate_jagged_jagged_bmm_reduce_sum
 
 dtype_numbers: 3334

@@ -24,7 +24,7 @@ from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
 from atk.tasks.api_execute.base_api import BaseApi
 
-from triton_jagged import _jagged_jagged_bmm_reduce_sum
+from triton_jagged_jagged_bmm_reduce_sum_kernel import _jagged_jagged_bmm_reduce_sum
 
 
 _SUPPORTED_DTYPES = {torch.float32, torch.float16, torch.bfloat16}

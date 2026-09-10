@@ -65,7 +65,7 @@ ATK YAML 中配置的输入顺序为 `seq_offsets`、`JaggedA`、`JaggedB`、`Re
 import torch
 import triton
 
-from triton_jagged import _jagged_jagged_bmm_reduce_sum
+from triton_jagged_jagged_bmm_reduce_sum_kernel import _jagged_jagged_bmm_reduce_sum
 
 offsets = torch.tensor([0, 2, 5], dtype=torch.int64, device="npu")
 jagged_a = torch.randn((5, 32), dtype=torch.float16, device="npu")
@@ -137,10 +137,10 @@ YAML 会独立生成各输入 shape，generator 将其修正为满足 kernel 关
 triton_jagged_jagged_bmm_reduce_sum/
 ├── README.md
 ├── gpu_atk_test/
-│   ├── triton_jagged.py
+│   ├── triton_jagged_jagged_bmm_reduce_sum_kernel.py
 │   └── triton_jagged_jagged_bmm_reduce_sum_api.py
 └── npu_atk_test/
-    ├── triton_jagged.py
+    ├── triton_jagged_jagged_bmm_reduce_sum_kernel.py
     ├── triton_jagged_jagged_bmm_reduce_sum_api.py
     ├── triton_jagged_jagged_bmm_reduce_sum.yaml
     ├── generate_triton_jagged_jagged_bmm_reduce_sum.py
@@ -153,6 +153,8 @@ triton_jagged_jagged_bmm_reduce_sum/
 
 ### 生成精度测试数据
 
+该命令读取 YAML 参数空间，并通过 generator 修正 jagged 输入之间的 shape 和 dtype 关系，生成精度测试用例 JSON。
+
 ```bash
 atk case -f triton_jagged_jagged_bmm_reduce_sum.yaml \
     -p generate_triton_jagged_jagged_bmm_reduce_sum.py
@@ -162,11 +164,15 @@ atk case -f triton_jagged_jagged_bmm_reduce_sum.yaml \
 
 ### 启动远端 GPU server
 
+该命令在 GPU 基准环境启动 ATK server，并从指定目录加载 GPU API 封装。
+
 ```bash
 atk server --devices 0 --plugin_path /path/to/api文件所在文件夹
 ```
 
 ### 精度测试
+
+该命令由 NPU 侧连接 GPU server，分别执行两端 kernel，并比较分段矩阵乘输出的精度。
 
 ```bash
 atk node --backend triton --devices 0 node --backend npu --devices 0 \
@@ -175,6 +181,8 @@ atk node --backend triton --devices 0 node --backend npu --devices 0 \
 ```
 
 ### 性能测试
+
+该命令读取性能用例 JSON，在 NPU 侧执行设备性能测试并记录 kernel 耗时。
 
 ```bash
 atk node --backend triton --devices 0 node --backend npu --devices 0 \

@@ -47,8 +47,6 @@ inputs:
     ranges:
       valid:
         values: [[-100.0, 100.0]]
-      invalid:
-        values: [[-100.0, 100.0]]
     shapes:
       dim_numbers:
         values: [2]
@@ -71,8 +69,6 @@ inputs:
       values: [fp32, fp16, bf16]
     ranges:
       valid:
-        values: [[-100.0, 100.0]]
-      invalid:
         values: [[-100.0, 100.0]]
     shapes:
       dim_numbers:
@@ -97,8 +93,6 @@ inputs:
     ranges:
       valid:
         values: [[-100.0, 100.0]]
-      invalid:
-        values: [[-100.0, 100.0]]
     shapes:
       dim_numbers:
         values: [1]
@@ -121,8 +115,6 @@ inputs:
       values: [fp32]
     ranges:
       valid:
-        values: [[-100.0, 100.0]]
-      invalid:
         values: [[-100.0, 100.0]]
     shapes:
       dim_numbers:

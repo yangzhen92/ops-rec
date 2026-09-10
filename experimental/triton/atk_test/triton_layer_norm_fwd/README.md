@@ -49,7 +49,7 @@
 ```python
 import torch
 import triton
-from triton_layer_norm import _layer_norm_fwd
+from triton_layer_norm_fwd_kernel import _layer_norm_fwd
 
 x = torch.randn((64, 1024), dtype=torch.float16, device="npu")
 y = torch.empty_like(x)
@@ -95,10 +95,10 @@ _layer_norm_fwd[grid](
 triton_lay_norm_fwd/
 ├── README.md
 ├── gpu_atk_test/
-│   ├── triton_layer_norm.py                  # GPU 侧原始 kernel 实现
+│   ├── triton_layer_norm_fwd_kernel.py       # GPU 侧原始 kernel 实现
 │   └── triton_layer_norm_fwd_api.py          # GPU 侧 ATK 自定义 API 封装
 └── npu_atk_test/
-    ├── triton_layer_norm.py                  # NPU 适配后的 autotune kernel 实现
+    ├── triton_layer_norm_fwd_kernel.py       # NPU 适配后的 autotune kernel 实现
     ├── triton_layer_norm_fwd_api.py          # NPU 侧 ATK 自定义 API 封装
     ├── triton_layer_norm_fwd.yaml            # ATK 算子用例参数
     ├── generate_triton_layer_norm_fwd.py     # shape / dtype 约束生成脚本
@@ -118,6 +118,8 @@ triton_lay_norm_fwd/
 
 ### 生成精度测试数据
 
+该命令读取 YAML 参数空间，并通过 generator 修正 shape/dtype 关系，生成精度测试用例 JSON。
+
 ```bash
 atk case -f triton_layer_norm_fwd.yaml -p generate_triton_layer_norm_fwd.py
 ```
@@ -126,11 +128,15 @@ atk case -f triton_layer_norm_fwd.yaml -p generate_triton_layer_norm_fwd.py
 
 ### 远端 GPU 服务器启动监听命令
 
+该命令在 GPU 基准环境启动 ATK server，并从指定目录加载 GPU API 封装。
+
 ```bash
 atk server --devices 0 --plugin_path /path/to/api文件所在文件夹
 ```
 
 ### 精度测试
+
+该命令由 NPU 侧连接 GPU server，分别执行两端 kernel，并比较输出结果的精度。
 
 ```bash
 atk node --backend triton --devices 0 node --backend npu --devices 0 \
@@ -139,6 +145,8 @@ atk node --backend triton --devices 0 node --backend npu --devices 0 \
 ```
 
 ### 性能测试
+
+该命令读取性能用例 JSON，在 NPU 侧执行设备性能测试并记录 kernel 耗时。
 
 ```bash
 atk node --backend triton --devices 0 node --backend npu --devices 0 \

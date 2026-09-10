@@ -20,7 +20,7 @@ _layer_norm_fwd kernel ATK API 封装。
   grid = (N,)，每个 program 处理一行
   输出 Y [N, D]（归一化结果），并产出 Mean [N] / Rstd [N]（fp32）
 
-Kernel 参数说明（见 triton_layer_norm.py:36-76）：
+Kernel 参数说明（见 triton_layer_norm_fwd_kernel.py）：
   - X: [N, D] 输入
   - Y: [N, D] 输出（归一化结果，与 X 同 dtype）
   - Mean: [N] 输出均值（fp32）
@@ -42,7 +42,7 @@ import triton
 from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
 from atk.tasks.api_execute.base_api import BaseApi
-from triton_layer_norm import _layer_norm_fwd
+from triton_layer_norm_fwd_kernel import _layer_norm_fwd
 
 
 _SUPPORTED_DTYPES = {torch.float32, torch.float16, torch.bfloat16}
@@ -118,9 +118,6 @@ class LayerNormFwdApi(BaseApi):
         element_size = x.element_size()
 
         # 与原生 wrapper 一致的 BLOCK_D / num_warps 计算
-        #   MAX_FUSED_SIZE = 65536 // element_size()
-        #   BLOCK_D = min(MAX_FUSED_SIZE, next_power_of_2(D))
-        #   num_warps = min(max(BLOCK_D // 256, 1), 8)
         max_fused_size = 65536 // element_size
         block_d = min(max_fused_size, triton.next_power_of_2(d))
         num_warps = min(max(block_d // 256, 1), 8)
@@ -130,7 +127,6 @@ class LayerNormFwdApi(BaseApi):
         mean = torch.empty((n,), dtype=torch.float32, device=device)
         rstd = torch.empty((n,), dtype=torch.float32, device=device)
 
-        # grid = (N,)
         grid = (n,)
 
         # ── 5. eps：转成 float 供 kernel 使用 ──

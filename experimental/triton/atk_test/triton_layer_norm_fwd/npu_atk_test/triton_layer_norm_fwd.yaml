@@ -17,7 +17,7 @@
 # 该 kernel 对输入 X 做 layer normalization，输出归一化结果 Y，
 # 并（在 COMPUTE_MEAN_AND_RSTD=True 时）产出均值 Mean 与 rstd Rstd。
 #
-# kernel 签名（见 triton_layer_norm.py:36-76）：
+# kernel 签名见 triton_layer_norm_fwd_kernel.py。
 #   _layer_norm_fwd(X, Y, Mean, Rstd, D, eps, stride_x, stride_y,
 #                   TRAINING, BLOCK_D, COMPUTE_MEAN_AND_RSTD)
 #   grid = (N,)   # 每行一个 program
@@ -29,7 +29,7 @@ api: pytorch
 version: v2.1
 api_type: triton_layer_norm_fwd
 triton_api_type: triton_layer_norm_fwd
-triton_name: triton_layer_norm._layer_norm_fwd
+triton_name: triton_layer_norm_fwd_kernel._layer_norm_fwd
 generate: generate_triton_layer_norm_fwd
 dtype_numbers: 3334
 outputs: 0

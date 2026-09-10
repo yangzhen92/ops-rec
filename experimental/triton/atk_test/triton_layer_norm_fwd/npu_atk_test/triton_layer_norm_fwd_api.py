@@ -21,7 +21,7 @@ _layer_norm_fwd kernel ATK API 封装 — Autotune 版本。
   输出 Y [N, D]（归一化结果），并产出 Mean [N] / Rstd [N]（fp32）
 
 与 double_benchmark 版 API 的区别：
-  1. 导入的源文件（autotune/triton_layer_norm.py）中的 _layer_norm_fwd
+  1. 导入 triton_layer_norm_fwd_kernel.py 中的 _layer_norm_fwd
      带 @triton.autotune（BLOCK_D / num_warps 候选 + early_config_prune 按 D 剪枝）。
   2. 不再主动计算 / 传递 BLOCK_D 与 num_warps，由 autotune 自动注入。
 """
@@ -34,7 +34,7 @@ import torch
 from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
 from atk.tasks.api_execute.base_api import BaseApi
-from triton_layer_norm import _layer_norm_fwd
+from triton_layer_norm_fwd_kernel import _layer_norm_fwd
 
 
 _SUPPORTED_DTYPES = {torch.float32, torch.float16, torch.bfloat16}
@@ -105,7 +105,6 @@ class LayerNormFwdAutotuneApi(BaseApi):
         mean = torch.empty((n,), dtype=torch.float32, device=device)
         rstd = torch.empty((n,), dtype=torch.float32, device=device)
 
-        # grid = (N,)
         grid = (n,)
 
         # ── 5. eps：转成 float 供 kernel 使用 ──

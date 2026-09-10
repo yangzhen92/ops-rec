@@ -4,7 +4,7 @@
 
 `_fbgemm_grouped_gemm` 源自 PyTorch FBGEMM：
 
-<https://github.com/pytorch/FBGEMM/blob/v1.5.0-release/fbgemm_gpu/experimental/gemm/triton_gemm/grouped_gemm.py>
+<https://github.com/pytorch/FBGEMM/blob/main/fbgemm_gpu/experimental/gemm/triton_gemm/grouped_gemm.py>
 
 当前套件测试基础 grouped GEMM，关闭 warp specialization、FP8 和 fused scatter-add。
 

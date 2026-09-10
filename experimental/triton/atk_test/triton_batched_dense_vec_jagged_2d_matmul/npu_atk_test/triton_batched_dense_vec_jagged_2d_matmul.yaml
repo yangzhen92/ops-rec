@@ -1,0 +1,103 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+name: triton_batched_dense_vec_jagged_2d_matmul
+api: pytorch
+version: v2.1
+api_type: triton_batched_dense_vec_jagged_2d_matmul
+triton_api_type: triton_batched_dense_vec_jagged_2d_matmul
+triton_name: triton_batched_dense_vec_jagged_2d_matmul.triton_batched_dense_vec_jagged_2d_matmul
+generate: generate_triton_batched_dense_vec_jagged_2d_matmul
+dtype_numbers: 50
+outputs: 0
+standard:
+  acc: single_bm
+  perf: not_key
+
+inputs:
+  # dense: [B*H, D] - 标量候选池，Generator 会覆盖
+  - name: dense
+    type: tensor
+    required: true
+    dtypes:
+      values: [ fp32, fp16, bf16 ]
+    shapes:
+      dim_numbers:
+        values: [ 2 ]
+      dim_values:
+        values: [ [256, 512], [512, 1024], [1024, 2048]]
+        weights: [ 0.2, 0.3, 0.5]  # 第二维=max_L: 40%小(1-64) + 60%中(65-256)，控制 total_L 量级
+    ranges:
+      valid:
+        values: [ [-100, 100] ]
+        random_types:
+          - name: nd
+            mean: [0, 50]
+            std: [1, 10]
+    align_32B: true
+    boundary:
+      has_empty: false
+      has_infnan: true
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  # values: [total_L, H*D] - 标量候选池，Generator 会覆盖
+  - name: values
+    type: tensor
+    required: true
+    dtypes:
+      values: [ fp32, fp16, bf16 ]
+    shapes:
+      dim_numbers:
+        values: [ 2 ]
+      dim_values:
+        values: [ [1, 64], [65, 128], [129, 256] ]
+        weights: [ 0.2, 0.3, 0.5 ]  # 第二维=H*D: 40%小(1-64) + 60%中(65-256)，避免每行过宽
+    ranges:
+      valid:
+        values: [ [-100, 100] ]
+        random_types:
+          - name: nd
+            mean: [0, 50]
+            std: [1, 10]
+    align_32B: true
+    boundary:
+      has_empty: false
+      has_infnan: true
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  # offset: [B+1] - 标量候选池，Generator 会覆盖
+  - name: offset
+    type: tensor
+    required: true
+    dtypes:
+      values: [ int32, int64 ]
+    shapes:
+      dim_numbers:
+        values: [ 1 ]
+      dim_values:
+        values: [ [1, 16], [17, 33] ]
+        weights: [ 0.4, 0.6 ]  # 长度=B+1: 40%小B(0-15) + 60%中B(16-32)，控制 total_L 量级
+    ranges:
+      valid:
+        values: [ [1, 32] ]
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false

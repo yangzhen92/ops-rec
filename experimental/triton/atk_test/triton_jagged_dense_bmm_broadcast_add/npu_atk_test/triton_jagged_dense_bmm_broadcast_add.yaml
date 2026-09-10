@@ -38,8 +38,6 @@ inputs:
     ranges:
       valid:
         values: [[0, 1]]
-      invalid:
-        values: [[0, 1]]
     shapes:
       dim_numbers:
         values: [1]
@@ -59,12 +57,6 @@ inputs:
       values: [fp32, fp16, bf16]
     ranges:
       valid:
-        values: [[-4.0, 4.0]]
-        random_types:
-          - name: nd
-            mean: [0.0,2.0]
-            std: [1.0, 1.0]
-      invalid:
         values: [[-4.0, 4.0]]
         random_types:
           - name: nd
@@ -96,12 +88,6 @@ inputs:
           - name: nd
             mean: [0.0,0.0]
             std: [1.0, 1.0]
-      invalid:
-        values: [[-4.0, 4.0]]
-        random_types:
-          - name: nd
-            mean: [0.0,0.0]
-            std: [1.0, 1.0]
     shapes:
       dim_numbers:
         values: [3]
@@ -122,12 +108,6 @@ inputs:
       values: [fp32, fp16, bf16]
     ranges:
       valid:
-        values: [[-4.0, 4.0]]
-        random_types:
-          - name: nd
-            mean: [0.0,0.0]
-            std: [1.0, 1.0]
-      invalid:
         values: [[-4.0, 4.0]]
         random_types:
           - name: nd

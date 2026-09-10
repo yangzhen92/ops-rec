@@ -22,7 +22,7 @@ generate: generate_jagged_2_softmax_backward_kernel
 dtype_numbers: 3334
 outputs: 0
 standard:
-  acc: single_bm
+  acc: double_benchmark
   perf: not_key
 
 inputs:

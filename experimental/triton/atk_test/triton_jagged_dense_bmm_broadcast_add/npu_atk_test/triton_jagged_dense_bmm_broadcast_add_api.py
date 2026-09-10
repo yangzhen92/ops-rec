@@ -24,7 +24,7 @@ from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
 from atk.tasks.api_execute.base_api import BaseApi
 
-from triton_jagged import jagged_dense_bmm_broadcast_add_kernel
+from triton_jagged_dense_bmm_broadcast_add_kernel import jagged_dense_bmm_broadcast_add_kernel
 
 
 _SUPPORTED_DTYPES = {torch.float32, torch.float16, torch.bfloat16}

@@ -33,7 +33,7 @@ Out[seq_start:seq_end, :] = Jagged[seq_start:seq_end, :] @ Dense[b, :, :] + Bias
 ```python
 import torch
 import triton
-from triton_jagged import jagged_dense_bmm_broadcast_add_kernel
+from triton_jagged_dense_bmm_broadcast_add_kernel import jagged_dense_bmm_broadcast_add_kernel
 
 offsets = torch.tensor([0, 2, 5], dtype=torch.int64, device="npu")
 jagged = torch.randn((5, 32), dtype=torch.float16, device="npu")
@@ -63,10 +63,10 @@ jagged_dense_bmm_broadcast_add_kernel[grid](
 triton_jagged_dense_bmm_broadcast_add/
 ├── README.md
 ├── gpu_atk_test/
-│   ├── triton_jagged.py
+│   ├── triton_jagged_dense_bmm_broadcast_add_kernel.py
 │   └── triton_jagged_dense_bmm_broadcast_add_api.py
 └── npu_atk_test/
-    ├── triton_jagged.py
+    ├── triton_jagged_dense_bmm_broadcast_add_kernel.py
     ├── triton_jagged_dense_bmm_broadcast_add_api.py
     ├── triton_jagged_dense_bmm_broadcast_add.yaml
     ├── generate_triton_jagged_dense_bmm_broadcast_add.py
@@ -75,15 +75,37 @@ triton_jagged_dense_bmm_broadcast_add/
 
 ## ATK 测试
 
+### 生成精度测试数据
+
+该命令读取 YAML 参数空间，并通过 generator 对齐 jagged/dense/bias shape，生成精度测试用例 JSON。
+
 ```bash
 atk case -f triton_jagged_dense_bmm_broadcast_add.yaml -p generate_triton_jagged_dense_bmm_broadcast_add.py
+```
 
+### 启动远端 GPU server
+
+该命令在 GPU 基准环境启动 ATK server，并从指定目录加载 GPU API 封装。
+
+```bash
 atk server --devices 0 --plugin_path /path/to/api文件所在文件夹
+```
 
+### 精度测试
+
+该命令由 NPU 侧连接 GPU server，分别执行两端 kernel，并比较广播矩阵乘输出的精度。
+
+```bash
 atk node --backend triton --devices 0 node --backend npu --devices 0 \
     task -c all_triton_jagged_dense_bmm_broadcast_add.json --task accuracy \
     -p triton_jagged_dense_bmm_broadcast_add_api.py
+```
 
+### 性能测试
+
+该命令读取性能用例 JSON，在 NPU 侧执行设备性能测试并记录 kernel 耗时。
+
+```bash
 atk node --backend triton --devices 0 node --backend npu --devices 0 \
     task -c triton_jagged_dense_bmm_broadcast_add_performance.json \
     --task performance_device -p triton_jagged_dense_bmm_broadcast_add_api.py

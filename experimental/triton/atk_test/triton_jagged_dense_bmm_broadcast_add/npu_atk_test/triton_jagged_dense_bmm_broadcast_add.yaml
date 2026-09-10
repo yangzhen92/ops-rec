@@ -20,7 +20,7 @@ api: pytorch
 version: v2.1
 api_type: triton_jagged_dense_bmm_broadcast_add
 triton_api_type: triton_jagged_dense_bmm_broadcast_add
-triton_name: triton_jagged.jagged_dense_bmm_broadcast_add_kernel
+triton_name: triton_jagged_dense_bmm_broadcast_add_kernel.jagged_dense_bmm_broadcast_add_kernel
 generate: generate_jagged_dense_bmm_broadcast_add
 
 dtype_numbers: 3334

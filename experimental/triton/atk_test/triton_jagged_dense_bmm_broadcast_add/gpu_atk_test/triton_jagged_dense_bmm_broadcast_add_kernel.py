@@ -1,31 +1,11 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+#
 # SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -42,7 +22,6 @@
 # ==============================================================================
 
 # type: ignore
-#!/usr/bin/env python3
 
 # torch 26.04 circular-import workaround for wrap_triton — do not remove
 try:
@@ -58,18 +37,12 @@ import triton
 import triton.language as tl
 
 
-# NPU 无需调 num_warps/num_stages。grid 覆盖 (N, M, B) 分块，各 tile 均有
-# 掩码保护，BLOCK_M/N/K 无正确性约束，故无需剪枝。
 @triton.autotune(
     configs=[
-        triton.Config({"BLOCK_M": 64, "BLOCK_N": 64, "BLOCK_K": 32}),
-        triton.Config({"BLOCK_M": 64, "BLOCK_N": 64, "BLOCK_K": 64}),
-        triton.Config({"BLOCK_M": 64, "BLOCK_N": 128, "BLOCK_K": 32}),
-        triton.Config({"BLOCK_M": 64, "BLOCK_N": 128, "BLOCK_K": 64}),
-        triton.Config({"BLOCK_M": 128, "BLOCK_N": 64, "BLOCK_K": 32}),
-        triton.Config({"BLOCK_M": 128, "BLOCK_N": 64, "BLOCK_K": 64}),
-        triton.Config({"BLOCK_M": 128, "BLOCK_N": 128, "BLOCK_K": 32}),
-        triton.Config({"BLOCK_M": 128, "BLOCK_N": 128, "BLOCK_K": 64}),
+        triton.Config({"BLOCK_M": block_m, "BLOCK_N": block_n, "BLOCK_K": block_k})
+        for block_m in (64, 128)
+        for block_n in (64, 128)
+        for block_k in (32, 64)
     ],
     key=["AUTOTUNE_MAX_SEQ_LEN", "N", "K"],
 )

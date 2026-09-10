@@ -1,0 +1,180 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
+# triton_add_position_embeddings_kernel 算子测试设计yaml
+# 用于将位置编码添加到jagged tensor中
+# 输入：Jagged [sum(N_i), D], seq_offsets [B+1], high_inds [B], Dense [K, D], scale scalar, ind_offsets [B] or None
+# 输出：Out [sum(N_i), D]
+name: add_position_embeddings
+api: pytorch
+version: v2.1
+api_type: add_position_embeddings
+triton_api_type: add_position_embeddings
+triton_name: triton_position._add_position_embeddings_kernel
+generate: generate_add_position_embeddings
+dtype_numbers: 50
+outputs: 0
+standard:
+  acc: single_bm
+  perf: not_key
+inputs:
+  - name: Jagged
+    type: tensor
+    required: true
+    dtypes:
+      values: [ fp32, fp16, bf16 ]
+    ranges:
+      valid:
+        values: [ [-10000, 10000] ]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+    shapes:
+      dim_numbers:
+        values: [ 2 ]
+      dim_values:
+        # dim0: sum(N_i) — total elements across all batches (30% small + 70% large)
+        # dim1: D — hidden dimension
+        values: [ [257, 1024], [1025, 4096], [4096, 8192] ]
+        weights: [ 0.2, 0.3, 0.5]
+      max_length: 67108864
+    align_32B: true
+    boundary:
+      has_empty: false
+      has_infnan: true
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: seq_offsets
+    type: tensor
+    required: true
+    dtypes:
+      values: [ int32, int64 ]
+    shapes:
+      dim_numbers:
+        values: [ 1 ]
+      dim_values:
+        values: [ [8, 15], [16, 31], [32, 63], [64, 128] ]
+        weights: [ 0.1, 0.2, 0.3, 0.4 ]
+    ranges:
+      valid:
+        values: [ [0, 8192] ]
+    align_32B: true
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: high_inds
+    type: tensor
+    required: true
+    dtypes:
+      values: [ int32, int64 ]
+    shapes:
+      dim_numbers:
+        values: [ 1 ]
+      dim_values:
+        values: [ [2, 10], [11, 32], [33, 64] ]
+        weights: [ 0.3, 0.4, 0.3 ]
+    align_32B: true
+    ranges:
+      valid:
+        values: [ [0, 128] ]
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: Dense
+    type: tensor
+    required: true
+    dtypes:
+      values: [ fp32, fp16, bf16 ]
+    ranges:
+      valid:
+        values: [ [-10000, 10000] ]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+    shapes:
+      dim_numbers:
+        values: [ 2 ]
+      dim_values:
+        values: [ [257, 1024], [1025, 4096], [4096, 8192] ]
+        weights: [ 0.2, 0.3, 0.5]
+    align_32B: true
+    boundary:
+      has_empty: false
+      has_infnan: true
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: scale
+    type: scalar
+    required: false
+    dtypes:
+      values: [ fp32 ]
+    ranges:
+      valid:
+        values: [ 0.0, 0.5, 1.0, 2.0 ]
+
+  - name: ind_offsets
+    type: tensor
+    required: false
+    dtypes:
+      values: [ int32, int64 ]
+    shapes:
+      dim_numbers:
+        values: [ 1 ]
+      dim_values:
+        values: [ [2, 10], [11, 32], [33, 64] ]
+        weights: [ 0.3, 0.4, 0.3 ]
+    align_32B: true
+    ranges:
+      valid:
+        values: [ [0, 128] ]
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: AUTOTUNE_MAX_SEQ_LEN
+    type: scalar
+    required: true
+    dtypes:
+      values: [ int ]
+    ranges:
+      valid:
+        values: [ 16, 32, 64, 128 ]
+
+  - name: SCALE_JAGGED
+    type: attr
+    required: false
+    dtypes:
+      values: [ attr_bool ]
+    ranges:
+      valid:
+        values: [ true, false ]
+        weights: [ 0.5, 0.5 ]

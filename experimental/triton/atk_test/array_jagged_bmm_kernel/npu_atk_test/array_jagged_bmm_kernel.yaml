@@ -12,9 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-# Array-Jagged 批量矩阵乘（jagged in, jagged out），源自 triton_jagged_bmm_jagged_out.py
-# 语义：array_A [Σseq²] 为每 batch 的 seq×seq 方阵展平，jagged_B / jagged_C 为 [Σseq, D]
-# 分工：Generator 做 shape 自洽约束，API 从 jagged_B 第 0 维复原切分并重建 offset
 name: array_jagged_bmm_kernel
 api: pytorch
 version: v2.1
@@ -29,7 +26,6 @@ standard:
   perf: not_key
 
 inputs:
-  # array_A: [Σseq²] - 长度由 Generator 覆盖；值用 ATK 采样数据
   - name: array_A
     type: tensor
     required: true
@@ -54,8 +50,6 @@ inputs:
       has_scalar: false
       has_upper_border: false
       has_lower_border: false
-
-  # jagged_B: [total_seq, D] - 两维均由 ATK 采样驱动
   - name: jagged_B
     type: tensor
     required: true
@@ -80,8 +74,6 @@ inputs:
       has_scalar: false
       has_upper_border: false
       has_lower_border: false
-
-  # offsets_am: [B+1] - 定 B；值由 API 按切分 cumsum(seq²) 重建
   - name: offsets_am
     type: tensor
     required: true
@@ -102,8 +94,6 @@ inputs:
       has_scalar: false
       has_upper_border: false
       has_lower_border: false
-
-  # offsets_bk: [B+1] - 值由 API 按切分 cumsum(seq) 重建
   - name: offsets_bk
     type: tensor
     required: true
@@ -124,8 +114,6 @@ inputs:
       has_scalar: false
       has_upper_border: false
       has_lower_border: false
-
-  # offsets_cm: [B+1] - 值由 API 重建，= offsets_bk
   - name: offsets_cm
     type: tensor
     required: true
@@ -146,8 +134,6 @@ inputs:
       has_scalar: false
       has_upper_border: false
       has_lower_border: false
-
-  # max_seq_len: API 按 max(seq) 重算后传入 kernel
   - name: max_seq_len
     type: attrs
     required: true

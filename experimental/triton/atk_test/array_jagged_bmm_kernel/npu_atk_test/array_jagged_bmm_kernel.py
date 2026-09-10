@@ -22,13 +22,11 @@
 # limitations under the License.
 # ==============================================================================
 # pyre-unsafe
-# 源自 triton_jagged_bmm_jagged_out.py 的 array_jagged_bmm_kernel（含 autotune）
 
 import triton
 import triton.language as tl
 
 
-# BLOCK 配置围绕原生 32x32x32 扩展
 @triton.autotune(
     configs=[
         triton.Config({"BLOCK_SIZE_M": 32, "BLOCK_SIZE_N": 32, "BLOCK_SIZE_K": 32}),
@@ -63,38 +61,25 @@ def array_jagged_bmm_kernel(
     pid_batch = tl.program_id(2)
     pid_m = tl.program_id(1)
     pid_n = tl.program_id(0)
-
     batch_offset_am = tl.load(a_offsets_ptr + pid_batch)
     batch_offset_bk = tl.load(b_offsets_ptr + pid_batch)
     batch_offset_cm = tl.load(c_offsets_ptr + pid_batch)
-
-    # calculate M, N, K
     batch_K = tl.load(b_offsets_ptr + pid_batch + 1) - batch_offset_bk  # b [batch_K, D]
     batch_M = tl.load(c_offsets_ptr + pid_batch + 1) - batch_offset_cm
-
-    # use uncapped seq length to determine strides of a
     stride_am = batch_M * (1 - transpose) + 1 * transpose
     stride_ak = batch_M * transpose + 1 * (1 - transpose)
-
-    # truncate seq length
     batch_K = tl.minimum(batch_K, max_seq_len)
     batch_M = tl.minimum(batch_M, max_seq_len)
-
     if batch_K == 0:
         return
-
     batch_N = D
-
-    # c [batch_M, D] boundary check
     if pid_m * BLOCK_SIZE_M >= batch_M or pid_n * BLOCK_SIZE_N >= batch_N:
         return
-
     offs_am = (pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)) % batch_M
     offs_bn = (pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)) % batch_N
     offs_k = tl.arange(0, BLOCK_SIZE_K)
     a_ptrs = a_ptr + batch_offset_am + (offs_am[:, None] * stride_am + offs_k[None, :] * stride_ak)
     b_ptrs = b_ptr + batch_offset_bk * stride_bk + (offs_k[:, None] * stride_bk + offs_bn[None, :] * stride_bn)
-
     c = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
     for k in range(0, tl.cdiv(batch_K, BLOCK_SIZE_K)):
         a = tl.load(a_ptrs, mask=offs_k[None, :] < batch_K - k * BLOCK_SIZE_K, other=0.0)
@@ -102,7 +87,6 @@ def array_jagged_bmm_kernel(
         c += tl.dot(a, b, allow_tf32=allow_tf32)
         a_ptrs += BLOCK_SIZE_K * stride_ak
         b_ptrs += BLOCK_SIZE_K * stride_bk
-
     offs_cm = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
     offs_cn = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
     c_ptrs = c_ptr + stride_cm * batch_offset_cm + stride_cm * offs_cm[:, None] + stride_cn * offs_cn[None, :]

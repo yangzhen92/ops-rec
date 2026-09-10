@@ -32,14 +32,12 @@ def _split_jagged(total: int, parts: int) -> list:
         return []
     if total <= parts:
         return [1] * parts
-
     seed = (total * 1000003 + parts * 9176 + 12345) & 0x7FFFFFFF
     weights = []
     for _ in range(parts):
         seed = (1103515245 * seed + 12345) & 0x7FFFFFFF
         weights.append((seed % 997) + 1)
     wsum = sum(weights)
-
     lengths = [1] * parts
     remaining = total - parts
     acc = 0
@@ -63,44 +61,30 @@ class ArrayJaggedBmmKernelGenerator(CaseGenerator):
     def after_case_config(self, case_config: CaseConfig) -> CaseConfig:
         if len(case_config.inputs) < 6:
             return case_config
-
         array_A = case_config.inputs[0]
         jagged_B = case_config.inputs[1]
         offsets_am = case_config.inputs[2]
         offsets_bk = case_config.inputs[3]
         offsets_cm = case_config.inputs[4]
         max_seq_len = case_config.inputs[5]
-
-        # ATK 采样：B、total_seq、D 均来自输入 shape
         B = self._resolve_B(offsets_am)
         total_seq = self._resolve_total_seq(jagged_B)
         D = self._resolve_D(jagged_B)
-
-        # 约束1：total_seq ≥ B
         total_seq = max(total_seq, B)
-
-        # 约束2：确定性变长切分（与 API 同逻辑）
         lengths_seq = _split_jagged(total_seq, B)
         lengths_am = [s * s for s in lengths_seq]
         total_am = sum(lengths_am)
         total_seq = sum(lengths_seq)
-
-        # 约束3：自洽 shape（jagged_B 第 0 维保持 total_seq，API 靠它复原切分）
         self._set_shape(array_A, [total_am])
         self._set_shape(jagged_B, [total_seq, D])
         self._set_shape(offsets_am, [B + 1])
         self._set_shape(offsets_bk, [B + 1])
         self._set_shape(offsets_cm, [B + 1])
-
-        # 约束4：max_seq_len = max(seq)
         max_val = max(lengths_seq)
         if hasattr(max_seq_len, 'range_values'):
             max_seq_len.range_values = [max_val]
-
-        # 约束5：array_A 与 jagged_B dtype 一致
         if hasattr(array_A, 'dtype') and hasattr(jagged_B, 'dtype'):
             jagged_B.dtype = array_A.dtype
-
         return case_config
 
     def _resolve_B(self, offset):

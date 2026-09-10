@@ -65,23 +65,10 @@ offsets_cm = offsets_bk.clone()
 BLOCK_SIZE_M, BLOCK_SIZE_N, BLOCK_SIZE_K = 32, 32, 32
 grid = (triton.cdiv(D, BLOCK_SIZE_N), triton.cdiv(seq_len, BLOCK_SIZE_M), B)
 array_jagged_bmm_kernel[grid](
-    array_A,
-    jagged_B,
-    jagged_C,
-    offsets_am,
-    offsets_bk,
-    offsets_cm,
-    D,
-    jagged_B.stride(0),
-    jagged_B.stride(1),
-    jagged_C.stride(0),
-    jagged_C.stride(1),
-    0,  # transpose
-    seq_len,  # max_seq_len
-    BLOCK_SIZE_M,
-    BLOCK_SIZE_N,
-    BLOCK_SIZE_K,
-    False,  # allow_tf32
+    array_A, jagged_B, jagged_C,
+    offsets_am, offsets_bk, offsets_cm,
+    D, jagged_B.stride(0), jagged_B.stride(1), jagged_C.stride(0), jagged_C.stride(1),
+    0, seq_len, BLOCK_SIZE_M, BLOCK_SIZE_N, BLOCK_SIZE_K, False,
 )
 print(jagged_C.shape)  # torch.Size([4, 4])
 ```

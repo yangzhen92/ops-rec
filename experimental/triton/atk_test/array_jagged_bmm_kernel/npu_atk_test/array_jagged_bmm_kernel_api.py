@@ -20,7 +20,6 @@ array_jagged_bmm_kernel 算子的ATK自定义API执行文件
 import torch
 import triton
 
-# 直接导入算子 kernel（autotune 接管 BLOCK 决策，grid/launch 内联至 __call__）
 from array_jagged_bmm_kernel import array_jagged_bmm_kernel
 from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
@@ -45,14 +44,12 @@ def _split_jagged(total: int, parts: int) -> list:
         return []
     if total <= parts:
         return [1] * parts
-
     seed = (total * 1000003 + parts * 9176 + 12345) & 0x7FFFFFFF
     weights = []
     for _ in range(parts):
         seed = (1103515245 * seed + 12345) & 0x7FFFFFFF
         weights.append((seed % 997) + 1)
     wsum = sum(weights)
-
     lengths = [1] * parts
     remaining = total - parts
     acc = 0
@@ -80,64 +77,42 @@ class ArrayJaggedBmmKernelApi(BaseApi):
             torch.npu.synchronize()
         elif device == 'cuda':
             torch.cuda.synchronize()
-
         array_A_input = input_data.kwargs.get("array_A", None)
         jagged_B_input = input_data.kwargs.get("jagged_B", None)
         offsets_am_input = input_data.kwargs.get("offsets_am", None)
-
         if array_A_input is None or jagged_B_input is None:
             raise ValueError("array_A or jagged_B not found")
         if offsets_am_input is None:
             raise ValueError("offsets_am not found")
-
-        # NPU dtype 适配：输入强转 fp32 规避 Ascend 上 0.0 促升 fp64 导致 tl.dot 报错
         if isinstance(array_A_input, torch.Tensor):
             self._orig_dtype = array_A_input.dtype
         else:
             self._orig_dtype = torch.float32
-
         array_A = self._to_tensor(array_A_input, device, dtype=torch.float32)
         jagged_B = self._to_tensor(jagged_B_input, device, dtype=torch.float32)
         offsets_am_raw = self._to_tensor(offsets_am_input, device, torch.int32)
-
-        # B 由 offset 长度决定；total_seq/D 由 ATK 采样的 jagged_B shape 决定（都可信）
         B = offsets_am_raw.shape[0] - 1
         if B <= 0:
             raise ValueError(f"B must > 0, got {B}")
-
         total_seq = jagged_B.shape[0]
         D = jagged_B.shape[1] if jagged_B.ndim == 2 else 1
         dtype = array_A.dtype
-
-        # Generator 约束了 total_seq ≥ B；防御性兜底
         if total_seq < B:
             raise ValueError(f"total_seq({total_seq}) < B({B}), generator constraint violated")
-
-        # 确定性变长切分（与 Generator 逐字一致）→ 推导所有长度
         lengths_seq = _split_jagged(total_seq, B)  # = lengths_bk = lengths_cm
         lengths_am = [s * s for s in lengths_seq]
         total_am = sum(lengths_am)
-
-        # 三 offset cumsum（int32，自洽）
         offsets_am = self._cumsum_tensor(lengths_am, device)
         offsets_bk = self._cumsum_tensor(lengths_seq, device)
         offsets_cm = offsets_bk.clone()  # cm = bk
-
-        # lengths 张量（wrapper 需要）
         lengths_am_t = torch.tensor(lengths_am, dtype=torch.int32, device=device)
         lengths_bk_t = torch.tensor(lengths_seq, dtype=torch.int32, device=device)
         lengths_cm_t = lengths_bk_t.clone()
-
-        # array_A 应为 [total_am]；Generator 已按 Σseq² 设置，shape 不符时兜底拟合
         if array_A.ndim != 1 or array_A.shape[0] != total_am:
             array_A = self._fit_1d(array_A, total_am, dtype, device)
-        # jagged_B 应为 [total_seq, D]，ATK 已正确设置；仅防御
         if jagged_B.ndim != 2 or jagged_B.shape[0] != total_seq or jagged_B.shape[1] != D:
             jagged_B = self._fit_2d(jagged_B, total_seq, D, dtype, device)
-
-        # max_seq_len = max(seq)，kernel 不截断、grid 不空转
         max_seq_len = max(lengths_seq)
-
         self._device = device
         self._array_A = array_A.contiguous()
         self._jagged_B = jagged_B.contiguous()
@@ -152,17 +127,13 @@ class ArrayJaggedBmmKernelApi(BaseApi):
     def __call__(self, input_data: InputDataset, with_output: bool = False):
         """执行阶段（计入性能）：仅同步 + 直接启动 autotuned kernel"""
         device = self._device
-
         if device == 'npu':
             torch.npu.synchronize()
         elif device == 'cuda':
             torch.cuda.synchronize()
-
-        # 直接启动 autotuned kernel：BLOCK_size 由 autotune 按 [D, max_seq_len] 选取
         B = self._lengths_am.size(0)
         D = self._jagged_B.size(1)
         L = self._jagged_B.size(0)
-
         jagged_C = torch.zeros((L, D), device=self._jagged_B.device, dtype=self._jagged_B.dtype)
 
         def _grid(META):
@@ -186,19 +157,15 @@ class ArrayJaggedBmmKernelApi(BaseApi):
             self._max_seq_len,
             allow_tf32=False,
         )
-
         if device == 'npu':
             torch.npu.synchronize()
         elif device == 'cuda':
             torch.cuda.synchronize()
-
-        # 输出转回原始 dtype，与 GPU golden 保持一致
         orig_dtype = getattr(self, "_orig_dtype", None)
         if orig_dtype is not None and jagged_C.dtype != orig_dtype:
             jagged_C = jagged_C.to(orig_dtype)
         return jagged_C
 
-    # ====== 工具方法 ======
     def _cumsum_tensor(self, lengths, device):
         """由 lengths 生成 offset 张量：[0, l0, l0+l1, ...]，int32"""
         offsets = [0]
@@ -232,7 +199,6 @@ class ArrayJaggedBmmKernelApi(BaseApi):
             if dtype is None:
                 dtype = data.dtype  # 保留 numpy 原始 dtype
             return torch.tensor(data, dtype=dtype, device=device)
-        # 纯 list 输入：无 dtype 信息，默认 fp32（保持原行为）
         if dtype is None:
             dtype = torch.float32
         return torch.tensor(data, dtype=dtype, device=device)

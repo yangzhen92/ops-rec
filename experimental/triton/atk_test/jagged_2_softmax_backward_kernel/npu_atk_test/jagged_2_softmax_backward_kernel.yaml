@@ -1,0 +1,157 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+name: jagged_2_softmax_backward_kernel
+api: pytorch
+version: v2.1
+api_type: jagged_2_softmax_backward_kernel
+triton_api_type: jagged_2_softmax_backward_kernel
+triton_name: triton_jagged_softmax.jagged_2_softmax_backward_kernel
+generate: generate_jagged_2_softmax_backward_kernel
+dtype_numbers: 3334
+outputs: 0
+standard:
+  acc: single_bm
+  perf: not_key
+
+inputs:
+  # grad_output: [sum(seq_len²)] - backward的梯度输入，与forward的output同shape
+  - name: grad_output
+    type: tensor
+    required: true
+    dtypes:
+      values: [ fp32, fp16, bf16 ]
+    shapes:
+      dim_numbers:
+        values: [ 1 ]
+      dim_values:
+        values: [ [2, 1024], [2049, 4096], [4097, 8192] ]
+        weights: [ 0.3, 0.3, 0.4 ]  # 占位，Generator按Σseq_len²覆盖
+    ranges:
+      valid:
+        values: [ [-100, 100] ]
+        # std≤2 控制幅值，避免放大 (dy - Σ(dy⊙y)) 的相消误差；对齐原生 rand*0.01 量级
+        random_types:
+          - name: nd
+            mean: [0, 5]
+            std: [1, 2]
+      invalid:
+        values: [ [-100, 100] ]
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  # softmax_output: [sum(seq_len²)] - forward的softmax输出，与grad_output同shape
+  - name: softmax_output
+    type: tensor
+    required: true
+    dtypes:
+      values: [ fp32, fp16, bf16 ]
+    shapes:
+      dim_numbers:
+        values: [ 1 ]
+      dim_values:
+        values: [ 4096, 16384, 65536, 262144 ]
+        weights: [ 0.1, 0.2, 0.35, 0.35 ]  # 占位，Generator 覆盖为 Σseq_len²
+    ranges:
+      valid:
+        values: [ [0, 1] ]  # softmax输出范围[0,1]
+        random_types:
+          - name: default
+      invalid:
+        values: [ [0, 1] ]
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  # offsets_row: [B+1] - 定 B 的旋钮（与 forward 同步）
+  # B ∈ {1,3,5,7,10,15}：覆盖原生 B=integers(1,10)，15 为大 batch 压力点
+  - name: offsets_row
+    type: tensor
+    required: true
+    dtypes:
+      values: [ int32 ]
+    shapes:
+      dim_numbers:
+        values: [ 1 ]
+      dim_values:
+        values: [ 2, 4, 6, 8, 11, 16 ]
+        weights: [ 0.02, 0.04, 0.06, 0.18, 0.28, 0.42 ]
+    ranges:
+      valid:
+        values: [ [0, 65535] ]
+      invalid:
+        values: [ [0, 65535] ]
+    boundary:
+      has_empty: false
+
+  # offsets_col: [B+1] - 方阵边长cumsum，和offsets_row相同
+  - name: offsets_col
+    type: tensor
+    required: true
+    dtypes:
+      values: [ int32 ]
+    shapes:
+      dim_numbers:
+        values: [ 1 ]
+      dim_values:
+        values: [ 2, 4, 6, 8, 11, 16 ]
+        weights: [ 0.02, 0.04, 0.06, 0.18, 0.28, 0.42 ]
+    ranges:
+      valid:
+        values: [ [0, 65535] ]
+      invalid:
+        values: [ [0, 65535] ]
+    boundary:
+      has_empty: false
+
+  # offsets_overall: [B+1] - API 用 shape[0]-1 定 B，是唯一被消费的 offset 元数据
+  - name: offsets_overall
+    type: tensor
+    required: true
+    dtypes:
+      values: [ int32 ]
+    shapes:
+      dim_numbers:
+        values: [ 1 ]
+      dim_values:
+        values: [ 2, 4, 6, 8, 11, 16 ]
+        weights: [ 0.02, 0.04, 0.06, 0.18, 0.28, 0.42 ]
+    ranges:
+      valid:
+        values: [ [0, 2097151] ]
+      invalid:
+        values: [ [0, 2097151] ]
+    boundary:
+      has_empty: false
+
+  # max_seq_len_row / max_seq_len_col 已移除：ATK 无法注入标量值，kernel 用值由 API 从 B 重算
+
+  # transpose: 标量int（0或1），ATK不支持bool，用int替代
+  - name: transpose
+    type: attrs
+    required: true
+    dtypes:
+      values: [ int ]
+    ranges:
+      valid:
+        values: [ 0, 1 ]
+      invalid:
+        values: [ 0, 1 ]

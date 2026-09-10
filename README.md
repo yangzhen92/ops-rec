@@ -123,6 +123,7 @@ ops-rec/                                  # 项目根目录
 ## ⚖️ 相关说明
 
 🔹 [构建指南](docs/build_guide.md)<br>
+🔹 [算子列表](docs/zh/ops_rec_api.md)<br>
 🔹 [算子贡献指南](docs/contribute_guide.md)<br>
 🔹 [Apache License 2.0 许可证](LICENSE)<br>
 

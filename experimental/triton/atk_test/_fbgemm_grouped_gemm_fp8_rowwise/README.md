@@ -4,7 +4,7 @@
 
 `_fbgemm_grouped_gemm_fp8_rowwise` 算子源自 PyTorch FBGEMM：
 
-<https://github.com/pytorch/FBGEMM/blob/v1.5.0-release/fbgemm_gpu/experimental/gemm/triton_gemm/grouped_gemm.py>
+<https://github.com/pytorch/FBGEMM/blob/main/fbgemm_gpu/experimental/gemm/triton_gemm/grouped_gemm.py>
 
 当前 ATK 套件覆盖 FP8 行级量化的基础 grouped GEMM 路径。NPU 端使用包含
 Ascend 配置剪枝的 autotune kernel，GPU 端使用适配 99 KB 共享内存上限的固定配置。

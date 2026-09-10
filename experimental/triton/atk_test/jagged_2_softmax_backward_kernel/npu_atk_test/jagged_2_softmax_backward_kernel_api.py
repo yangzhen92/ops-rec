@@ -17,16 +17,6 @@
 jagged_2_softmax_backward_kernel 算子的ATK自定义API执行文件
 """
 
-# jagged_2_softmax_backward_kernel_api.py
-"""
-jagged_2_softmax_backward_kernel 算子的 ATK API 适配器
-
-关键点：
-1. API 内重建 offset（不信任 ATK 传入值）
-2. 确保 grad_output 和 softmax_output 同 shape 同 dtype
-3. NPU 不支持 fp64，输入统一归一到 fp32
-4. BLOCK_SIZE 必须 >= N，否则 kernel 单块整行归约会静默算错
-"""
 import os
 import sys
 
@@ -36,14 +26,21 @@ from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
 from atk.tasks.api_execute.base_api import BaseApi
 
-# ====== 导入同目录 kernel ======
-current_dir = os.path.dirname(os.path.abspath(__file__))
-if current_dir not in sys.path:
-    sys.path.insert(0, current_dir)
-from jagged_2_softmax_backward_kernel import jagged_2_softmax_backward_kernel
+
+def _import_local_kernel():
+    """从同目录导入算子 kernel"""
+    source_dir = os.path.dirname(os.path.abspath(__file__))
+    if source_dir not in sys.path:
+        sys.path.insert(0, source_dir)
+    from jagged_2_softmax_backward_kernel import (
+        jagged_2_softmax_backward_kernel as jagged_2_softmax_backward_kernel_impl,
+    )
+
+    return jagged_2_softmax_backward_kernel_impl
 
 
-# kernel 支持的 dtype（NPU 不支持 fp64）
+jagged_2_softmax_backward_kernel = _import_local_kernel()
+
 _SUPPORTED_DTYPES = {torch.float32, torch.float16, torch.bfloat16}
 
 
@@ -57,6 +54,7 @@ def get_device():
 
 
 def _hash_range(i, lo, hi, salt=0):
+    """确定性 LCG 哈希：把索引 i 映射到 [lo, hi]（与 generate 中实现逐字一致）"""
     x = ((i + 1) * 2654435761 + salt * 40503) & 0xFFFFFFFF
     x = ((x ^ (x >> 13)) * 1274126177) & 0xFFFFFFFF
     x = (x ^ (x >> 16)) & 0x7FFFFFFF
@@ -64,6 +62,7 @@ def _hash_range(i, lo, hi, salt=0):
 
 
 def _deterministic_seq_lengths(B, lo=16, hi=256):
+    """确定性生成 B 个 seq_len（种子仅由 B 决定，与 generate 及 forward 逐字一致）"""
     if B <= 0:
         return []
     first_len = _hash_range(0, lo, hi, salt=(B * 2654435761) & 0x7FFFFFFF)
@@ -75,92 +74,57 @@ def _deterministic_seq_lengths(B, lo=16, hi=256):
 
 @register("jagged_2_softmax_backward_kernel")
 class Jagged2SoftmaxBackwardKernelAPI(BaseApi):
+    """jagged_2_softmax_backward_kernel 算子的API适配器（softmax backward，计算输入梯度）"""
 
     def init_by_input_data(self, input_data: InputDataset):
+        """预处理阶段（不计入性能）：重建自洽输入并保存实例变量"""
         device = get_device()
-
-        # ====== 获取输入 ======
         grad_output_input = input_data.kwargs.get("grad_output", None)
         softmax_output_input = input_data.kwargs.get("softmax_output", None)
         offsets_overall_input = input_data.kwargs.get("offsets_overall", None)
         transpose_input = input_data.kwargs.get("transpose", 1)
-
         if grad_output_input is None or softmax_output_input is None:
             raise ValueError("grad_output or softmax_output not found")
         if offsets_overall_input is None:
             raise ValueError("offsets_overall not found")
-
-        # ====== 转换到目标设备 ======
         grad_output_raw = self._to_tensor(grad_output_input, device)
         softmax_output_raw = self._to_tensor(softmax_output_input, device)
         offsets_overall_raw = self._to_tensor(offsets_overall_input, device, torch.int32)
-
-        # ====== dtype 归一化：NPU 不支持 fp64，强制转 fp32 ======
         if grad_output_raw.dtype == torch.float64:
             grad_output_raw = grad_output_raw.to(torch.float32).contiguous()
         if softmax_output_raw.dtype == torch.float64:
             softmax_output_raw = softmax_output_raw.to(torch.float32).contiguous()
-
         if grad_output_raw.dtype not in _SUPPORTED_DTYPES:
-            raise ValueError(
-                f"Unsupported grad_output dtype: {grad_output_raw.dtype}"
-            )
+            raise ValueError(f"Unsupported grad_output dtype: {grad_output_raw.dtype}")
         if softmax_output_raw.dtype not in _SUPPORTED_DTYPES:
-            raise ValueError(
-                f"Unsupported softmax_output dtype: {softmax_output_raw.dtype}"
-            )
-
-        # 两端 dtype 对齐（以 grad_output 为准）
+            raise ValueError(f"Unsupported softmax_output dtype: {softmax_output_raw.dtype}")
         if softmax_output_raw.dtype != grad_output_raw.dtype:
             softmax_output_raw = softmax_output_raw.to(grad_output_raw.dtype)
-
         dtype = grad_output_raw.dtype
-
-        # ====== 从 offsets 提取 B ======
-        # 只信任 offset 的 shape（长度）来定 B；绝不信任 offset 的 value。
         B = offsets_overall_raw.shape[0] - 1
         if B <= 0:
             raise ValueError(f"B must > 0, got {B}")
-
-        # 确定性重建 lengths_seq（与 Generator 逐字一致，且与 forward 同源）
         lengths_seq = _deterministic_seq_lengths(B)
-
-        # lengths_overall = seq_len²，total = Σseq²（有界：seq_len∈[16,256]）
         lengths_overall = [s * s for s in lengths_seq]
         total_overall = sum(lengths_overall)
-
-        # 重建三个自洽的 offset（kernel 消费的是 offset 的 value）
         offsets_row = self._cumsum_tensor(lengths_seq, device)
         offsets_col = offsets_row.clone()
         offsets_overall = self._cumsum_tensor(lengths_overall, device)
-
-        # 重建 grad_output 和 softmax_output 到相同大小（同 shape 同 dtype）
         grad_output = self._rebuild_1d(grad_output_raw, total_overall, dtype, device)
-        softmax_output = self._rebuild_1d(
-            softmax_output_raw, total_overall, dtype, device
-        )
-
-        # max_seq_len = max(seq_len)，方阵 row=col
+        softmax_output = self._rebuild_1d(softmax_output_raw, total_overall, dtype, device)
         max_seq_len_row = max(lengths_seq)
         max_seq_len_col = max_seq_len_row
-
-        # transpose 转 bool（容错处理：ATK 可能传 list 或标量）
         if isinstance(transpose_input, list):
             transpose_val = transpose_input[0] if len(transpose_input) > 0 else 0
         else:
             transpose_val = transpose_input
         transpose = bool(int(transpose_val))
-
-        # ====== 创建输出 ======
         grad_input = torch.zeros((total_overall,), dtype=dtype, device=device)
 
-        # ====== grid 与原生一致 ======
         def _grid(META):
             return (B, max_seq_len_col)
 
         BLOCK_SIZE = max(triton.next_power_of_2(max_seq_len_row), 16)
-
-        # ====== 保存实例变量 ======
         self._device = device
         self._grad_output = grad_output
         self._softmax_output = softmax_output
@@ -177,12 +141,10 @@ class Jagged2SoftmaxBackwardKernelAPI(BaseApi):
     def __call__(self, input_data: InputDataset, with_output: bool = False):
         """执行阶段（计入性能）：直接调用 Triton kernel"""
         device = self._device
-
         if device == 'npu':
             torch.npu.synchronize()
         elif device == 'cuda':
             torch.cuda.synchronize()
-
         jagged_2_softmax_backward_kernel[self._grid](
             grad_output_ptr=self._grad_output,
             softmax_output_ptr=self._softmax_output,
@@ -198,19 +160,17 @@ class Jagged2SoftmaxBackwardKernelAPI(BaseApi):
             max_seq_len_col=self._max_seq_len_col,
             BLOCK_SIZE=self._BLOCK_SIZE,
         )
-
         if device == 'npu':
             torch.npu.synchronize()
         elif device == 'cuda':
             torch.cuda.synchronize()
-
         return self._grad_input
 
     def _cumsum_tensor(self, lengths, device):
         """由 lengths 生成 offset 张量：[0, l0, l0+l1, ...]，int32"""
         offsets = [0]
-        for l in lengths:
-            offsets.append(offsets[-1] + l)
+        for length in lengths:
+            offsets.append(offsets[-1] + length)
         return torch.tensor(offsets, dtype=torch.int32, device=device)
 
     def _rebuild_1d(self, raw, target_len, dtype, device):

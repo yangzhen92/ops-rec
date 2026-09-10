@@ -53,19 +53,15 @@ class Jagged2SoftmaxBackwardGenerator(CaseGenerator):
         """生成自洽的backward输入"""
         if len(case_config.inputs) < 5:
             return case_config
-
         grad_output = case_config.inputs[0]
         softmax_output = case_config.inputs[1]
         offsets_row = case_config.inputs[2]
         offsets_col = case_config.inputs[3]
         offsets_overall = case_config.inputs[4]
-
         B = self._resolve_B(offsets_overall)
         lengths_seq = self._generate_seq_lengths(B)
         lengths_overall = [s * s for s in lengths_seq]
         total_overall = sum(lengths_overall)
-
-        # 设置shape（关键：grad_output和softmax_output同shape）
         if hasattr(grad_output, 'shape'):
             grad_output.shape = [total_overall]
         if hasattr(softmax_output, 'shape'):
@@ -76,16 +72,11 @@ class Jagged2SoftmaxBackwardGenerator(CaseGenerator):
             offsets_col.shape = [B + 1]
         if hasattr(offsets_overall, 'shape'):
             offsets_overall.shape = [B + 1]
-
-        # 注入 offset 值仅为落盘可读性（ATK outlier_values 不覆盖 tensor 值，运行时由 API 重建）
         offsets_row.outlier_values = self._cumsum(lengths_seq)
         offsets_col.outlier_values = self._cumsum(lengths_seq)
         offsets_overall.outlier_values = self._cumsum(lengths_overall)
-
-        # dtype一致性
         if hasattr(grad_output, 'dtype') and hasattr(softmax_output, 'dtype'):
             softmax_output.dtype = grad_output.dtype
-
         return case_config
 
     def _resolve_B(self, offset_tensor):
@@ -98,7 +89,6 @@ class Jagged2SoftmaxBackwardGenerator(CaseGenerator):
             offset_len = random.choice(offset_tensor.dim_values)
             if offset_len > 1:
                 return offset_len - 1
-        # 兜底：对齐 yaml dim_values 的 B 集合（1/3/5/7/10/15）
         return random.choice([1, 3, 5, 7, 10, 15])
 
     def _generate_seq_lengths(self, B):

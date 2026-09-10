@@ -22,7 +22,7 @@
 #   c2   = sum(DY[row]) / D
 #   DX[row] = (DY[row] - (xhat * c1 + c2)) * Rstd[row]
 #
-# Kernel 参数（见 triton_layer_norm.py:133-167）：
+# Kernel 参数见 triton_layer_norm_bwd_dx_kernel.py。
 #   _layer_norm_bwd_dx(DX, DY, X, Mean, Rstd,
 #                      stride_dx, stride_dy, stride_x, D, eps,
 #                      BLOCK_D: constexpr)
@@ -38,7 +38,7 @@ api: pytorch
 version: v2.1
 api_type: triton_layer_norm_bwd_dx
 triton_api_type: triton_layer_norm_bwd_dx
-triton_name: triton_layer_norm._layer_norm_bwd_dx
+triton_name: triton_layer_norm_bwd_dx_kernel._layer_norm_bwd_dx
 generate: generate_triton_layer_norm_bwd_dx
 
 dtype_numbers: 3334

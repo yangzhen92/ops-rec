@@ -58,7 +58,7 @@ DX = (DY - (xhat * c1 + c2)) * Rstd
 ```python
 import torch
 
-from triton_layer_norm import _layer_norm_bwd_dx
+from triton_layer_norm_bwd_dx_kernel import _layer_norm_bwd_dx
 
 x = torch.randn((64, 1024), dtype=torch.float16, device="npu")
 dy = torch.randn_like(x)
@@ -103,10 +103,10 @@ _layer_norm_bwd_dx[(x.shape[0],)](
 triton_layer_norm_bwd_dx/
 ├── README.md
 ├── gpu_atk_test/
-│   ├── triton_layer_norm.py                         # GPU 侧原始 kernel 实现
+│   ├── triton_layer_norm_bwd_dx_kernel.py           # GPU 侧原始 kernel 实现
 │   └── triton_layer_norm_bwd_dx_api.py              # GPU 侧 ATK 自定义 API 封装
 └── npu_atk_test/
-    ├── triton_layer_norm.py                         # NPU 适配后的 autotune kernel 实现
+    ├── triton_layer_norm_bwd_dx_kernel.py           # NPU 适配后的 autotune kernel 实现
     ├── triton_layer_norm_bwd_dx_api.py              # NPU 侧 ATK 自定义 API 封装
     ├── triton_layer_norm_bwd_dx.yaml                # ATK 算子用例参数
     ├── generate_triton_layer_norm_bwd_dx.py         # shape 约束生成脚本
@@ -126,6 +126,8 @@ triton_layer_norm_bwd_dx/
 
 ### 生成精度测试数据
 
+该命令读取 YAML 参数空间，并通过 generator 修正 X/DY 的 shape 关系，生成精度测试用例 JSON。
+
 ```bash
 atk case -f triton_layer_norm_bwd_dx.yaml -p generate_triton_layer_norm_bwd_dx.py
 ```
@@ -134,11 +136,15 @@ atk case -f triton_layer_norm_bwd_dx.yaml -p generate_triton_layer_norm_bwd_dx.p
 
 ### 远端 GPU 服务器启动监听命令
 
+该命令在 GPU 基准环境启动 ATK server，并从指定目录加载 GPU API 封装。
+
 ```bash
 atk server --devices 0 --plugin_path /path/to/api文件所在文件夹
 ```
 
 ### 精度测试
+
+该命令由 NPU 侧连接 GPU server，分别计算两端的 DX，并比较输出梯度的精度。
 
 ```bash
 atk node --backend triton --devices 0 node --backend npu --devices 0 \
@@ -147,6 +153,8 @@ atk node --backend triton --devices 0 node --backend npu --devices 0 \
 ```
 
 ### 性能测试
+
+该命令读取性能用例 JSON，在 NPU 侧执行设备性能测试并记录 backward kernel 耗时。
 
 ```bash
 atk node --backend triton --devices 0 node --backend npu --devices 0 \

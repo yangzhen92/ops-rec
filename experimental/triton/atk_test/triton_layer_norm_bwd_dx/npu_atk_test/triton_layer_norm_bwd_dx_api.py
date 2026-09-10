@@ -26,7 +26,7 @@ _layer_norm_bwd_dx kernel ATK API 封装 — Autotune 版本。
   DX[row] = (DY[row] - (xhat * c1 + c2)) * Rstd[row]
 
 与 double_benchmark 版 API 的区别：
-  1. 导入的源文件（autotune/triton_layer_norm.py）中的 _layer_norm_bwd_dx
+  1. 导入 triton_layer_norm_bwd_dx_kernel.py 中的 _layer_norm_bwd_dx
      带 @triton.autotune（BLOCK_D / num_warps 候选 + early_config_prune 按 D 剪枝）。
   2. 不再主动计算 / 传递 BLOCK_D 与 num_warps，由 autotune 自动注入。
 """
@@ -39,7 +39,7 @@ import torch
 from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
 from atk.tasks.api_execute.base_api import BaseApi
-from triton_layer_norm import _layer_norm_bwd_dx
+from triton_layer_norm_bwd_dx_kernel import _layer_norm_bwd_dx
 
 _SUPPORTED_DTYPES = {torch.float32, torch.float16, torch.bfloat16}
 """kernel 支持的 dtype。"""
@@ -61,9 +61,6 @@ def _synchronize(device: str) -> None:
 
 
 @register("triton_layer_norm_bwd_dx")
-# @register("triton_layer_norm_bwd_dx.autotune")
-# @register("triton_layer_norm._layer_norm_bwd_dx.autotune")
-# @register("_layer_norm_bwd_dx_autotune")
 class TritonLayerNormBwdDxAutotuneApi(BaseApi):
     """_layer_norm_bwd_dx kernel 的 Autotune API 封装。
 

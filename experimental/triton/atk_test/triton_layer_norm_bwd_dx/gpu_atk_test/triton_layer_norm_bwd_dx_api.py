@@ -19,7 +19,7 @@ _layer_norm_bwd_dx kernel 的 ATK API 封装。
 该 kernel 是 layer norm（非 learnable 分支）的反向，计算输入 X 的梯度 DX。
 每个 program 处理一行：grid = (N,)。
 
-Kernel 签名（见 triton_layer_norm.py:133-167）：
+Kernel 签名见 triton_layer_norm_bwd_dx_kernel.py。
   _layer_norm_bwd_dx(DX, DY, X, Mean, Rstd,
                      stride_dx, stride_dy, stride_x, D, eps,
                      BLOCK_D: tl.constexpr)
@@ -42,7 +42,7 @@ import torch
 from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
 from atk.tasks.api_execute.base_api import BaseApi
-from triton_layer_norm import _layer_norm_bwd_dx
+from triton_layer_norm_bwd_dx_kernel import _layer_norm_bwd_dx
 
 _SUPPORTED_DTYPES = {torch.float32, torch.float16, torch.bfloat16}
 """kernel 支持的 dtype。"""
@@ -71,7 +71,6 @@ def _next_pow2(n: int) -> int:
 
 
 @register("triton_layer_norm_bwd_dx")
-# @register("triton_layer_norm._layer_norm_bwd_dx")
 @register("_layer_norm_bwd_dx")
 class TritonLayerNormBwdDxApi(BaseApi):
     """_layer_norm_bwd_dx kernel 的 API 封装。
@@ -141,7 +140,7 @@ class TritonLayerNormBwdDxApi(BaseApi):
         # ── 4. BLOCK_D / num_warps（对齐上游 triton_weighted_layer_norm_fwd）──
         # BLOCK_D = min(65536//elem_size, next_pow2(D))，必须覆盖整个 D。
         # 无硬编码上限：D 覆盖到 8192（YAML dim_values 上限）时 fp32 下
-        # next_pow2(D)=8192 < 65536//4=16384，BLOCK_D 由 next_pow2(D) 主导。
+        # D 不超过 8192 时，fp32 的容量上限为 16384，分块大小由 D 的下一个二次幂决定。
         elem_size = x_cpu.element_size()
         max_fused_size = 65536 // elem_size
         block_d = min(max_fused_size, _next_pow2(d))
@@ -173,7 +172,6 @@ class TritonLayerNormBwdDxApi(BaseApi):
         self._stride_dx = dx.stride(0)
         self._stride_dy = dy_d.stride(0)
         self._stride_x = x_d.stride(0)
-        # self._case_id = _make_case_id(x_d)
 
     def __call__(self, input_data: InputDataset, with_output: bool = False):
         _synchronize(self._device)

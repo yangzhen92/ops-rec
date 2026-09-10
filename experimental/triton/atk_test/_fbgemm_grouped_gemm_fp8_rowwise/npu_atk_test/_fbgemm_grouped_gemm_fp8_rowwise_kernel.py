@@ -1,0 +1,655 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
+import functools
+import warnings
+from typing import Optional
+
+import sys
+import torch
+
+import triton
+import triton.language as tl
+
+from triton.runtime import driver  # @manual
+
+try:
+    import torch_npu  # noqa: F401
+
+    HAS_NPU = torch.npu.is_available()
+except ImportError:
+    HAS_NPU = False
+
+
+def map_dtype_to_triton(dtype: torch.dtype) -> tl.dtype:
+    if dtype == torch.float16:
+        return tl.float16
+    elif dtype == torch.bfloat16:
+        return tl.bfloat16
+    elif dtype == torch.float32:
+        return tl.float32
+    elif dtype == torch.int32:
+        return tl.int32
+    elif dtype == torch.float8_e4m3fn:
+        if HAS_NPU or torch.version.hip:
+            return tl.float8e4b8
+        else:
+            return tl.float8e4nv
+    else:
+        raise ValueError(f"Unsupported dtype {dtype}")
+
+
+HAS_TMA_DESC = hasattr(tl, "make_tensor_descriptor") and not HAS_NPU
+
+if HAS_TMA_DESC:
+    print(
+        "TMA benchmarks will be running with experimental grid constant TMA descriptor.",
+        file=sys.stderr,
+    )
+else:
+    if HAS_NPU:
+        print(
+            "Running on Ascend NPU: TMA is not supported.",
+            file=sys.stderr,
+        )
+    else:
+        print(
+            "TMA benchmarks will be running without grid constant TMA descriptor.",
+            file=sys.stderr,
+        )
+
+
+class TmaAutoTuneHelper:
+    class KernelParamWrapper:
+        def __init__(self, desc):
+            self.desc = desc
+
+        def tma_desc_cpu_ptr(self):
+            return self.desc.data_ptr()
+
+    TMA_SIZE = 128
+
+    def __init__(self):
+        if HAS_NPU:
+            raise RuntimeError(
+                "TmaAutoTuneHelper cannot be used on Ascend NPU. "
+                "TMA (Tensor Memory Accelerator) is a NVIDIA Hopper-specific feature."
+            )
+
+        utils = triton.runtime.driver.active.utils
+        if hasattr(utils, 'fill_1d_tma_descriptor'):
+            self.fill_1d_tma_descriptor_inner = utils.fill_1d_tma_descriptor
+            self.fill_2d_tma_descriptor_inner = utils.fill_2d_tma_descriptor
+        else:
+            self.fill_1d_tma_descriptor_inner = utils.fill_tma_descriptor
+            self.fill_2d_tma_descriptor_inner = utils.fill_tma_descriptor
+
+        if HAS_TMA_DESC:
+            self.descriptors = {}
+        else:
+            self.cuda_descriptors = {}
+
+    def init_tma_descriptor(self, name):
+        if HAS_TMA_DESC:
+            self.descriptors[name] = torch.empty(TmaAutoTuneHelper.TMA_SIZE, device="cpu", dtype=torch.int8)
+        else:
+            self.cuda_descriptors[name] = torch.empty(TmaAutoTuneHelper.TMA_SIZE, device="cuda", dtype=torch.int8)
+
+    def fill_1d_tma_descriptor(self, name, ptr, dim, block_dim, element_size):
+        if HAS_TMA_DESC:
+            desc_x = self.descriptors[name]
+            assert desc_x.data_ptr() % 64 == 0
+            self.fill_1d_tma_descriptor_inner(ptr, dim, block_dim, element_size, desc_x.data_ptr())
+        else:
+            desc_x = self.cuda_descriptors[name]
+            buf_x = torch.empty_like(desc_x, device="cpu", pin_memory=True)
+            self.fill_1d_tma_descriptor_inner(ptr, dim, block_dim, element_size, buf_x.data_ptr())
+            desc_x.copy_(buf_x, non_blocking=True)
+
+    def fill_2d_tma_descriptor(self, name, ptr, dim1, dim0, block_dim1, block_dim0, element_size):
+        if HAS_TMA_DESC:
+            desc_x = self.descriptors[name]
+            assert desc_x.data_ptr() % 64 == 0
+            self.fill_2d_tma_descriptor_inner(ptr, dim1, dim0, block_dim1, block_dim0, element_size, desc_x.data_ptr())
+        else:
+            desc_x = self.cuda_descriptors[name]
+            buf_x = torch.empty_like(desc_x, device="cpu", pin_memory=True)
+            self.fill_2d_tma_descriptor_inner(ptr, dim1, dim0, block_dim1, block_dim0, element_size, buf_x.data_ptr())
+            desc_x.copy_(buf_x, non_blocking=True)
+
+    def get_tma_descriptor_kernel_param(self, name):
+        if HAS_TMA_DESC:
+            assert self.descriptors[name] is not None
+            return self.KernelParamWrapper(self.descriptors[name])
+        else:
+            assert self.cuda_descriptors[name] is not None
+            return self.cuda_descriptors[name]
+
+
+_NV_CONFIGS = [
+    triton.Config(
+        {
+            "BLOCK_SIZE_M": block_size_m,
+            "BLOCK_SIZE_N": block_size_n,
+            "BLOCK_SIZE_K": block_size_k,
+            "NUM_CONSUMER_GROUPS": 1,
+        },
+        num_stages=num_stages,
+        num_warps=num_warps,
+        num_ctas=num_ctas,
+    )
+    for block_size_m in [64, 128]
+    for block_size_n in [64, 128]
+    for block_size_k in [64, 128]
+    for num_stages in [2, 3]
+    for num_warps in [4, 8]
+    for num_ctas in [1]
+]
+
+_AMD_CONFIGS = [
+    triton.Config(
+        {
+            "BLOCK_SIZE_M": block_size_m,
+            "BLOCK_SIZE_N": block_size_n,
+            "BLOCK_SIZE_K": block_size_k,
+            "waves_per_eu": waves_per_cu,
+            "matrix_instr_nonkdim": matrix_instr_nonkdim,
+            "NUM_CONSUMER_GROUPS": 1,
+        },
+        num_stages=num_stages,
+        num_warps=num_warps,
+    )
+    for block_size_m in [32, 64, 128]
+    for block_size_n in [32, 64, 128, 256]
+    for block_size_k in [128, 256]
+    for num_stages in [1, 2]
+    for num_warps, waves_per_cu in [(4, 1), (8, 2), (16, 4)]
+    for matrix_instr_nonkdim in [16]
+]
+
+_NPU_CONFIGS = [
+    triton.Config(
+        {
+            "BLOCK_SIZE_M": block_size_m,
+            "BLOCK_SIZE_N": block_size_n,
+            "BLOCK_SIZE_K": block_size_k,
+            "NUM_CONSUMER_GROUPS": 1,
+        },
+        num_stages=num_stages,
+        num_warps=num_warps,
+        num_ctas=1,
+    )
+    for block_size_m in [64, 128, 256]
+    for block_size_n in [64, 128, 256]
+    for block_size_k in [64, 128]
+    for num_stages in [2, 3, 4]
+    for num_warps in [4, 8]
+    if block_size_m * block_size_n <= 32768
+]
+
+
+def early_config_prune(configs, named_args, dtsize=None, dtype=None, **kwargs):
+    is_npu = HAS_NPU
+    is_hip = torch.version.hip
+
+    if dtsize is None:
+        dtsize = named_args["c_ptr"].element_size()
+    if dtype is None:
+        dtype = named_args["c_ptr"].dtype
+
+    if is_npu:
+        device = torch.npu.current_device()
+
+        try:
+            props = torch.npu.get_device_properties(device)
+            vector_cores = props.multi_processor_count  # 56
+            num_sm = vector_cores // 2  # 28 AI Cores (actual scheduling unit)
+        except Exception:
+            num_sm = 28  # Fallback for Ascend 950
+
+        L0A_SIZE = 64 * 1024  # 64 KB  - stores A tiles (Cube read-only)
+        L0B_SIZE = 64 * 1024  # 64 KB  - stores B tiles (Cube read-only)
+        L0C_SIZE = 256 * 1024  # 256 KB - FP32 accumulator (Cube read/write)
+        UB_SIZE = 512 * 1024  # 512 KB - Unified Buffer (Vector)
+
+    elif is_hip:
+        device = torch.cuda.current_device()
+        max_shared_memory = driver.active.utils.get_device_properties(device)["max_shared_mem"]
+        num_sm = driver.active.utils.get_device_properties(device)["multiprocessor_count"]
+    else:
+        device = torch.cuda.current_device()
+        max_shared_memory = driver.active.utils.get_device_properties(device)["max_shared_mem"]
+        num_sm = driver.active.utils.get_device_properties(device)["multiprocessor_count"]
+
+    pruned_configs = []
+    for config in configs:
+        kw = config.kwargs
+        (
+            BLOCK_M,
+            BLOCK_N,
+            BLOCK_K,
+            num_stages,
+            use_tma_load_on_scales,
+        ) = (
+            kw["BLOCK_SIZE_M"],
+            kw["BLOCK_SIZE_N"],
+            kw["BLOCK_SIZE_K"],
+            config.num_stages,
+            kw.get("USE_TMA_LOAD_ON_SCALES", False),
+        )
+        G, M, N, K = (
+            named_args["G"],
+            named_args["M_BUCKET"],
+            named_args["N"],
+            named_args["K"],
+        )
+
+        if K % BLOCK_K != 0:
+            continue
+
+        if is_npu:
+            if BLOCK_M * BLOCK_N > 32768:
+                continue
+
+            L0A_required = BLOCK_M * BLOCK_K * num_stages * dtsize
+            if L0A_required > L0A_SIZE:
+                continue
+
+            L0B_required = BLOCK_K * BLOCK_N * num_stages * dtsize
+            if L0B_required > L0B_SIZE:
+                continue
+
+            L0C_required = BLOCK_M * BLOCK_N * 4  # FP32
+            if L0C_required > L0C_SIZE:
+                continue
+
+            UB_required = 2 * BLOCK_M * BLOCK_N * 4  # FP32, double buffered
+            if UB_required > UB_SIZE:
+                continue
+
+        elif is_hip:
+            required_shared_memory = BLOCK_N * BLOCK_K * num_stages * dtsize
+            if required_shared_memory > max_shared_memory:
+                continue
+
+        else:
+            required_shared_memory = (BLOCK_M + BLOCK_N) * BLOCK_K * num_stages * dtsize
+            if required_shared_memory > max_shared_memory:
+                continue
+
+        M_PER_GROUP = M // G
+        MIN_M_TILES = 28 if is_npu else (32 if is_hip else 64)
+
+        if is_npu:
+            if BLOCK_M > (M_PER_GROUP * 4):
+                continue
+        else:
+            if BLOCK_M > MIN_M_TILES and BLOCK_M > (M_PER_GROUP * 2):
+                continue
+
+        if not is_npu:
+            if BLOCK_M < 128 and BLOCK_M < (M_PER_GROUP // 2):
+                continue
+
+        N_TILES = (N + BLOCK_N - 1) // BLOCK_N
+        MIN_N_TILES = 28 if is_npu else (32 if is_hip else 64)
+
+        if BLOCK_N > MIN_N_TILES and M * N_TILES < num_sm:
+            continue
+        if BLOCK_N < 128 and M * N_TILES > 2 * num_sm:
+            continue
+
+        if dtsize >= 2:
+            if use_tma_load_on_scales:
+                continue
+
+        pruned_configs.append(config)
+
+    return pruned_configs
+
+
+TT_FP8_DTYPE = tl.float8e4b8 if torch.version.hip else tl.float8e4nv
+
+
+@triton.autotune(
+    configs=_NPU_CONFIGS if HAS_NPU else (_AMD_CONFIGS if torch.version.hip else _NV_CONFIGS),
+    key=["G", "M_BUCKET", "N", "K"],
+    prune_configs_by={"early_config_prune": functools.partial(early_config_prune, dtype=TT_FP8_DTYPE, dtsize=1)},
+    restore_value=["c_ptr"],  # restore for scatter_add fusion
+)
+@triton.jit
+def _fbgemm_grouped_gemm_fp8_rowwise(
+    a_desc_ptr,
+    a_scale_ptr,
+    b_desc_ptr,
+    b_scale_ptr,
+    b_scale_desc_ptr,
+    c_ptr,
+    scatter_add_indices,
+    m_sizes,
+    G: tl.constexpr,
+    M_BUCKET,
+    N: tl.constexpr,
+    K: tl.constexpr,
+    NUM_SMS: tl.constexpr,
+    FUSE_SCATTER_ADD: tl.constexpr,
+    USE_TMA_LOAD: tl.constexpr,
+    USE_TMA_STORE: tl.constexpr,
+    USE_FAST_ACCUM: tl.constexpr,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_N: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
+    NUM_CONSUMER_GROUPS: tl.constexpr,
+) -> None:
+    # pylint: disable=too-many-nested-blocks
+    tl.static_assert(
+        not (FUSE_SCATTER_ADD and USE_TMA_STORE),
+        "Cannot fuse scatter add with TMA store!",
+    )
+
+    tidx = tl.program_id(0)
+
+    dtype = TT_FP8_DTYPE
+
+    M_end_offset = 0
+    M_end_offset = M_end_offset.to(tl.int64)  # pyre-ignore  # pylint: disable=no-member
+    iterated_tiles = 0
+    for g in tl.range(G):
+        m_size = tl.load(m_sizes + g)
+
+        if m_size > 0:
+            M_start_offset = M_end_offset
+            M_end_offset = M_start_offset + m_size
+            N_start_offset = g.to(tl.int64) * N
+            n_size = N
+
+            num_m_tiles = tl.cdiv(m_size, BLOCK_SIZE_M)
+            num_n_tiles = tl.cdiv(n_size, BLOCK_SIZE_N)
+            num_tiles = num_m_tiles * num_n_tiles
+
+            if USE_TMA_STORE:
+                c_desc_ptr = tl.make_tensor_descriptor(
+                    c_ptr + M_start_offset * N,
+                    shape=[m_size, n_size],
+                    strides=[n_size, 1],
+                    block_shape=[BLOCK_SIZE_M, BLOCK_SIZE_N],
+                )
+
+            while iterated_tiles <= tidx < iterated_tiles + num_tiles:
+                gidx = tidx - iterated_tiles
+                tile_m_idx = gidx % num_m_tiles
+                tile_n_idx = gidx // num_m_tiles
+
+                accumulator = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
+                tl.static_assert(K % BLOCK_SIZE_K == 0)
+                if USE_TMA_LOAD:
+                    m_offset = (M_start_offset + tile_m_idx * BLOCK_SIZE_M).to(tl.int32)
+                    n_offset = (N_start_offset + tile_n_idx * BLOCK_SIZE_N).to(tl.int32)
+                    for k_offset in range(0, K, BLOCK_SIZE_K):
+                        a = tl._experimental_descriptor_load(
+                            a_desc_ptr,
+                            [m_offset, k_offset],
+                            [BLOCK_SIZE_M, BLOCK_SIZE_K],
+                            dtype,
+                        )
+                        b = tl._experimental_descriptor_load(
+                            b_desc_ptr,
+                            [n_offset, k_offset],
+                            [BLOCK_SIZE_N, BLOCK_SIZE_K],
+                            dtype,
+                        )
+                        if USE_FAST_ACCUM:
+                            accumulator = tl.dot(a, b.T, accumulator)
+                        else:
+                            accumulator += tl.dot(a, b.T)
+                else:
+                    offs_am = tile_m_idx * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
+                    offs_bn = tile_n_idx * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
+                    offs_k = tl.arange(0, BLOCK_SIZE_K)
+                    a_ptrs = a_desc_ptr + (M_start_offset + offs_am[:, None]) * K + offs_k[None, :]
+                    b_ptrs = b_desc_ptr + (N_start_offset + offs_bn[:, None]) * K + offs_k[None, :]
+                    for k_offset in range(0, K, BLOCK_SIZE_K):
+                        a = tl.load(a_ptrs, mask=offs_am[:, None] < m_size)
+                        b = tl.load(b_ptrs, mask=offs_bn[:, None] < n_size)
+                        accumulator += tl.dot(a, b.T)
+                        a_ptrs += BLOCK_SIZE_K
+                        b_ptrs += BLOCK_SIZE_K
+
+                offs_am = tile_m_idx * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
+                offs_bn = tile_n_idx * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
+                a_scale = tl.load(
+                    a_scale_ptr + M_start_offset + offs_am[:, None],
+                    mask=offs_am[:, None] < m_size,
+                )
+                b_scale = tl.load(
+                    b_scale_ptr + N_start_offset + offs_bn[None, :],
+                    mask=offs_bn[None, :] < n_size,
+                )
+                c = accumulator.to(tl.float32) * a_scale * b_scale
+
+                if USE_TMA_STORE:
+                    m_offset = (tile_m_idx * BLOCK_SIZE_M).to(tl.int32)
+                    n_offset = (tile_n_idx * BLOCK_SIZE_N).to(tl.int32)
+                    c_desc_ptr.store([m_offset, n_offset], c.to(c_ptr.dtype.element_ty))
+                elif FUSE_SCATTER_ADD:
+                    offs_am = tile_m_idx * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
+                    mask = offs_am < m_size
+                    m_offsets = tl.load(
+                        scatter_add_indices + M_start_offset + offs_am,
+                        mask=mask,
+                        cache_modifier=".ca",
+                    )
+                    offs_bn = tile_n_idx * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
+                    tl.atomic_add(
+                        c_ptr + m_offsets[:, None] * N + offs_bn[None, :],
+                        c.to(c_ptr.dtype.element_ty),
+                        mask=(mask[:, None]) & (offs_bn[None, :] < n_size),
+                        sem="relaxed",
+                    )
+                else:
+                    tl.store(
+                        c_ptr + (M_start_offset + offs_am[:, None]) * N + offs_bn[None, :],
+                        c,
+                        mask=(offs_am[:, None] < m_size) & (offs_bn[None, :] < n_size),
+                    )
+                tidx += NUM_SMS
+
+            iterated_tiles += num_tiles
+
+
+def _grouped_gemm(
+    *,
+    x: torch.Tensor,
+    w: torch.Tensor,
+    m_sizes: torch.Tensor,
+    x_scale: Optional[torch.Tensor],
+    w_scale: Optional[torch.Tensor],
+    use_fast_accum: bool,
+    use_warp_specialization: bool,
+    output_tensor: Optional[torch.Tensor],
+    scatter_add_indices: Optional[torch.Tensor],
+) -> torch.Tensor:
+    if use_warp_specialization:
+        warnings.warn(
+            "Warp specialization is not supported in this fp8_rowwise suite "
+            "(_fbgemm_grouped_gemm_fp8_rowwise); falling back to "
+            "_fbgemm_grouped_gemm_fp8_rowwise.",
+            stacklevel=2,
+        )
+        use_warp_specialization = False
+
+    USE_TMA_LOAD = not torch.version.hip and not HAS_NPU
+    USE_TMA_STORE = False
+
+    if USE_TMA_LOAD:
+        try:
+            cc = torch.cuda.get_device_capability()
+            if cc[0] < 9:  # 非 Hopper 架构
+                USE_TMA_LOAD = False
+                USE_TMA_STORE = False
+        except Exception:
+            USE_TMA_LOAD = False
+            USE_TMA_STORE = False
+
+    if USE_TMA_LOAD and not HAS_TMA_DESC:
+        USE_TMA_LOAD = False
+        warnings.warn("TMA load is disabled as there is no TMA descriptor support!", stacklevel=2)
+
+    if USE_TMA_STORE and not HAS_TMA_DESC:
+        USE_TMA_STORE = False
+        warnings.warn("TMA store is disabled as there is no TMA descriptor support!", stacklevel=2)
+
+    G = m_sizes.shape[0]
+
+    assert x.is_contiguous()
+    assert w.is_contiguous()
+    assert m_sizes.is_contiguous()
+
+    M, K = x.shape
+    N = w.shape[0] // G
+    assert K == w.shape[1]
+
+    if K % 8 != 0 or N % 8 != 0:
+        USE_TMA_LOAD = False
+        USE_TMA_STORE = False
+        warnings.warn(
+            f"TMA load is disabled since K or N is not a multiple of 8: {K=}, {N=}.",
+            stacklevel=2,
+        )
+        assert output_tensor is None, (
+            f"Fused scatter add has large rounding error when K or N is not a multiple of 8: {K=}, {N=}."
+        )
+
+    if output_tensor is None:
+        FUSE_SCATTER_ADD = False
+        assert scatter_add_indices is None
+        y = torch.empty((M, N), device=x.device, dtype=torch.bfloat16)
+    else:
+        FUSE_SCATTER_ADD = True
+        assert scatter_add_indices is not None
+        assert scatter_add_indices.is_contiguous()
+        assert scatter_add_indices.shape == (M,)
+        y = output_tensor
+    if M == 0 or N == 0:
+        return y
+
+    if HAS_NPU:
+        NUM_SMS = torch.npu.device_count()  # Fallback, may not be accurate
+        try:
+            props = torch.npu.get_device_properties(x.device)
+            NUM_SMS = props.multi_processor_count // 2  # 28 AI Cores for Ascend 950
+        except Exception:
+            NUM_SMS = 28  # Default for Ascend 950
+    else:
+        NUM_SMS = torch.cuda.get_device_properties("cuda").multi_processor_count
+
+    desc_helper = None
+    desc_x = x
+    desc_w = w
+    desc_ws = w_scale
+
+    if USE_TMA_LOAD:
+        desc_helper = TmaAutoTuneHelper()
+        desc_helper.init_tma_descriptor("x")
+        desc_helper.init_tma_descriptor("w")
+        desc_x = desc_helper.get_tma_descriptor_kernel_param("x")
+        desc_w = desc_helper.get_tma_descriptor_kernel_param("w")
+
+    if USE_TMA_STORE:
+
+        def alloc_fn(size: int, alignment: int, stream: Optional[int]):
+            return torch.empty(size, device="cuda", dtype=torch.int8)
+
+        triton.set_allocator(alloc_fn)
+
+    def grid(META):
+        if USE_TMA_LOAD:
+            nonlocal desc_helper
+            desc_helper.fill_2d_tma_descriptor(
+                "x",
+                x.data_ptr(),
+                M,
+                K,
+                META["BLOCK_SIZE_M"] // META["NUM_CONSUMER_GROUPS"],
+                META["BLOCK_SIZE_K"],
+                x.element_size(),
+            )
+
+            desc_helper.fill_2d_tma_descriptor(
+                "w",
+                w.data_ptr(),
+                N * G,
+                K,
+                META["BLOCK_SIZE_N"],
+                META["BLOCK_SIZE_K"],
+                w.element_size(),
+            )
+
+        return (NUM_SMS,)
+
+    M_BUCKET_CAP = 16384
+    M_BUCKET = min(triton.next_power_of_2(M), M_BUCKET_CAP)
+
+    assert x_scale is not None and w_scale is not None
+    assert x_scale.is_contiguous()
+    assert w_scale.is_contiguous()
+    fn = _fbgemm_grouped_gemm_fp8_rowwise
+    args = (
+        desc_x,
+        x_scale,
+        desc_w,
+        w_scale,
+        desc_ws,
+        y,
+        scatter_add_indices,
+        m_sizes,
+        G,
+        M_BUCKET,
+        N,
+        K,
+        NUM_SMS,
+        FUSE_SCATTER_ADD,
+        USE_TMA_LOAD,
+        USE_TMA_STORE,
+        use_fast_accum,
+    )
+    fn[grid](*args)
+
+    return y
+
+
+def grouped_gemm_fp8_rowwise(
+    x: torch.Tensor,
+    w: torch.Tensor,
+    m_sizes: torch.Tensor,
+    x_scale: torch.Tensor,
+    w_scale: torch.Tensor,
+    use_fast_accum: bool = True,
+    *,
+    _use_warp_specialization: bool = True,
+    _output_tensor: Optional[torch.Tensor] = None,
+    _scatter_add_indices: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
+    return _grouped_gemm(
+        x=x,
+        w=w,
+        m_sizes=m_sizes,
+        x_scale=x_scale,
+        w_scale=w_scale,
+        use_fast_accum=use_fast_accum,
+        use_warp_specialization=_use_warp_specialization,
+        output_tensor=_output_tensor,
+        scatter_add_indices=_scatter_add_indices,
+    )

@@ -94,9 +94,7 @@ def _generate_jagged_offsets(dense: torch.Tensor, jagged_offsets_input: list, de
             target_last = (min_last + max_last) // 2
 
             # 每个元素的平均长度
-            avg_len = target_last // B
-            if avg_len < 1:
-                avg_len = 1
+            avg_len = max(target_last // B, 1)
             avg_len = min(avg_len, seq)  # 不超过 seq
 
             # 分配长度
@@ -151,10 +149,8 @@ def _generate_jagged_offsets(dense: torch.Tensor, jagged_offsets_input: list, de
             target_last = (min_last + max_last) // 2
 
             # 每个元素的平均长度
-            avg_len = target_last // total_inner
+            avg_len = max(target_last // total_inner, 1)
             avg_len = min(avg_len, seq)  # 不超过 seq
-            if avg_len < 1:
-                avg_len = 1
 
             # 分配长度：前几个元素多分配1
             remainder = target_last - avg_len * total_inner

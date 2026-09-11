@@ -28,16 +28,6 @@ kernel.py 里**没有**独立的 grouped_gemm_ws() 函数：WS 是同一个入�
    并强制置 False，实际走 kernel _fbgemm_grouped_gemm（基础版）。
    K 或 N 不是 8 的倍数时同样会降级。所以本套件在 NPU 上采到的是基础版数据，
    用途是与 GPU 侧真 WS 结果逐 case 对齐，不是验证 NPU 的 WS 能力。
-
-两条踩过的坑，改动前请先读：
-
-1. 顶层不 import grouped_gemm（它的模块顶层会探测设备）。
-   torch 本身可以安全地顶层 import（参考其他成功的算子 API），
-   但 grouped_gemm 模块初始化时会调设备探测逻辑，必须推迟到 __call__ 内才 import。
-
-2. m_sizes 的值由本文件重建，不信任 ATK 传入值。
-   kernel 要求 sum(m_sizes) == M，而 ATK 只能注入 shape、无法注入精确序列。
-   这里只取长度定 G，值一律确定性重算——重建算法与非 WS 版逐字相同，保证两边对齐。
 """
 
 import torch
@@ -48,8 +38,6 @@ from atk.tasks.api_execute.base_api import BaseApi
 
 def _build_m_sizes(M: int, G: int):
     """确定性切分：把 M 行分成 G 段，保证 sum == M
-
-    与非 WS 版实现逐字一致，两套用例才能逐 case 比对。
     """
     base = M // G
     remainder = M - base * G

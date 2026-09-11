@@ -106,8 +106,8 @@ class _FbgemmGroupedGemmFp8RowwiseWsApi(BaseApi):
         if w.shape[1] != K:
             raise ValueError(f"K 维不匹配: x.shape[1]={K}, w.shape[1]={w.shape[1]}")
 
-        if K % 8 != 0 or N % 8 != 0:
-            raise ValueError(f"FP8 路径要求 K 与 N 均为 8 的倍数: K={K}, N={N}")
+        if K % 32 != 0 or N % 128 != 0:
+            raise ValueError(f"固定内核配置要求 K 为 32 的倍数且 N 为 128 的倍数: K={K}, N={N}")
 
         if w.dtype != x.dtype:
             w = w.to(x.dtype)

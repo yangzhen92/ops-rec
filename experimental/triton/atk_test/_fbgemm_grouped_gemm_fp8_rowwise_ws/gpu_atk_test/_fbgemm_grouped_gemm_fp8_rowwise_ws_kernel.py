@@ -41,24 +41,6 @@ except ImportError:
     HAS_NPU = False
 
 
-def map_dtype_to_triton(dtype: torch.dtype) -> tl.dtype:
-    if dtype == torch.float16:
-        return tl.float16
-    elif dtype == torch.bfloat16:
-        return tl.bfloat16
-    elif dtype == torch.float32:
-        return tl.float32
-    elif dtype == torch.int32:
-        return tl.int32
-    elif dtype == torch.float8_e4m3fn:
-        if HAS_NPU or torch.version.hip:
-            return tl.float8e4b8
-        else:
-            return tl.float8e4nv
-    else:
-        raise ValueError(f"Unsupported dtype {dtype}")
-
-
 HAS_TMA_DESC = hasattr(tl, "make_tensor_descriptor") and not HAS_NPU
 
 if HAS_TMA_DESC:
@@ -587,6 +569,7 @@ def _grouped_gemm(
     BLOCK_SIZE_N = 128
     BLOCK_SIZE_K = 32
     NUM_CONSUMER_GROUPS = 1
+    USE_TMA_LOAD_ON_SCALES = use_warp_specialization
 
     def grid(META):
         if USE_TMA_LOAD:
@@ -651,6 +634,8 @@ def _grouped_gemm(
     else:
         args += (USE_TMA_STORE, use_fast_accum)
     args += (BLOCK_SIZE_M, BLOCK_SIZE_N, BLOCK_SIZE_K, NUM_CONSUMER_GROUPS)
+    if use_warp_specialization:
+        args += (USE_TMA_LOAD_ON_SCALES, USE_TMA_STORE)
     fn[grid](*args)
 
     return y

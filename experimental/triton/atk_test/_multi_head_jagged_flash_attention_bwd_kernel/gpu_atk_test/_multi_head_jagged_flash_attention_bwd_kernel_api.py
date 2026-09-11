@@ -8,6 +8,7 @@ multi_head_jagged_flash_attention_bwd_kernel ATK API - 双精度测试版本
     dq, dk, dv = mh_backward(q, k, v, o, do, delta, lse, offset)
     q/k/v/o/do [num_heads, total_seq, D], delta/lse [num_heads, total_seq]
 """
+
 import torch
 from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
@@ -15,6 +16,7 @@ from atk.tasks.api_execute.base_api import BaseApi
 
 import sys
 import os
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from triton_multi_head_jagged_flash_attention import _multi_head_jagged_flash_attention_bwd_kernel
 
@@ -193,6 +195,7 @@ class MultiHeadJaggedFlashAttentionBwdKernelApi(BaseApi):
         dv = torch.zeros_like(v)
 
         import triton
+
         grid = (triton.cdiv(max_seq_len, BLOCK_N), B * num_heads)
 
         self._device = device
@@ -225,19 +228,50 @@ class MultiHeadJaggedFlashAttentionBwdKernelApi(BaseApi):
             torch.cuda.synchronize()
 
         _multi_head_jagged_flash_attention_bwd_kernel[self._grid](
-            self._q, self._k, self._v, self._o, self._offset,
-            self._dq, self._dk, self._dv, self._do, self._delta, self._lse,
-            self._q.stride(0), self._q.stride(1), self._q.stride(2),
-            self._k.stride(0), self._k.stride(1), self._k.stride(2),
-            self._v.stride(0), self._v.stride(1), self._v.stride(2),
-            self._o.stride(0), self._o.stride(1), self._o.stride(2),
-            self._lse.stride(0), self._delta.stride(0),
-            self._dq.stride(0), self._dq.stride(1), self._dq.stride(2),
-            self._dk.stride(0), self._dk.stride(1), self._dk.stride(2),
-            self._dv.stride(0), self._dv.stride(1), self._dv.stride(2),
-            self._do.stride(0), self._do.stride(1), self._do.stride(2),
-            self._num_heads, self._max_seq_len, self._D, self._allow_tf32,
-            BLOCK_M=self._BLOCK_M, BLOCK_N=self._BLOCK_N, BLOCK_D=self._BLOCK_D,
+            self._q,
+            self._k,
+            self._v,
+            self._o,
+            self._offset,
+            self._dq,
+            self._dk,
+            self._dv,
+            self._do,
+            self._delta,
+            self._lse,
+            self._q.stride(0),
+            self._q.stride(1),
+            self._q.stride(2),
+            self._k.stride(0),
+            self._k.stride(1),
+            self._k.stride(2),
+            self._v.stride(0),
+            self._v.stride(1),
+            self._v.stride(2),
+            self._o.stride(0),
+            self._o.stride(1),
+            self._o.stride(2),
+            self._lse.stride(0),
+            self._delta.stride(0),
+            self._dq.stride(0),
+            self._dq.stride(1),
+            self._dq.stride(2),
+            self._dk.stride(0),
+            self._dk.stride(1),
+            self._dk.stride(2),
+            self._dv.stride(0),
+            self._dv.stride(1),
+            self._dv.stride(2),
+            self._do.stride(0),
+            self._do.stride(1),
+            self._do.stride(2),
+            self._num_heads,
+            self._max_seq_len,
+            self._D,
+            self._allow_tf32,
+            BLOCK_M=self._BLOCK_M,
+            BLOCK_N=self._BLOCK_N,
+            BLOCK_D=self._BLOCK_D,
         )
 
         if device == 'npu':

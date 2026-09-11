@@ -26,7 +26,7 @@ kernel.py 里**没有**独立的 grouped_gemm_ws() 函数：WS 是同一个入�
 ⚠️ 在 Ascend NPU 上这个请求会被驳回：_grouped_gemm 检测到 HAS_NPU 时 warn
    "Warp specialization is disabled as it is not supported on Ascend NPU"
    并强制置 False，实际走 kernel _fbgemm_grouped_gemm（基础版）。
-   K 或 N 不是 8 的倍数时同样会降级。所以本套件在 NPU 上采到的是基础版数据，
+   K 或 N 不满足固定 tile 约束时同样会降级。所以本套件在 NPU 上采到的是基础版数据，
    用途是与 GPU 侧真 WS 结果逐 case 对齐，不是验证 NPU 的 WS 能力。
 """
 
@@ -37,8 +37,7 @@ from atk.tasks.api_execute.base_api import BaseApi
 
 
 def _build_m_sizes(M: int, G: int):
-    """确定性切分：把 M 行分成 G 段，保证 sum == M
-    """
+    """确定性切分：把 M 行分成 G 段，保证 sum == M"""
     base = M // G
     remainder = M - base * G
     return [base + (1 if i < remainder else 0) for i in range(G)]

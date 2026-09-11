@@ -515,6 +515,13 @@ def _grouped_gemm(
         )
         use_warp_specialization = False
 
+    if use_warp_specialization and not USE_TMA_LOAD:
+        warnings.warn(
+            "Warp specialization is disabled because TMA load is unavailable.",
+            stacklevel=2,
+        )
+        use_warp_specialization = False
+
     if use_warp_specialization:
         assert HAS_TMA_DESC
         USE_TMA_STORE = True  # Tuning decision
@@ -529,19 +536,16 @@ def _grouped_gemm(
     N = w.shape[0] // G
     assert K == w.shape[1]
 
-    if K % 8 != 0 or N % 8 != 0:
+    if K % 32 != 0 or N % 128 != 0:
         use_warp_specialization = False
         USE_TMA_LOAD = False
         USE_TMA_STORE = False
         warnings.warn(
-            f"TMA load and warp specialization are disabled since K or N is not a multiple of 8: {K=}, {N=}.",
+            f"TMA load and warp specialization require K % 32 == 0 and N % 128 == 0: {K=}, {N=}.",
             stacklevel=2,
         )
-        assert x_scale is None, f"Quantisation is not supported yet when K or N is not a multiple of 8: {K=}, {N=}."
-
-        assert output_tensor is None, (
-            f"Fused scatter add has large rounding error when K or N is not a multiple of 8: {K=}, {N=}."
-        )
+        assert x_scale is None, "Quantisation is not supported when the fixed tile constraints are not met."
+        assert output_tensor is None, "Fused scatter add is not supported when the fixed tile constraints are not met."
 
     if output_tensor is None:
         FUSE_SCATTER_ADD = False
@@ -621,7 +625,7 @@ def _grouped_gemm(
     M_BUCKET = min(triton.next_power_of_2(M), M_BUCKET_CAP)
 
     # WS 请求 → WS kernel；
-    # WS 不可用（NPU/ROCm/非 Hopper/K|N 非 8 倍数）→ 降级基础 kernel。
+    # WS 不可用（NPU/ROCm/非 Hopper/不满足固定 tile 约束）→ 降级基础 kernel。
     assert x_scale is None
     assert w_scale is None
     fn = _fbgemm_grouped_gemm_ws if use_warp_specialization else _fbgemm_grouped_gemm
@@ -645,6 +649,8 @@ def _grouped_gemm(
         args += (USE_TMA_STORE, use_fast_accum)
     # 添加tile size参数（原来由autotune提供）
     args += (BLOCK_SIZE_M, BLOCK_SIZE_N, BLOCK_SIZE_K, NUM_CONSUMER_GROUPS)
+    if use_warp_specialization:
+        args += (False, USE_TMA_STORE)
     fn[grid](*args)
 
     return y

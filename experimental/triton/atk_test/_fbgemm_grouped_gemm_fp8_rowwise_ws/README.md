@@ -4,7 +4,7 @@
 
 `_fbgemm_grouped_gemm_fp8_rowwise_ws` 算子源自 PyTorch FBGEMM：
 
-<https://github.com/pytorch/FBGEMM/blob/v1.5.0-release/fbgemm_gpu/experimental/gemm/triton_gemm/grouped_gemm.py>
+<https://github.com/pytorch/FBGEMM/blob/main/fbgemm_gpu/experimental/gemm/triton_gemm/grouped_gemm.py>
 
 该变体在 FP8 行级量化 grouped GEMM 上请求 Warp Specialization（WS）。支持 WS 与 TMA
 的 NVIDIA GPU 执行 WS Kernel；NPU 不支持该路径，运行时给出提示并回退到相同数值语义的
@@ -52,7 +52,7 @@ import torch
 from _fbgemm_grouped_gemm_fp8_rowwise_ws_api import _quantize_fp8_row
 from _fbgemm_grouped_gemm_fp8_rowwise_ws_kernel import grouped_gemm_fp8_rowwise
 
-device = "cuda"
+device = "npu"
 M, K, N, G = 1024, 128, 256, 4
 x = torch.randn((M, K), dtype=torch.bfloat16, device=device)
 w = torch.randn((G * N, K), dtype=x.dtype, device=device)

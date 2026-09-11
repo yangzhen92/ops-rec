@@ -83,25 +83,41 @@ _fbgemm_grouped_gemm_fp8_rowwise_ws/
 ```
 
 ## ATK 测试
-
-在 NPU 端生成精度用例：
-
+ 
+测试在 NPU / GPU 两端协同进行：
+ 
+- `npu_atk_test/` 部署到 NPU 端；`gpu_atk_test/` 部署到 GPU 端。
+- GPU 端启动 ATK server，NPU 端作为 ATK 客户端拉起精度/性能测试。
+ 
+### 远端 GPU 服务器起监听命令
+ 
+```bash
+atk server --devices 0 --plugin_path /path/to/api文件所在文件夹
+```
+ 
+### 3.1 生成测试数据
+ 
 ```bash
 atk case -f _fbgemm_grouped_gemm_fp8_rowwise_ws.yaml \
     -p generate_fbgemm_grouped_gemm_fp8_rowwise_ws.py
 ```
-
-GPU 端启动服务后，在 NPU 端执行精度或性能任务：
-
+ 
+### 3.2 精度对比
+ 
 ```bash
-# GPU端
-atk server --devices 0 --plugin_path /path/to/gpu_atk_test
-
-# NPU端
 atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {端口} --devices 0 \
     task -c all__fbgemm_grouped_gemm_fp8_rowwise_ws.json --task accuracy \
     -p _fbgemm_grouped_gemm_fp8_rowwise_ws_api.py
+```
+ 
+注：如需保存精度对比数据，需要在命令后加 `--save_data profile`。
+ 
+### 3.3 性能对比
+ 
+```bash
 atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {端口} --devices 0 \
     task -c _fbgemm_grouped_gemm_fp8_rowwise_ws_performance.json --task performance_device \
     -p _fbgemm_grouped_gemm_fp8_rowwise_ws_api.py
 ```
+ 
+注：如需保存性能对比数据，需要在命令后加 `--save_data profile`。

@@ -37,7 +37,6 @@ inputs:
       valid:
         values: [ [-1, 1] ]
         random_types: [ { name: nd, mean: [0], std: [0.1, 1] } ]
-      invalid: { values: [ [-1, 1] ] }
     boundary: { has_empty: false, has_infnan: false, has_scalar: false, has_upper_border: false, has_lower_border: false }
   - name: w
     type: tensor
@@ -52,7 +51,6 @@ inputs:
       valid:
         values: [ [-1, 1] ]
         random_types: [ { name: nd, mean: [0], std: [0.1, 1] } ]
-      invalid: { values: [ [-1, 1] ] }
     boundary: { has_empty: false, has_infnan: false, has_scalar: false, has_upper_border: false, has_lower_border: false }
   - name: m_sizes
     type: tensor
@@ -63,5 +61,4 @@ inputs:
       dim_values: { values: [ 1, 4, 16 ], weights: [ 0.2, 0.4, 0.4 ] }
     ranges:
       valid: { values: [ [1, 1] ] }
-      invalid: { values: [ [1, 1] ] }
     boundary: { has_empty: false, has_infnan: false, has_scalar: false, has_upper_border: false, has_lower_border: false }

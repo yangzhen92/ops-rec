@@ -132,73 +132,20 @@ class DenseToJaggedGenerator(CaseGenerator):
         # ==================== 约束2：jagged_offsets 数据类型一致 ====================
         # 所有 offset tensor 必须使用相同的数据类型（int32 或 int64）
         dtypes = set()
+        first_dtype = None
         for offset_tensor in jagged_offsets_input:
             if offset_tensor is not None and hasattr(offset_tensor, 'dtype'):
                 dtypes.add(offset_tensor.dtype)
+                if first_dtype is None:
+                    first_dtype = offset_tensor.dtype
 
         if len(dtypes) > 1:
-            # 统一为 int64
-            unified_dtype = 'int64'
+            # 多 dtype 时统一为第一个 offset 的 dtype（保留 yaml 的原始选择，
+            # 避免硬编码为 int64 导致 int32 case 被强行升格）
+            unified_dtype = first_dtype
             for offset_tensor in jagged_offsets_input:
                 if offset_tensor is not None and hasattr(offset_tensor, 'dtype'):
                     offset_tensor.dtype = unified_dtype
-
-        # ==================== 约束4：jagged_offsets 值约束 ====================
-        # 3D: 2*B <= jagged_offsets[0][-1] <= B*seq，相邻差值不超过 seq
-        # 4D: jagged_offsets[0][-1] == B1*B2，相邻差值不超过 B2
-        #      2*B1*B2 <= jagged_offsets[1][-1] <= B1*B2*seq，相邻差值不超过 seq
-        #      所有 offset 必须递增（jagged_offsets[i][j+1] >= jagged_offsets[i][j]）
-        #      所有 offset 必须从0开始（jagged_offsets[i][0] == 0）
-        for idx, offset_tensor in enumerate(jagged_offsets_input):
-            if offset_tensor is None or not hasattr(offset_tensor, 'value'):
-                continue
-
-            values = offset_tensor.value if hasattr(offset_tensor, 'value') else []
-            if not isinstance(values, (list, tuple)) or len(values) == 0:
-                continue
-
-            # 确保从0开始
-            if values[0] != 0:
-                values[0] = 0
-
-            # 确保递增，并限制相邻差值
-            if dense_dim == 3:
-                max_diff = seq
-            else:  # 4D
-                if idx == 0:
-                    max_diff = B2
-                else:
-                    max_diff = seq
-
-            for i in range(1, len(values)):
-                if values[i] < values[i-1]:
-                    values[i] = values[i-1]
-                if values[i] - values[i-1] > max_diff:
-                    values[i] = values[i-1] + max_diff
-
-            # 限制最后一个值
-            if dense_dim == 3:
-                # 2*B <= jagged_offsets[0][-1] <= B*seq
-                min_last = 2 * B
-                max_last = B * seq
-                if values[-1] < min_last:
-                    values[-1] = min_last
-                elif values[-1] > max_last:
-                    values[-1] = max_last
-            else:  # 4D
-                if idx == 0:
-                    # jagged_offsets[0][-1] == B1*B2
-                    values[-1] = B1 * B2
-                else:
-                    # 2*B1*B2 <= jagged_offsets[1][-1] <= B1*B2*seq
-                    min_last = 2 * B1 * B2
-                    max_last = B1 * B2 * seq
-                    if values[-1] < min_last:
-                        values[-1] = min_last
-                    elif values[-1] > max_last:
-                        values[-1] = max_last
-
-            offset_tensor.value = values
 
         # ==================== 约束3：operation_jagged_value 的数据类型 ====================
         # 当 operation_function 不为 null 时，operation_jagged_value 的数据类型需与 dense 一致

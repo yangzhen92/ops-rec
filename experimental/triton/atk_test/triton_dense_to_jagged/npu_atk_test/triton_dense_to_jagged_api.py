@@ -20,6 +20,9 @@ from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
 from atk.tasks.api_execute.base_api import BaseApi
 
+# 从被测代码直接引用 triton kernel
+from triton_dense_to_jagged import triton_dense_to_jagged, _jagged_offsets_to_dense_indice
+
 
 def get_device():
     """获取可用的设备，优先 NPU，其次 CUDA，最后 CPU"""
@@ -28,13 +31,10 @@ def get_device():
     try:
         if torch.cuda.is_available():
             return 'cuda'
-    except:
+    except (RuntimeError, AttributeError):
+        # CUDA driver/runtime 未安装或属性不可用时回退到 CPU
         pass
     return 'cpu'
-
-
-# 从被测代码直接引用 triton kernel
-from triton_dense_to_jagged import triton_dense_to_jagged, _jagged_offsets_to_dense_indice
 
 
 def _generate_jagged_offsets(dense: torch.Tensor, jagged_offsets_input: list, device: str) -> list:
@@ -171,6 +171,21 @@ class TritonDenseToJaggedApi(BaseApi):
 
     继承 BaseApi，实现算子的初始化和执行。
     """
+
+    # 在类层级预声明属性，便于 pylint 静态检查；
+    # 实际值在 init_by_input_data 中由 ATK 框架注入。
+    _device = None
+    _output_jagged_value = None
+    _jagged_offsets = None
+    _grid = None
+    _JAGGED_DIM = None
+    _dense_indices = None
+    _dense = None
+    _dense_col_stride = None
+    _dense_row_stride = None
+    _dense_matrix_stride = None
+    _operation_function = None
+    _operation_jagged_values = None
 
     def init_by_input_data(self, input_data: InputDataset):
         """

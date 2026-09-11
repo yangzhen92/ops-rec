@@ -14,7 +14,6 @@
 # ==============================================================================
 
 import torch
-import triton
 
 from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
@@ -257,10 +256,7 @@ class TritonDenseToJaggedApi(BaseApi):
                 # 生成与 output_jagged_value 相同 shape 的 tensor，值都为 op_value
                 # 数据类型与 dense 保持一致
                 operation_jagged_values = torch.full(
-                    (int(actual_total_valid), dense.size(-1)),
-                    op_value,
-                    dtype=dense.dtype,
-                    device=device
+                    (int(actual_total_valid), dense.size(-1)), op_value, dtype=dense.dtype, device=device
                 )
 
         # ==================== 创建输出 tensor ====================
@@ -290,9 +286,9 @@ class TritonDenseToJaggedApi(BaseApi):
                 dense_indices = dense_indices.cuda()
 
         # 获取 dense 的 stride 信息，用于 kernel 计算
-        dense_col_stride = dense.stride(-1)      # 最后一维的 stride
-        dense_row_stride = dense.stride(-2)      # 倒数第二维的 stride
-        dense_matrix_stride = dense.stride(-3)   # 倒数第三维的 stride
+        dense_col_stride = dense.stride(-1)  # 最后一维的 stride
+        dense_row_stride = dense.stride(-2)  # 倒数第二维的 stride
+        dense_matrix_stride = dense.stride(-3)  # 倒数第三维的 stride
 
         # thread block 配置（triton 并行配置）
         thread_block_row_size = 32
@@ -331,17 +327,17 @@ class TritonDenseToJaggedApi(BaseApi):
 
         # 调用 triton kernel
         triton_dense_to_jagged[self._grid](
-            self._output_jagged_value,           # 输出：jagged tensor
-            self._jagged_offsets[-1],            # 输入：offsets
-            self._output_jagged_value.stride(0), # 输出 tensor 的 stride
-            self._dense,                         # 输入：dense tensor
-            self._dense_indices,                 # dense indices
-            self._dense_col_stride,              # dense 最后一维 stride
-            self._dense_row_stride,              # dense 倒数第二维 stride
-            self._dense_matrix_stride,           # dense 倒数第三维 stride
-            self._JAGGED_DIM,                    # jagged 维度数
-            self._thread_block_row_size,         # thread block 行大小
-            self._thread_block_col_size,         # thread block 列大小
+            self._output_jagged_value,  # 输出：jagged tensor
+            self._jagged_offsets[-1],  # 输入：offsets
+            self._output_jagged_value.stride(0),  # 输出 tensor 的 stride
+            self._dense,  # 输入：dense tensor
+            self._dense_indices,  # dense indices
+            self._dense_col_stride,  # dense 最后一维 stride
+            self._dense_row_stride,  # dense 倒数第二维 stride
+            self._dense_matrix_stride,  # dense 倒数第三维 stride
+            self._JAGGED_DIM,  # jagged 维度数
+            self._thread_block_row_size,  # thread block 行大小
+            self._thread_block_col_size,  # thread block 列大小
             operation_function=self._operation_function,
             operation_jagged_value_ptr=self._operation_jagged_values,
         )

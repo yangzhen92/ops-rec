@@ -52,24 +52,20 @@ import torch_npu
 from triton_dense_to_jagged import triton_dense_to_jagged
 
 DEVICE = "npu:0"
-
-# 3D dense [B, seq, D]，B=2, seq=4, D=8
-dense = torch.arange(2 * 4 * 8, dtype=torch.float32, device=DEVICE).reshape(2, 4, 8)
-
-# jagged_offsets: shape [B+1]，每个 batch 抽取 seq 个元素（这里取全部）
-jagged_offsets = torch.tensor([0, 4, 8], dtype=torch.int64, device=DEVICE)
-
-# 输出 jagged tensor 的 shape 为 (N_total, D) = (8, 8)
-output_jagged_value = torch.empty((8, 8), dtype=torch.float32, device=DEVICE)
-dense_indices = torch.tensor([0, 1, 2, 3], dtype=torch.int32, device=DEVICE)
+dense = torch.arange(1 * 5 * 3, dtype=torch.float32, device=DEVICE).reshape(1, 5, 3)
+# jagged_offsets: shape [B+1]，每个 batch 抽取 seq 个元素（这里只取前 3 个，裁掉后 2 个）
+jagged_offsets = torch.tensor([0, 3], dtype=torch.int64, device=DEVICE)
+# 输出 jagged tensor 的 shape 为 (N_total, D) = (3, 3)
+output_jagged_value = torch.empty((3, 3), dtype=torch.float32, device=DEVICE)
+dense_indices = torch.tensor([0, 1, 2], dtype=torch.int32, device=DEVICE)
 
 grid = (jagged_offsets.size(0) - 1,)
 triton_dense_to_jagged[grid](
     output_jagged_value,                       # 输出：jagged tensor
-    jagged_offsets,                           # 输入：offsets
+    jagged_offsets,                            # 输入：offsets
     output_jagged_value.stride(0),             # 输出 jagged tensor 行 stride
     dense,                                     # 输入：dense tensor
-    dense_indices,                             # dense indices（4D 时需要）
+    dense_indices,                             # dense indices
     dense.stride(-1),                          # dense_col_stride
     dense.stride(-2),                          # dense_row_stride
     dense.stride(-3),                          # dense_matrix_stride
@@ -80,8 +76,8 @@ triton_dense_to_jagged[grid](
 
 torch.npu.synchronize(DEVICE)
 kernel_out = output_jagged_value.cpu()
-
-# output_jagged_value 即为 dense 拼接所有 batch 第一维后的结果
+print(dense)
+# output_jagged_value: [[0.0, 1.0, 2.0], [3.0, 4.0, 5.0], [6.0, 7.0, 8.0]]
 print("output_jagged_value:", kernel_out.tolist())
 
 ```

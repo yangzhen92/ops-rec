@@ -118,31 +118,20 @@ def triton_dense_to_jagged(
 
     for _i in range(begin, end, thread_block_row_size):
         offset_col = tl.arange(0, thread_block_col_size)
-        block_offset = (
-            offset_row[:, None] * dense_row_stride
-            + offset_col[None, :] * dense_col_stride
-        )
+        block_offset = offset_row[:, None] * dense_row_stride + offset_col[None, :] * dense_col_stride
 
         for _j in range(0, N, thread_block_col_size):
-            dense_mask = (offset_row[:, None] < dense_boundary_row) & (
-                offset_col[None, :] < dense_boundary_col
-            )
+            dense_mask = (offset_row[:, None] < dense_boundary_row) & (offset_col[None, :] < dense_boundary_col)
             jagged_mask = (offset_row[:, None] < M) & (offset_col[None, :] < N)
-            dense_values = tl.load(
-                output_dense_ptr + block_offset, mask=dense_mask, other=0
-            )
+            dense_values = tl.load(output_dense_ptr + block_offset, mask=dense_mask, other=0)
             if operation_function is not None:
                 operation_jagged_value = tl.load(
                     operation_jagged_value_ptr + block_offset, mask=jagged_mask, other=0
                 )
                 if operation_function == "add":
-                    dense_values = tensor_elementwise_add(
-                        dense_values, operation_jagged_value
-                    )
+                    dense_values = tensor_elementwise_add(dense_values, operation_jagged_value)
                 else:
-                    dense_values = tensor_elementwise_mul(
-                        dense_values, operation_jagged_value
-                    )
+                    dense_values = tensor_elementwise_mul(dense_values, operation_jagged_value)
             tl.store(jagged_value_ptr + block_offset, dense_values, mask=jagged_mask)
             offset_col += thread_block_col_size
             block_offset += thread_block_col_size

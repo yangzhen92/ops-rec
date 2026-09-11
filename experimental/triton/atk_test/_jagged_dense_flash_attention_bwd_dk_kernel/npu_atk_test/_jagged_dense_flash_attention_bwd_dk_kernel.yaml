@@ -1,0 +1,368 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+#     limitations under the License.
+# ==============================================================================
+
+# _jagged_dense_flash_attention_bwd_dk_kernel.yaml
+# _jagged_dense_flash_attention_bwd_dk_kernel 算子用例设计文件
+# 用于 Flash Attention 反向传播中计算 dk
+# 输入：Q [sum_B, D], K [B, D, T], V [sum_B, D], Out [B, T, D], lse [B, T]
+#      do [B, T, D], attn_bias [B, N, T], jagged_offsets [B + 1], delta [B, T], dq [sum_B, D]
+# 输出：dk [B, D, T]
+name: _jagged_dense_flash_attention_bwd_dk_kernel
+api: pytorch
+version: v2.1
+api_type: _jagged_dense_flash_attention_bwd_dk_kernel
+triton_api_type: _jagged_dense_flash_attention_bwd_dk_kernel
+triton_name: _jagged_dense_flash_attention_bwd_dk_kernel
+generate: generate_jagged_dense_flash_attention_bwd_dk_kernel
+dtype_numbers: 10000
+outputs: 0
+standard:
+  acc: single_bm
+  perf: not_key
+inputs:
+  - name: Q
+    type: tensor
+    required: true
+    dtypes:
+      values: [ fp32 ]
+    ranges:
+      valid:
+        values: [ [-10000, 10000] ]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+      invalid:
+        values: [ [-10000, 10000] ]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+    shapes:
+      dim_numbers:
+        values: [ 2 ]
+      dim_values:
+        values: [ [64, 512], [512, 2048], [2048, 8192] ]
+        weights: [ 0.1, 0.2, 0.7]
+      max_length: 40960000
+    boundary:
+      has_empty: false
+      has_infnan: true
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: K
+    type: tensor
+    required: true
+    dtypes:
+      values: [ fp32 ]
+    ranges:
+      valid:
+        values: [ [-10000, 10000] ]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+      invalid:
+        values: [ [-10000, 10000] ]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+    shapes:
+      dim_numbers:
+        values: [ 3 ]
+      dim_values:
+        values: [ [4, 16], [16, 64], [64, 128] ]
+        weights: [ 0.1, 0.2, 0.7]
+      max_length: 40960000
+    boundary:
+      has_empty: false
+      has_infnan: true
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: V
+    type: tensor
+    required: true
+    dtypes:
+      values: [ fp32 ]
+    ranges:
+      valid:
+        values: [ [-10000, 10000] ]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+      invalid:
+        values: [ [-10000, 10000] ]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+    shapes:
+      dim_numbers:
+        values: [ 2 ]
+      dim_values:
+        values: [ [64, 512], [512, 2048], [2048, 8192] ]
+        weights: [ 0.1, 0.2, 0.7]
+      max_length: 40960000
+    boundary:
+      has_empty: false
+      has_infnan: true
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: Out
+    type: tensor
+    required: true
+    dtypes:
+      values: [ fp32 ]
+    ranges:
+      valid:
+        values: [ [-10000, 10000] ]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+      invalid:
+        values: [ [-10000, 10000] ]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+    shapes:
+      dim_numbers:
+        values: [ 3 ]
+      dim_values:
+        values: [ [4, 16], [16, 64], [64, 128] ]
+        weights: [ 0.1, 0.2, 0.7]
+      max_length: 40960000
+    boundary:
+      has_empty: false
+      has_infnan: true
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: lse
+    type: tensor
+    required: true
+    dtypes:
+      values: [ fp32 ]
+    ranges:
+      valid:
+        values: [ [-10000, 10000] ]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+      invalid:
+        values: [ [-10000, 10000] ]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+    shapes:
+      dim_numbers:
+        values: [ 2 ]
+      dim_values:
+        values: [ [4, 16], [16, 64], [64, 128] ]
+        weights: [ 0.1, 0.2, 0.7]
+      max_length: 40960000
+    boundary:
+      has_empty: false
+      has_infnan: true
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: do
+    type: tensor
+    required: true
+    dtypes:
+      values: [ fp32 ]
+    ranges:
+      valid:
+        values: [ [-10000, 10000] ]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+      invalid:
+        values: [ [-10000, 10000] ]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+    shapes:
+      dim_numbers:
+        values: [ 3 ]
+      dim_values:
+        values: [ [4, 16], [16, 64], [64, 128] ]
+        weights: [ 0.1, 0.2, 0.7]
+      max_length: 40960000
+    boundary:
+      has_empty: false
+      has_infnan: true
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: attn_bias
+    type: tensor
+    required: true
+    dtypes:
+      values: [ fp32 ]
+    ranges:
+      valid:
+        values: [ [-10000, 10000] ]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+      invalid:
+        values: [ [-10000, 10000] ]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+    shapes:
+      dim_numbers:
+        values: [ 3 ]
+      dim_values:
+        values: [ [4, 16], [16, 64], [64, 128] ]
+        weights: [ 0.1, 0.2, 0.7]
+      max_length: 40960000
+    boundary:
+      has_empty: false
+      has_infnan: true
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: jagged_offsets
+    type: tensor
+    required: true
+    dtypes:
+      values: [ int64 ]
+    ranges:
+      valid:
+        values: [ [1, 512] ]
+      invalid:
+        values: [ [1, 512] ]
+    shapes:
+      dim_numbers:
+        values: [ 1 ]
+      dim_values:
+        values: [ [8, 64] ]
+        weights: [ 1.0]
+      max_length: 40960000
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: delta
+    type: tensor
+    required: true
+    dtypes:
+      values: [ fp32 ]
+    ranges:
+      valid:
+        values: [ [-10000, 10000] ]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+      invalid:
+        values: [ [-10000, 10000] ]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+    shapes:
+      dim_numbers:
+        values: [ 2 ]
+      dim_values:
+        values: [ [4, 16], [16, 64], [64, 128] ]
+        weights: [ 0.1, 0.2, 0.7]
+      max_length: 40960000
+    boundary:
+      has_empty: false
+      has_infnan: true
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: dq
+    type: tensor
+    required: true
+    dtypes:
+      values: [ fp32 ]
+    ranges:
+      valid:
+        values: [ [-10000, 10000] ]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+      invalid:
+        values: [ [-10000, 10000] ]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+    shapes:
+      dim_numbers:
+        values: [ 2 ]
+      dim_values:
+        values: [ [64, 512], [512, 2048], [2048, 8192] ]
+        weights: [ 0.1, 0.2, 0.7]
+      max_length: 40960000
+    boundary:
+      has_empty: false
+      has_infnan: true
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: max_seq_len
+    type: scalar
+    required: true
+    dtypes:
+      values: [ int64 ]
+    ranges:
+      valid:
+        values: [ [16, 256] ]
+      invalid:
+        values: [ [1, 16] ]
+
+  - name: allow_tf32
+    type: attr
+    required: true
+    dtypes:
+      values: [ attr_bool ]
+    ranges:
+      valid:
+        values: [ true, false ]
+        weights: [ 0.5, 0.5 ]
+      invalid:
+        values: [ true, false ]

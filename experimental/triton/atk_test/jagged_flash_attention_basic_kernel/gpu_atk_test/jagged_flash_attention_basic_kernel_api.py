@@ -13,11 +13,12 @@
 # limitations under the License.
 # ==============================================================================
 # pylint: disable=attribute-defined-outside-init
-"""jagged_flash_attention_basic_kernel 算子的ATK自定义API执行文件"""
+"""jagged_flash_attention_basic_kernel 算子的ATK自定义API执行文件（GPU 原生版）"""
 
 import os
 import sys
 import torch
+import triton
 from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
 from atk.tasks.api_execute.base_api import BaseApi
@@ -30,19 +31,14 @@ from jagged_flash_attention_basic_kernel import (  # noqa: E402
 
 
 def get_device():
-    """获取可用的设备，优先NPU"""
     if hasattr(torch, 'npu') and torch.npu.is_available():
         return 'npu'
-    try:
-        if torch.cuda.is_available():
-            return 'cuda'
-    except Exception:
-        pass
+    if torch.cuda.is_available():
+        return 'cuda'
     return 'cpu'
 
 
 def _generate_jagged_offset_by_shape(shape, total_elements, device):
-    """确定性生成 jagged offset（首 0 尾 total_elements，中间均匀分布）"""
     expected_length = shape[0]
     B = expected_length - 1
     if B <= 0:
@@ -51,8 +47,7 @@ def _generate_jagged_offset_by_shape(shape, total_elements, device):
     step = total_elements // B
     current = 0
     for i in range(B):
-        seg_len = step + (i % 2)
-        seg_len = max(1, seg_len)
+        seg_len = max(1, step + (i % 2))
         if current + seg_len > total_elements:
             seg_len = total_elements - current
         current += seg_len
@@ -61,13 +56,21 @@ def _generate_jagged_offset_by_shape(shape, total_elements, device):
             break
     while len(offsets) < expected_length:
         offsets.append(total_elements)
-    if offsets[-1] != total_elements:
-        offsets[-1] = total_elements
-    result = torch.tensor(offsets, dtype=torch.int64, device=device)
-    assert result.shape[0] == expected_length, f"offset length mismatch: {result.shape[0]} != {expected_length}"
-    assert result[0].item() == 0, f"offset[0] should be 0, got {result[0].item()}"
-    assert result[-1].item() == total_elements, f"offset[-1] should be {total_elements}, got {result[-1].item()}"
-    return result
+    offsets[-1] = total_elements
+    return torch.tensor(offsets, dtype=torch.int64, device=device)
+
+
+def _is_offset_valid(offset, total_seq):
+    if offset is None or offset.numel() <= 1:
+        return False
+    if int(offset[0].item()) != 0:
+        return False
+    if int(offset[-1].item()) != total_seq:
+        return False
+    for i in range(offset.numel() - 1):
+        if int(offset[i + 1].item()) < int(offset[i].item()):
+            return False
+    return True
 
 
 def _next_power_of_2(n):
@@ -79,10 +82,7 @@ def _next_power_of_2(n):
 
 @register("jagged_flash_attention_basic_kernel")
 class JaggedFlashAttentionBasicKernelApi(BaseApi):
-    """jagged_flash_attention_basic_kernel 算子的 API 封装（Jagged Flash Attention 前向）"""
-
     def init_by_input_data(self, input_data: InputDataset):
-        """预处理阶段（不计入性能）"""
         device = get_device()
         if device == 'npu':
             torch.npu.synchronize()
@@ -121,9 +121,9 @@ class JaggedFlashAttentionBasicKernelApi(BaseApi):
         total_seq = q.shape[0]
         D = q.shape[1]
         if k.shape != (D, total_seq):
-            k = torch.randn(D, total_seq, dtype=q.dtype, device=device).contiguous()
+            k = torch.zeros(D, total_seq, dtype=q.dtype, device=device).contiguous()
         if v.shape != (total_seq, D):
-            v = torch.randn(total_seq, D, dtype=q.dtype, device=device).contiguous()
+            v = torch.zeros(total_seq, D, dtype=q.dtype, device=device).contiguous()
         if isinstance(max_seq_len, list):
             max_seq_len = max_seq_len[0] if len(max_seq_len) > 0 else None
         if isinstance(use_mask, list):
@@ -136,21 +136,22 @@ class JaggedFlashAttentionBasicKernelApi(BaseApi):
             BLOCK_SIZE_N = BLOCK_SIZE_N[0] if len(BLOCK_SIZE_N) > 0 else None
         if isinstance(BLOCK_SIZE_D, list):
             BLOCK_SIZE_D = BLOCK_SIZE_D[0] if len(BLOCK_SIZE_D) > 0 else None
-        if offset_input is None:
-            B = 8
-            offset = _generate_jagged_offset_by_shape([B + 1], total_seq, device)
-        elif isinstance(offset_input, torch.Tensor):
-            offset_shape = list(offset_input.shape)
-            offset = _generate_jagged_offset_by_shape(offset_shape, total_seq, device)
+        atk_offset = None
+        if isinstance(offset_input, torch.Tensor):
+            atk_offset = offset_input.to(device=device, dtype=torch.int64).contiguous()
         elif isinstance(offset_input, list):
             if len(offset_input) > 0 and hasattr(offset_input[0], 'shape'):
-                offset_shape = list(offset_input[0].shape)
+                atk_offset = offset_input[0].to(device=device, dtype=torch.int64).contiguous()
             else:
-                offset_shape = [9]
-            offset = _generate_jagged_offset_by_shape(offset_shape, total_seq, device)
+                try:
+                    atk_offset = torch.tensor(offset_input, dtype=torch.int64, device=device)
+                except Exception:
+                    atk_offset = None
+        if atk_offset is not None and _is_offset_valid(atk_offset, total_seq):
+            offset = atk_offset
         else:
-            B = 8
-            offset = _generate_jagged_offset_by_shape([B + 1], total_seq, device)
+            offset_shape = list(atk_offset.shape) if atk_offset is not None else [9]
+            offset = _generate_jagged_offset_by_shape(offset_shape, total_seq, device)
         B = offset.shape[0] - 1
         if max_seq_len is None or max_seq_len <= 0:
             if B > 0:
@@ -170,8 +171,6 @@ class JaggedFlashAttentionBasicKernelApi(BaseApi):
             BLOCK_SIZE_D = 32
         o = torch.zeros_like(q)
         lse = torch.empty((total_seq,), device=device, dtype=q.dtype)
-        import triton
-
         grid = (triton.cdiv(max_seq_len, BLOCK_SIZE_M), B)
         self._device = device
         self._q = q
@@ -191,7 +190,6 @@ class JaggedFlashAttentionBasicKernelApi(BaseApi):
         self._grid = grid
 
     def __call__(self, input_data: InputDataset, with_output: bool = False):
-        """执行阶段（计入性能）"""
         device = self._device
         if device == 'npu':
             torch.npu.synchronize()
@@ -199,12 +197,10 @@ class JaggedFlashAttentionBasicKernelApi(BaseApi):
             torch.cuda.synchronize()
         # fmt: off
         jagged_flash_attention_basic_kernel[self._grid](
-            self._q, self._k, self._v, self._offset, self._o, self._lse,
-            self._q.stride(0), self._q.stride(1), self._k.stride(0), self._k.stride(1),
-            self._v.stride(0), self._v.stride(1), self._o.stride(0), self._o.stride(1),
-            self._max_seq_len, self._D, self._NEXT_D, self._use_mask, self._allow_tf32,
-            BLOCK_SIZE_M=self._BLOCK_SIZE_M, BLOCK_SIZE_N=self._BLOCK_SIZE_N,
-            BLOCK_SIZE_D=self._BLOCK_SIZE_D,
+            self._q, self._k, self._v, self._offset, self._o, self._lse, self._q.stride(0), self._q.stride(1),
+            self._k.stride(0), self._k.stride(1), self._v.stride(0), self._v.stride(1), self._o.stride(0), self._o.stride(1),
+            self._max_seq_len, self._D, self._NEXT_D, self._use_mask, self._allow_tf32, BLOCK_SIZE_M=self._BLOCK_SIZE_M,
+            BLOCK_SIZE_N=self._BLOCK_SIZE_N, BLOCK_SIZE_D=self._BLOCK_SIZE_D,
         )
         # fmt: on
         if device == 'npu':

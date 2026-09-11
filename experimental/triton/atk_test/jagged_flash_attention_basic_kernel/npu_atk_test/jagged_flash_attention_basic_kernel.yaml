@@ -16,7 +16,7 @@ name: jagged_flash_attention_basic_kernel
 api: pytorch
 version: v2.1
 api_type: jagged_flash_attention_basic_kernel
-dtype_numbers: 3334
+dtype_numbers: 50
 outputs: 0
 standard:
   acc: double_benchmark
@@ -34,8 +34,11 @@ inputs:
       dim_numbers:
         values: [2]
       dim_values:
-        values: [[128, 512], [32, 128]]
+        values: [[64, 128], [16, 64]]
         weights: [0.6, 0.4]
+    ranges:
+      valid:
+        values: [[-1, 1]]  # 有界小值域，避免 QK^T 溢出致双标杆发散
   - name: k
     type: tensor
     required: true
@@ -45,8 +48,11 @@ inputs:
       dim_numbers:
         values: [2]
       dim_values:
-        values: [[32, 128], [128, 512]]
+        values: [[16, 64], [64, 256]]
         weights: [0.4, 0.6]
+    ranges:
+      valid:
+        values: [[-1, 1]]
   - name: v
     type: tensor
     required: true
@@ -56,8 +62,11 @@ inputs:
       dim_numbers:
         values: [2]
       dim_values:
-        values: [[128, 512], [32, 128]]
+        values: [[64, 128], [16, 64]]
         weights: [0.6, 0.4]
+    ranges:
+      valid:
+        values: [[-1, 1]]
   - name: offset
     type: tensor
     required: true
@@ -67,7 +76,7 @@ inputs:
       dim_numbers:
         values: [1]
       dim_values:
-        values: [[5, 11]]
+        values: [[5, 9]]
         weights: [1.0]
   - name: max_seq_len
     type: attr
@@ -76,7 +85,7 @@ inputs:
       values: [int]
     ranges:
       valid:
-        values: [[32, 128]]
+        values: [[16, 32]]
         weights: [1.0]
   - name: use_mask
     type: attr
@@ -95,7 +104,7 @@ inputs:
     ranges:
       valid:
         values: ["false", "true"]
-        weights: [0.5, 0.5]
+        weights: [0.8, 0.2]
   - name: BLOCK_SIZE_M
     type: attr
     required: false

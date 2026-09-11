@@ -22,31 +22,15 @@ import triton
 import triton.language as tl
 
 
+# fmt: off
 @triton.jit
 def jagged_flash_attention_basic_kernel(
-    q_ptr,
-    k_ptr,
-    v_ptr,
-    offset_ptr,
-    o_ptr,
-    lse_i_ptr,
-    stride_qm,
-    stride_qd,
-    stride_kd,
-    stride_kn,
-    stride_vn,
-    stride_vd,
-    stride_om,
-    stride_od,
-    max_seq_len,
-    D: tl.constexpr,
-    NEXT_D: tl.constexpr,
-    use_mask: tl.constexpr,
-    allow_tf32: tl.constexpr,
-    BLOCK_SIZE_M: tl.constexpr,
-    BLOCK_SIZE_N: tl.constexpr,
-    BLOCK_SIZE_D: tl.constexpr,
+    q_ptr, k_ptr, v_ptr, offset_ptr, o_ptr, lse_i_ptr,
+    stride_qm, stride_qd, stride_kd, stride_kn, stride_vn, stride_vd, stride_om, stride_od,
+    max_seq_len, D: tl.constexpr, NEXT_D: tl.constexpr, use_mask: tl.constexpr, allow_tf32: tl.constexpr,
+    BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_N: tl.constexpr, BLOCK_SIZE_D: tl.constexpr,
 ):
+# fmt: on
     pid_m = tl.program_id(axis=0)
     pid_batch = tl.program_id(axis=1)
     begin = tl.load(offset_ptr + pid_batch)
@@ -68,17 +52,10 @@ def jagged_flash_attention_basic_kernel(
         qk = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
         for d in range(0, D, BLOCK_SIZE_D):
             updated_offset = d + offs_d
-            q = tl.load(
-                q_ptrs,
-                # pyre-fixme[16]: `int` has no attribute `__getitem__`.
-                mask=((updated_offset[None, :] < D) & (offs_m[:, None] < seqlen)),
-                other=0.0,
-            )
-            k = tl.load(
-                k_ptrs,
-                mask=((updated_offset[:, None] < D) & (offs_n[None, :] < seqlen)),
-                other=0.0,
-            )
+            # fmt: off
+            q = tl.load(q_ptrs, mask=((updated_offset[None, :] < D) & (offs_m[:, None] < seqlen)), other=0.0)  # pyre-fixme[16]
+            k = tl.load(k_ptrs, mask=((updated_offset[:, None] < D) & (offs_n[None, :] < seqlen)), other=0.0)
+            # fmt: on
             qk += tl.dot(q, k, allow_tf32=allow_tf32)
             q_ptrs += BLOCK_SIZE_D * stride_qd
             k_ptrs += BLOCK_SIZE_D * stride_kd
@@ -91,11 +68,9 @@ def jagged_flash_attention_basic_kernel(
         l_i = l_i * alpha + l_ij
         acc = acc * alpha[:, None]
         v_ptrs = v_ptr + (offs_nextd[None, :] * stride_vd + offs_n[:, None] * stride_vn) + begin * stride_vn
-        v = tl.load(
-            v_ptrs,
-            mask=((offs_nextd[None, :] < D) & (offs_n[:, None] < seqlen)),
-            other=0.0,
-        )
+        # fmt: off
+        v = tl.load(v_ptrs, mask=((offs_nextd[None, :] < D) & (offs_n[:, None] < seqlen)), other=0.0)
+        # fmt: on
         p /= max_seq_len
         if use_mask:
             attn_mask = offs_m[:, None] - offs_n[None, :]

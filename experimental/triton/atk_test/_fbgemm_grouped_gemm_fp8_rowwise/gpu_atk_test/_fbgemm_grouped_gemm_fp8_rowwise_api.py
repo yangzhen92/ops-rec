@@ -23,27 +23,6 @@
 
 本文件固定 _use_warp_specialization=False 走基础 kernel
 `_fbgemm_grouped_gemm_fp8_rowwise`；WS 路径由 _fp8_rowwise_ws 套件覆盖。
-
-三条设计决定，改动前请先读：
-
-1. FP8 张量与 scale 都在本文件里生成，不从 yaml 来。
-   ATK 的 DEFAULT_DTYPES 里没有任何 fp8 类型，声明 fp8_e4m3 会在造数据阶段 KeyError。
-   所以 yaml 只给 bf16，这里按行量化成 fp8 并导出倒数尺度——与 FBGEMM 原生单测
-   （grouped_gemm_test.py 里 quantize_fp8_row(a) 的用法）同一套路。
-   scale 与张量数值严格耦合（A_fp8 * a_scale ≈ A_bf16），独立随机的 scale
-   会让输出在数学上失去意义。
-
-2. 量化实现内联在本文件，不 import fbgemm_gpu。
-   原生 quantize_fp8_row 在 fp8_gemm.py 里，import 它会拖进整个 fbgemm_gpu 包依赖。
-   下面 _quantize_fp8_row 复刻其 torch fallback 分支（fp8_gemm.py:2976-2994），
-   逐行等价：row_max → clamp(min=eps) → scale = max_fp8/row_max → 返回 1/scale。
-
-3. 顶层不 import kernel（它的模块顶层会探测设备）。
-   torch 本身可以安全地顶层 import（参考其他成功的算子 API），
-   但 kernel 模块初始化时会调设备探测逻辑，必须推迟到 __call__ 内才 import。
-
-   注意 fp8 量化必须在 device 上做（CPU 不支持 fp8 算子），所以量化也放在
-   首次 __call__ 里，init 阶段直接搬 bf16 到设备。
 """
 
 import torch
@@ -65,15 +44,6 @@ def _build_m_sizes(M: int, G: int):
 
 def _quantize_fp8_row(torch_module, a, pt_fp8_dtype):
     """按行量化到 fp8，返回 (a_fp8, 倒数尺度)
-
-    复刻 FBGEMM quantize_fp8_row 的 torch fallback 分支
-    （fp8_gemm.py:2976-2994），保持逐行等价：
-
-        row_max = max(|a|, dim=-1)         行内绝对值最大
-        row_max = clamp(row_max, min=eps)  防除零
-        scale   = max_fp8 / row_max        放大到 fp8 满量程
-        a_fp8   = (a * scale).to(fp8)
-        return a_fp8, 1 / scale            倒数尺度：a_fp8 * (1/scale) ≈ a
 
     kernel 侧用的是这个倒数尺度：c = acc * a_scale[行] * b_scale[列]。
     """
@@ -118,8 +88,6 @@ def _pick_fp8_dtype(torch_module):
 class _FbgemmGroupedGemmFp8RowwiseApi(BaseApi):
     """_fbgemm_grouped_gemm_fp8_rowwise 算子的 API 封装"""
 
-    # 走基础 kernel。_fp8_rowwise_ws 目录是独立的 ATK 工作目录（各有自己的
-    # grouped_gemm.py 副本），无法跨目录继承，那边是一份对称的独立实现。
     _USE_WARP_SPECIALIZATION = False
 
     def init_by_input_data(self, input_data: InputDataset):

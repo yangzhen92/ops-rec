@@ -25,27 +25,10 @@
 # kernel.py
 """_fbgemm_grouped_gemm_ws 的算子 kernel 与分发逻辑（bf16 + Warp Specialization）
 
-由巨型共享文件 grouped_gemm.py 拆分而来：本套件只保留 WS 路径（含其降级用的
-基础 kernel 回退）。utils（HAS_TMA_DESC / TmaAutoTuneHelper）内联在本文，避免
-顶层 import fbgemm_gpu 拖入整包依赖。
-
 被测入口（triton/_fbgemm_grouped_gemm_ws/kernel.py）：
     grouped_gemm(x, w, m_sizes, use_fast_accum=True, *,
                  _use_warp_specialization=True, _output_tensor=None,
                  _scatter_add_indices=None) -> y
-
-语义与 WS 说明：对 G 组分别做 y = A_i @ B_i^T。本套件**没有**独立的
-`grouped_gemm_ws()` 入口，WS 是 `grouped_gemm(_use_warp_specialization=True)`
-的关键字开关：_grouped_gemm 检测到 WS 支持时走 kernel `_fbgemm_grouped_gemm_ws`
-（要求 TMA load），否则降级到基础 kernel `_fbgemm_grouped_gemm`（NPU / ROCm /
-非 Hopper / K|N 非 8 倍数时会降级）。
-
-因此本文件同时保留 WS kernel 与基础 kernel 两个入口：
-    _fbgemm_grouped_gemm_ws   # 本套件自己的 WS kernel（USE_TMA_LOAD 恒真）
-    _fbgemm_grouped_gemm      # WS 不可用时降级的基础 kernel
-
-FP8 变体（_fbgemm_grouped_gemm_fp8_rowwise / _fp8_rowwise_ws）与入口
-grouped_gemm_fp8_rowwise 属于 fp8_rowwise 套件，已从本文件裁掉。
 """
 
 import inspect
@@ -602,11 +585,7 @@ def _grouped_gemm(
 
         triton.set_allocator(alloc_fn)
 
-    # === 硬编码固定config（替代autotune）===
-    # 适配 99KB shared memory 的 GPU（如 L20, limit=101376 bytes）。
-    # 128x128x64 时 A/B operand 的 shared 需求达到 131072 bytes 超限，报
-    # OutOfResources。把 BLOCK_SIZE_K 从 64 降到 32，shared 需求减半到
-    # 65536 bytes（64KB），既保留 128x128 输出 tile（性能）又有充足余量。
+    # === 硬编码固定config===
     BLOCK_SIZE_M = 128
     BLOCK_SIZE_N = 128
     BLOCK_SIZE_K = 32
@@ -641,7 +620,7 @@ def _grouped_gemm(
     M_BUCKET_CAP = 16384
     M_BUCKET = min(triton.next_power_of_2(M), M_BUCKET_CAP)
 
-    # 本套件只测非 FP8 路径（API 恒传 x_scale=None）。WS 请求 → WS kernel；
+    # WS 请求 → WS kernel；
     # WS 不可用（NPU/ROCm/非 Hopper/K|N 非 8 倍数）→ 降级基础 kernel。
     assert x_scale is None
     assert w_scale is None

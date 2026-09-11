@@ -125,9 +125,7 @@ class Jagged2SoftmaxKernelAPI(BaseApi):
 
         output_y = torch.zeros((total_overall,), dtype=dtype, device=device)
 
-        # BLOCK_SIZE 上限 128 限制 UB 占用；grid = (B, max_seq_len_col)
         BLOCK_SIZE = max(triton.next_power_of_2(max_seq_len_row), 16)
-        BLOCK_SIZE = min(BLOCK_SIZE, 128)
         grid = (B, max_seq_len_col)
 
         self._device = device

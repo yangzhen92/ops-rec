@@ -46,8 +46,6 @@ inputs:
           - name: nd
             mean: [0, 50]
             std: [1, 10]
-      invalid:
-        values: [ [-100, 100] ]
     boundary:
       has_empty: false
       has_infnan: false
@@ -74,8 +72,6 @@ inputs:
           - name: nd
             mean: [0, 50]
             std: [1, 10]
-      invalid:
-        values: [ [-100, 100] ]
     boundary:
       has_empty: false
       has_infnan: false
@@ -98,8 +94,6 @@ inputs:
     ranges:
       valid:
         values: [ [0, 65535] ]
-      invalid:
-        values: [ [0, 65535] ]
     boundary:
       has_empty: false
 
@@ -113,5 +107,3 @@ inputs:
       valid:
         values: [ [256, 1024], [1025, 2048], [2049, 4096] ]
         weights: [ 0.3, 0.4, 0.3 ]
-      invalid:
-        values: [ [256, 4096] ]

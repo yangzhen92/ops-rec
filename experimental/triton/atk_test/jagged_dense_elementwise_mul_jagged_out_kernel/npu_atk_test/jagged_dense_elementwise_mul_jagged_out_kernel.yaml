@@ -19,7 +19,7 @@ api_type: jagged_dense_elementwise_mul_jagged_out_kernel
 triton_api_type: jagged_dense_elementwise_mul_jagged_out_kernel
 triton_name: triton_jagged_dense_elementwise_mul_jagged_out.jagged_dense_elementwise_mul_jagged_out_kernel
 generate: generate_jagged_dense_elementwise_mul_jagged_out_kernel
-dtype_numbers: 50
+dtype_numbers: 3334
 outputs: 0
 standard:
   acc: double_benchmark

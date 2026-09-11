@@ -92,7 +92,11 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
     tiling.set_checkQBoundary(*checkQBoundary ? 1 : 0);
 
 #ifdef ENABLE_WARP_LEVEL_OPT
-    int32_t grid = DIVUP(totalBlocks, WARP_LEVEL_NUM);
+    // warp 级(qB<=256)：每个 256 线程 block=8 warps=8 个 q_block；block 级(qB>=256 如 256/512)：每个 block 处理
+    // 一个 q_block（256 线程各 1 token 或 split 512 token x2）。block 级若仍用 DIVUP(totalBlocks,8) 会把大批
+    // q_block 压到极少数 block/核上，造成严重欠并行，故 block 级应 grid = totalBlocks（每核一个 q_block）。
+    const bool use_warp_level = (*qBlockSize <= BLOCK_THREAD_NUM_256) && (*qBlockSize % 32 == 0);
+    int32_t grid = use_warp_level ? DIVUP(totalBlocks, WARP_LEVEL_NUM) : totalBlocks;
 #else
     int32_t grid = totalBlocks;
 #endif

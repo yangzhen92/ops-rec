@@ -89,11 +89,17 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
     tiling.set_totalBlocks(totalBlocks);
 
 #ifdef ENABLE_WARP_LEVEL_OPT
-    int32_t grid = DIVUP(totalBlocks, WARP_LEVEL_NUM);
+    // 与 kernel 端统一 warp 分发保持一致：warp 级(qB<=256 且 %32==0)每个 256 线程 block
+    // = 8 warps 处理 8 个 (b,h,kv_block)；block 级(qB>256 或非 32 倍数)每核处理一个
+    // (b,h,kv_block)。block 级若仍用 DIVUP(totalBlocks,8) 会把大批 (b,h,kv_block) 压到极少
+    // 数 block/核上，造成严重欠并行，故 block 级应 grid = totalBlocks（每核一个）。
+    const bool use_warp_level =
+        (*qBlockSize <= static_cast<int32_t>(BLOCK_THREAD_NUM_256)) && (*qBlockSize % 32 == 0);
+    int32_t grid = use_warp_level ? DIVUP(totalBlocks, WARP_LEVEL_NUM) : totalBlocks;
 #else
     int32_t grid = totalBlocks;
 #endif
-    grid = totalBlocks >= 65535 ? 65535 : totalBlocks;
+    grid = grid >= 65535 ? 65535 : grid;
     context->SetBlockDim(grid);
 
     OPS_LOG_E_IF_NULL("raw tilingData", context->GetRawTilingData(), return ge::GRAPH_FAILED);

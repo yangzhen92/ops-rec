@@ -111,6 +111,7 @@ class _FbgemmGroupedGemmApi(BaseApi):
         # 触发 "Loop-carried variable accumulator ... re-assigned to ... fp64" 编译错误。
         # 与 _bwd_preprocess_do_o_dot/acc 的约定一致：fp64 一律强转 fp32 让编译通过。
         # （kernel 输出恒为 bf16，与输入 dtype 无关，故无需把输出转回 fp64。）
+        # （此为 atk 测试框架的问题，与代码本身无关）
         if x.dtype == torch.float64:
             x = x.to(torch.float32)
             w = w.to(torch.float32)

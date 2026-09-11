@@ -25,9 +25,7 @@ from atk.tasks.api_execute.base_api import BaseApi
 
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from jagged_flash_attention_basic_kernel import (  # noqa: E402
-    jagged_flash_attention_basic_kernel,
-)
+from jagged_flash_attention_basic_kernel import jagged_flash_attention_basic_kernel  # noqa: E402
 
 
 def get_device():

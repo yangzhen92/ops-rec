@@ -1,0 +1,237 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
+name: _jagged_flash_attention_bwd_basic_kernel
+api: pytorch
+version: v2.1
+api_type: _jagged_flash_attention_bwd_basic_kernel
+dtype_numbers: 50
+outputs: 0
+standard:
+  acc: double_benchmark
+  perf: not_key
+triton_api_type: _jagged_flash_attention_bwd_basic_kernel
+triton_name: triton_jagged_flash_attention_basic._jagged_flash_attention_bwd_basic_kernel
+generate: generate__jagged_flash_attention_bwd_basic_kernel
+
+inputs:
+  # q_ptr: Query [total_seq, D]
+  # 对齐前向: total_seq∈[128,512], D∈[32,128]
+  # 必须用 listmode（每维独立范围），避免 poolmode 共用范围导致 D 最大到 128 触发 shared memory 溢出
+  - name: q
+    type: tensor
+    required: true
+    dtypes:
+      values: [bf16, fp16, fp32]
+    shapes:
+      dim_numbers:
+        values: [2]
+      dim_values:
+        - values: [[128, 512]]   # dim0: total_seq，对齐前向
+        - values: [[32, 128]]    # dim1: D，对齐前向
+    # 显式有限 range：ATK 默认 range 含 ['-inf','inf']（指数分布极值），
+    # 在 bwd 中与随机 lse 叠加会使 p=exp(qk-lse) 溢出。此处固定有限范围。
+    ranges:
+      valid:
+        values: [[-10.0, 10.0]]
+        weights: [1.0]
+
+  # k_ptr: Key [total_seq, D] (反向是非转置形式)
+  - name: k
+    type: tensor
+    required: true
+    dtypes:
+      values: [bf16, fp16, fp32]
+    shapes:
+      dim_numbers:
+        values: [2]
+      dim_values:
+        - values: [[128, 512]]   # dim0: total_seq
+        - values: [[32, 128]]    # dim1: D
+    ranges:
+      valid:
+        values: [[-10.0, 10.0]]
+        weights: [1.0]
+
+  # v_ptr: Value [total_seq, D]
+  - name: v
+    type: tensor
+    required: true
+    dtypes:
+      values: [bf16, fp16, fp32]
+    shapes:
+      dim_numbers:
+        values: [2]
+      dim_values:
+        - values: [[128, 512]]   # dim0: total_seq
+        - values: [[32, 128]]    # dim1: D
+    ranges:
+      valid:
+        values: [[-10.0, 10.0]]
+        weights: [1.0]
+
+  # o_ptr: 前向输出 [total_seq, D]
+  - name: o
+    type: tensor
+    required: true
+    dtypes:
+      values: [bf16, fp16, fp32]
+    shapes:
+      dim_numbers:
+        values: [2]
+      dim_values:
+        - values: [[128, 512]]   # dim0: total_seq
+        - values: [[32, 128]]    # dim1: D
+    ranges:
+      valid:
+        values: [[-10.0, 10.0]]
+        weights: [1.0]
+
+  # do_ptr: 输出梯度 [total_seq, D]
+  - name: do
+    type: tensor
+    required: true
+    dtypes:
+      values: [bf16, fp16, fp32]
+    shapes:
+      dim_numbers:
+        values: [2]
+      dim_values:
+        - values: [[128, 512]]   # dim0: total_seq
+        - values: [[32, 128]]    # dim1: D
+    ranges:
+      valid:
+        values: [[-10.0, 10.0]]
+        weights: [1.0]
+
+  # delta_ptr: 预处理的 delta [total_seq]
+  # 对齐前向的 total_seq 范围 [128, 512]
+  - name: delta
+    type: tensor
+    required: true
+    dtypes:
+      values: [bf16, fp16, fp32]
+    shapes:
+      dim_numbers:
+        values: [1]
+      dim_values:
+        values: [[128, 512]]
+        weights: [1.0]
+    ranges:
+      valid:
+        values: [[-10.0, 10.0]]
+        weights: [1.0]
+
+  # lse_ptr: log-sum-exp [total_seq]
+  - name: lse
+    type: tensor
+    required: true
+    dtypes:
+      values: [bf16, fp16, fp32]
+    shapes:
+      dim_numbers:
+        values: [1]
+      dim_values:
+        values: [[128, 512]]
+        weights: [1.0]
+    ranges:
+      valid:
+        values: [[-10.0, 10.0]]
+        weights: [1.0]
+
+  # offset_ptr: jagged offset [B+1]
+  # 对齐前向: B=4~10 → offset 长度 [5,11]
+  - name: offset
+    type: tensor
+    required: true
+    dtypes:
+      values: [int64]
+    shapes:
+      dim_numbers:
+        values: [1]
+      dim_values:
+        values: [[5, 11]]
+        weights: [1.0]
+
+  # max_seq_len
+  # 对齐前向: [32,128]
+  - name: max_seq_len
+    type: attr
+    required: true
+    dtypes:
+      values: [int]
+    ranges:
+      valid:
+        values: [[32, 128]]
+        weights: [1.0]
+
+  # use_mask
+  - name: use_mask
+    type: attr
+    required: false
+    dtypes:
+      values: [bool]
+    ranges:
+      valid:
+        # bool attr 必须用字符串候选值，避免 ATK 把 [false,false] 误判为 randint 数值区间
+        values: ["false", "true"]
+        weights: [0.7, 0.3]
+
+  # allow_tf32
+  - name: allow_tf32
+    type: attr
+    required: false
+    dtypes:
+      values: [bool]
+    ranges:
+      valid:
+        # bool attr 必须用字符串候选值，避免 ATK 把 [false,false] 误判为 randint 数值区间
+        values: ["false", "true"]
+        weights: [0.5, 0.5]
+
+  # BLOCK_SIZE_M
+  # 原生反向固定 32，这里保留 16/32；去掉 64+ 避免 fp32 下 shared memory 溢出
+  - name: BLOCK_SIZE_M
+    type: attr
+    required: false
+    dtypes:
+      values: [int]
+    ranges:
+      valid:
+        values: [[16, 16], [32, 32]]
+        weights: [0.4, 0.6]
+
+  # BLOCK_SIZE_N
+  - name: BLOCK_SIZE_N
+    type: attr
+    required: false
+    dtypes:
+      values: [int]
+    ranges:
+      valid:
+        values: [[16, 16], [32, 32]]
+        weights: [0.4, 0.6]
+
+  # BLOCK_SIZE_D
+  # 去掉 64/128 避免 shared memory 溢出
+  - name: BLOCK_SIZE_D
+    type: attr
+    required: false
+    dtypes:
+      values: [int]
+    ranges:
+      valid:
+        values: [[16, 16], [32, 32]]
+        weights: [0.4, 0.6]

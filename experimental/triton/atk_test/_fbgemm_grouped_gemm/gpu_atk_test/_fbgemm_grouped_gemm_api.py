@@ -25,17 +25,6 @@
 `_fbgemm_grouped_gemm`；WS 路径由 _fbgemm_grouped_gemm_ws 套件单独覆盖。
 _output_tensor / _scatter_add_indices 保持 None：传了会切换成 fused
 scatter-add（就地 atomic 累加）语义，与本算子要测的 y = A_i @ B_i^T 不是一回事。
-
-两条踩过的坑，改动前请先读：
-
-1. 顶层不 import kernel（它的模块顶层会探测设备）。
-   torch 本身可以安全地顶层 import（参考其他成功的算子 API），
-   但 kernel 模块初始化时会调 torch.npu.is_available() 等探测逻辑，
-   必须推迟到 __call__ 内（worker 子进程内）才 import。
-
-2. m_sizes 的值由本文件重建，不信任 ATK 传入值。
-   kernel 要求 sum(m_sizes) == M，而 ATK 只能注入 shape、无法注入精确序列，
-   传入的是区间随机值。这里只取它的长度定 G，值一律确定性重算。
 """
 
 import torch

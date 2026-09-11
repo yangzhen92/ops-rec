@@ -47,9 +47,9 @@ import torch
 from _fbgemm_grouped_gemm_ws_kernel import grouped_gemm
 
 M, K, N, G = 1024, 128, 256, 4
-x = torch.randn((M, K), dtype=torch.bfloat16, device="cuda")
-w = torch.randn((G * N, K), dtype=x.dtype, device="cuda")
-m_sizes = torch.tensor([256] * G, dtype=torch.int32, device="cuda")
+x = torch.randn((M, K), dtype=torch.bfloat16, device="npu")
+w = torch.randn((G * N, K), dtype=x.dtype, device="npu")
+m_sizes = torch.tensor([256] * G, dtype=torch.int32, device="npu")
 y = grouped_gemm(x, w, m_sizes, _use_warp_specialization=True)
 print(y.shape, y.dtype)
 ```
@@ -71,14 +71,36 @@ _fbgemm_grouped_gemm_ws/
 ```
 
 ## ATK 测试
-
-NPU 端根据 YAML 和生成器生成用例，GPU 端启动 ATK server。两端用例 shape 完全一致，用于比较 GPU WS 路径与 NPU 回退路径。
-
+ 
+测试在 NPU / GPU 两端协同进行：
+ 
+- `npu_atk_test/` 部署到 NPU 端；`gpu_atk_test/` 部署到 GPU 端。
+- GPU 端启动 ATK server，NPU 端作为 ATK 客户端拉起精度/性能测试。
+ 
+### 远端 GPU 服务器起监听命令
+ 
+```bash
+atk server --devices 0 --plugin_path /path/to/api文件所在文件夹
+```
+ 
+### 3.1 生成测试数据
+ 
 ```bash
 atk case -f _fbgemm_grouped_gemm_ws.yaml -p generate_fbgemm_grouped_gemm_ws.py
-atk server --devices 0 --plugin_path /path/to/gpu_atk_test
-atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端监听端口} --devices 0     task -c all__fbgemm_grouped_gemm_ws.json --task accuracy -p _fbgemm_grouped_gemm_ws_api.py
-atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端监听端口} --devices 0     task -c _fbgemm_grouped_gemm_ws_performance.json --task performance_device     -p _fbgemm_grouped_gemm_ws_api.py
 ```
-
-需要保存数据时，在命令末尾增加 `--save_data profile`。
+ 
+### 3.2 精度对比
+ 
+```bash
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端监听端口} --devices 0 task -c all__fbgemm_grouped_gemm_ws.json --task accuracy -p _fbgemm_grouped_gemm_ws_api.py
+```
+ 
+注：如需保存精度对比数据，需要在命令后加 `--save_data profile`。
+ 
+### 3.3 性能对比
+ 
+```bash
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端监听端口} --devices 0 task -c _fbgemm_grouped_gemm_ws_performance.json --task performance_device -p _fbgemm_grouped_gemm_ws_api.py
+```
+ 
+注：如需保存性能对比数据，需要在命令后加 `--save_data profile`。

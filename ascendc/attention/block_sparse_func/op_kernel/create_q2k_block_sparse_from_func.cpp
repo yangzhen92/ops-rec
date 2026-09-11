@@ -103,7 +103,9 @@ __simt_vf__ __aicore__ LAUNCH_BOUND(BLOCK_THREAD_NUM_256) inline void create_q2k
     constexpr int32_t TOKENS_PER_THREAD = USE_WARP_LEVEL ? (Q_BLOCK_SIZE_T / WARP_SIZE_CONST) : 1;
 
     // 共享内存：块级归约使用（warp 级模式分配 1 个即可）
-    __ubuf__ int32_t warp_results[USE_WARP_LEVEL ? 1 : MAX_NUM_WARPS];
+    // block 级模式对 warp_results 做双缓冲(2 * MAX_NUM_WARPS)，按 kv_block 奇偶交替使用，
+    // 从而安全溢出每个 kv_block 末尾的外层 asc_syncthread(), 降低块同步次数。
+    __ubuf__ int32_t warp_results[USE_WARP_LEVEL ? 1 : (2 * MAX_NUM_WARPS)];
     __ubuf__ int32_t warp_min_results[USE_WARP_LEVEL ? 1 : MAX_NUM_WARPS];
     __ubuf__ int32_t warp_max_results[USE_WARP_LEVEL ? 1 : MAX_NUM_WARPS];
 
@@ -347,8 +349,10 @@ __simt_vf__ __aicore__ LAUNCH_BOUND(BLOCK_THREAD_NUM_256) inline void create_q2k
             if constexpr (USE_WARP_LEVEL) {
                 kv_block_state = block_sparse_func::warp_reduce_state_only(local_state_mask);
             } else {
-                kv_block_state =
-                    block_sparse_func::block_reduce_state_bitmask(local_state_mask, warp_results, warp_id, lane_id);
+                // 双缓冲：相邻两个 kv_block 用不同的 warp_results 缓冲，去掉外层同步后仍安全。
+                const int32_t bi = (kv_block - kv_block_start) & 1;
+                kv_block_state = block_sparse_func::block_reduce_state_bitmask(
+                    local_state_mask, warp_results + bi * MAX_NUM_WARPS, warp_id, lane_id);
             }
 
             if (USE_WARP_LEVEL ? (lane_id == leader_id) : (tid == leader_id)) {
@@ -364,9 +368,6 @@ __simt_vf__ __aicore__ LAUNCH_BOUND(BLOCK_THREAD_NUM_256) inline void create_q2k
                 }
             }
 
-            if constexpr (!USE_WARP_LEVEL) {
-                asc_syncthreads();
-            }
         }
 
         if (USE_WARP_LEVEL ? (lane_id == leader_id) : (tid == leader_id)) {
@@ -467,27 +468,23 @@ extern "C" __global__ __aicore__ void create_q2k_block_sparse_from_func(GM_ADDR 
 
 #ifdef ENABLE_WARP_LEVEL_OPT
     int32_t blockSize = WARP_LEVEL_NUM * WARP_SIZE_CONST;
-    if (qBlockSize == 64 && kvBlockSize == 64) {
-        DISPATCH_Q2K_BY_NFUNC(nFunc, 64, 64, blockSize);
-    } else if (qBlockSize == 64 && kvBlockSize == 128) {
-        DISPATCH_Q2K_BY_NFUNC(nFunc, 64, 128, blockSize);
-    } else if (qBlockSize == 64 && kvBlockSize == 256) {
-        DISPATCH_Q2K_BY_NFUNC(nFunc, 64, 256, blockSize);
-    } else if (qBlockSize == 128 && kvBlockSize == 64) {
-        DISPATCH_Q2K_BY_NFUNC(nFunc, 128, 64, blockSize);
-    } else if (qBlockSize == 128 && kvBlockSize == 128) {
-        DISPATCH_Q2K_BY_NFUNC(nFunc, 128, 128, blockSize);
-    } else if (qBlockSize == 128 && kvBlockSize == 256) {
-        DISPATCH_Q2K_BY_NFUNC(nFunc, 128, 256, blockSize);
-    } else if (qBlockSize == 256 && kvBlockSize == 64) {
-        DISPATCH_Q2K_BY_NFUNC(nFunc, 256, 64, blockSize);
-    } else if (qBlockSize == 256 && kvBlockSize == 128) {
-        DISPATCH_Q2K_BY_NFUNC(nFunc, 256, 128, blockSize);
-    } else if (qBlockSize == 256 && kvBlockSize == 256) {
-        DISPATCH_Q2K_BY_NFUNC(nFunc, 256, 256, blockSize);
-    } else {
-        blockSize = min(qBlockSize, static_cast<int32_t>(BLOCK_THREAD_NUM_256));
-        DISPATCH_Q2K_BY_NFUNC(nFunc, 0, 0, blockSize);
+    switch (qBlockSize) {
+        case 32:
+            DISPATCH_Q2K_BY_NFUNC(nFunc, 32, 0, blockSize);
+            break;
+        case 64:
+            DISPATCH_Q2K_BY_NFUNC(nFunc, 64, 0, blockSize);
+            break;
+        case 128:
+            DISPATCH_Q2K_BY_NFUNC(nFunc, 128, 0, blockSize);
+            break;
+        case 256:
+            DISPATCH_Q2K_BY_NFUNC(nFunc, 256, 0, blockSize);
+            break;
+        default:
+            blockSize = min(qBlockSize, static_cast<int32_t>(BLOCK_THREAD_NUM_256));
+            DISPATCH_Q2K_BY_NFUNC(nFunc, 0, 0, blockSize);
+            break;
     }
 #else
     int32_t blockSize = qBlockSize;

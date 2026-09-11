@@ -108,17 +108,6 @@ _jagged_jagged_bmm_reduce_sum[grid](
 - 两端 API 使用相同算法确定性重建 offsets，确保每段至少包含一个 token。
 - ATK CPU golden 可能将 fp32 输入提升为 fp64；API 会在启动 kernel 前转换回 fp32，因为 `tl.dot` 不支持 fp64。
 
-## Generator shape 修正
-
-YAML 会独立生成各输入 shape，generator 将其修正为满足 kernel 关系的 `B/L/M/N`：
-
-1. 根据请求的 `L` 选择小规模或大规模的 M/N 候选集合。
-2. 根据 offsets 长度和 M/N 确定 batch size，并保证 `B <= L`。
-3. 根据总元素数上限压缩 `L`，避免测试数据占用过多内存。
-4. 调整 M、N 或 B，使 NPU grid 的 `coreDim` 不超过限制。
-5. 写回 `JaggedA[L,M]`、`JaggedB[L,N]`、`ReduceOut[B,N]` 和 `seq_offsets[B+1]`。
-6. 强制三个浮点输入使用相同 dtype。
-
 ## 关键约束
 
 - 满足 `L >= B >= 1`，每个 batch 至少包含一个 token。
@@ -175,7 +164,8 @@ atk server --devices 0 --plugin_path /path/to/api文件所在文件夹
 该命令由 NPU 侧连接 GPU server，分别执行两端 kernel，并比较分段矩阵乘输出的精度。
 
 ```bash
-atk node --backend triton --devices 0 node --backend npu --devices 0 \
+atk node --backend npu --devices 0 \
+    node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 \
     task -c all_triton_jagged_jagged_bmm_reduce_sum.json --task accuracy \
     -p triton_jagged_jagged_bmm_reduce_sum_api.py
 ```
@@ -185,7 +175,8 @@ atk node --backend triton --devices 0 node --backend npu --devices 0 \
 该命令读取性能用例 JSON，在 NPU 侧执行设备性能测试并记录 kernel 耗时。
 
 ```bash
-atk node --backend triton --devices 0 node --backend npu --devices 0 \
+atk node --backend npu --devices 0 \
+    node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 \
     task -c triton_jagged_jagged_bmm_reduce_sum_performance.json \
     --task performance_device -p triton_jagged_jagged_bmm_reduce_sum_api.py
 ```

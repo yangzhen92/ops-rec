@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 #     limitations under the License.
 # ==============================================================================
+import copy
+
 from atk.case_generator.generator.generate_types import GENERATOR_REGISTRY
 from atk.case_generator.generator.base_generator import CaseGenerator
 from atk.configs.case_config import CaseConfig

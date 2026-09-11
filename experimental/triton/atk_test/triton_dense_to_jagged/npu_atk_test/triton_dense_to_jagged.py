@@ -26,12 +26,9 @@
 
 # pyre-ignore-all-errors[6]
 
-from typing import Optional, Union
-
 import torch
 import triton  # @manual
 import triton.language as tl  # @manual
-from torch._tensor import Tensor
 
 @triton.jit
 # pyre-fixme[3]: Return type must be annotated.
@@ -125,9 +122,7 @@ def triton_dense_to_jagged(
             jagged_mask = (offset_row[:, None] < M) & (offset_col[None, :] < N)
             dense_values = tl.load(output_dense_ptr + block_offset, mask=dense_mask, other=0)
             if operation_function is not None:
-                operation_jagged_value = tl.load(
-                    operation_jagged_value_ptr + block_offset, mask=jagged_mask, other=0
-                )
+                operation_jagged_value = tl.load(operation_jagged_value_ptr + block_offset, mask=jagged_mask, other=0)
                 if operation_function == "add":
                     dense_values = tensor_elementwise_add(dense_values, operation_jagged_value)
                 else:
@@ -146,7 +141,6 @@ def triton_dense_to_jagged(
 def _jagged_offsets_to_dense_indice(
     offsets: list[torch.Tensor], dense_strides: list[int], dense_sizes: list[int]
 ) -> torch.Tensor:
-
     output_offset = torch.zeros(len(offsets[-1]) - 1, device="cpu", dtype=torch.int32)
 
     offsets_cpu = []

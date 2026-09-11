@@ -74,7 +74,7 @@ def triton_dense_to_jagged(
     # pyre-fixme[2]: Parameter must be annotated.
     dense_matrix_stride,
     JAGGED_DIM: tl.constexpr,  # number of dimension of jagged tensor
-    thread_block_row_size: tl.constexpr,   
+    thread_block_row_size: tl.constexpr,
     thread_block_col_size: tl.constexpr,
     operation_function: tl.constexpr,  # fusion arithmetic opeartion function and it's input dense
     # pyre-fixme[2]: Parameter must be annotated.

@@ -12,12 +12,9 @@
 # See the License for the specific language governing permissions and
 #     limitations under the License.
 # ==============================================================================
-import copy
-import random
-import torch
 from atk.case_generator.generator.generate_types import GENERATOR_REGISTRY
 from atk.case_generator.generator.base_generator import CaseGenerator
-from atk.configs.case_config import CaseConfig, InputCaseConfig
+from atk.configs.case_config import CaseConfig
 
 
 @GENERATOR_REGISTRY.register("generate_triton_dense_to_jagged")
@@ -50,7 +47,7 @@ class DenseToJaggedGenerator(CaseGenerator):
         # 例如：[2, 4, 8] 表示 B=2, seq=4, D=8
         # 约束：B < seq < D，且 B <= D/4
         if dense_dim == 3:
-            B = dense_shape[0]    # 批次大小
+            B = dense_shape[0]  # 批次大小
             seq = dense_shape[1]  # 序列长度
 
             # 确保 B <= D/4（留出足够空间给 seq）
@@ -80,8 +77,8 @@ class DenseToJaggedGenerator(CaseGenerator):
         # 例如：[2, 3, 4, 8] 表示 B1=2, B2=3, seq=4, D=8
         # 约束：B1 < B2 < seq < D，且 B1 <= D/4
         elif dense_dim == 4:
-            B1 = dense_shape[0]   # 第一维批次大小
-            B2 = dense_shape[1]   # 第二维批次大小
+            B1 = dense_shape[0]  # 第一维批次大小
+            B2 = dense_shape[1]  # 第二维批次大小
             seq = dense_shape[2]  # 序列长度
 
             # 确保 B1 <= D/4（留出足够空间给 seq）
@@ -150,7 +147,11 @@ class DenseToJaggedGenerator(CaseGenerator):
         # ==================== 约束3：operation_jagged_value 的数据类型 ====================
         # 当 operation_function 不为 null 时，operation_jagged_value 的数据类型需与 dense 一致
         op_func_val = None
-        if operation_function is not None and hasattr(operation_function, 'range_values') and operation_function.range_values:
+        if (
+            operation_function is not None
+            and hasattr(operation_function, 'range_values')
+            and operation_function.range_values
+        ):
             op_func_val = operation_function.range_values[0]
 
         if op_func_val is None or str(op_func_val) == 'null' or str(op_func_val) == 'None':

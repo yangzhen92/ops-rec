@@ -183,6 +183,8 @@ class TritonDenseToJaggedApi(BaseApi):
     _dense_col_stride = None
     _dense_row_stride = None
     _dense_matrix_stride = None
+    _thread_block_row_size = None
+    _thread_block_col_size = None
     _operation_function = None
     _operation_jagged_values = None
 

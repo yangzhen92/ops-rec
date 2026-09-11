@@ -58,8 +58,8 @@ from triton_multi_head_jagged_flash_attention import (
 H, T, D, B = 4, 128, 32, 2
 o = torch.randn((H, T, D), device="npu")
 do = torch.randn_like(o)
-o_offset = torch.tensor([0, 64, 128], dtype=torch.int64, device="cuda")
-delta = torch.zeros((H, T), dtype=torch.float32, device="cuda")
+o_offset = torch.tensor([0, 64, 128], dtype=torch.int64, device="npu")
+delta = torch.zeros((H, T), dtype=torch.float32, device="npu")
 block_m, block_d, max_seq_len = 32, 32, 64
 grid = (triton.cdiv(max_seq_len, block_m), B * H)
 _multi_head_jagged_flash_attention_bwd_preprocess_kernel[grid](
@@ -87,25 +87,41 @@ _multi_head_jagged_flash_attention_bwd_preprocess_kernel/
 ```
 
 ## ATK 测试
-
-在 NPU 端生成精度用例：
-
+ 
+测试在 NPU / GPU 两端协同进行：
+ 
+- `npu_atk_test/` 部署到 NPU 端；`gpu_atk_test/` 部署到 GPU 端。
+- GPU 端启动 ATK server，NPU 端作为 ATK 客户端拉起精度/性能测试。
+ 
+### 远端 GPU 服务器起监听命令
+ 
+```bash
+atk server --devices 0 --plugin_path /path/to/api文件所在文件夹
+```
+ 
+### 3.1 生成测试数据
+ 
 ```bash
 atk case -f multi_head_jagged_flash_attention_bwd_preprocess_kernel.yaml \
     -p generate_multi_head_jagged_flash_attention_bwd_preprocess_kernel.py
 ```
-
-GPU 端启动服务后，在 NPU 端运行精度或性能任务：
-
+ 
+### 3.2 精度对比
+ 
 ```bash
-# GPU端
-atk server --devices 0 --plugin_path /path/to/gpu_atk_test
-
-# NPU端
 atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {端口} --devices 0 \
     task -c all__multi_head_jagged_flash_attention_bwd_preprocess_kernel.json --task accuracy \
     -p multi_head_jagged_flash_attention_bwd_preprocess_kernel_api.py
+```
+ 
+注：如需保存精度对比数据，需要在命令后加 `--save_data profile`。
+ 
+### 3.3 性能对比
+ 
+```bash
 atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {端口} --devices 0 \
     task -c multi_head_jagged_flash_attention_bwd_preprocess_kernel_performance.json \
     --task performance_device -p multi_head_jagged_flash_attention_bwd_preprocess_kernel_api.py
 ```
+ 
+注：如需保存性能对比数据，需要在命令后加 `--save_data profile`。

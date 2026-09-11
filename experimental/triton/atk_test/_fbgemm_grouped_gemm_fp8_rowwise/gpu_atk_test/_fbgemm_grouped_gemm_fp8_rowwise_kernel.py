@@ -25,8 +25,6 @@
 # kernel.py
 """_fbgemm_grouped_gemm_fp8_rowwise 的算子 kernel 与分发逻辑（FP8 行级量化）
 
-由巨型共享文件 grouped_gemm.py 拆分而来：本套件只保留 FP8 行级量化路径。
-
 被测入口（triton/_fbgemm_grouped_gemm_fp8_rowwise/kernel.py）：
     grouped_gemm_fp8_rowwise(x, w, m_sizes, x_scale, w_scale, use_fast_accum=True, *,
                              _use_warp_specialization=False, _output_tensor=None,
@@ -40,11 +38,6 @@
     w_scale  [G*N]       每行倒数尺度
     m_sizes  [G]         sum(m_sizes) == M
     y        [M, N]      dtype 恒为 bf16
-
-本模块只含 `_fbgemm_grouped_gemm_fp8_rowwise`；base/WS/fp8_rowwise_ws 变体有各自
-的套件副本（_fbgemm_grouped_gemm / _fbgemm_grouped_gemm_ws / ..._fp8_rowwise_ws），
-因此这里裁掉了 base、WS、fp8_ws 分支。若传入 _use_warp_specialization=True 会被
-降级并警告。
 """
 
 import warnings
@@ -361,7 +354,6 @@ def _grouped_gemm(
     scatter_add_indices: Optional[torch.Tensor],
 ) -> torch.Tensor:
     # 本套件只支持 FP8 行级量化路径：warp specialization 恒走本 kernel。
-    # （base/WS/fp8_rowwise_ws 有各自的套件副本，见模块头注。）
     if use_warp_specialization:
         warnings.warn(
             "Warp specialization is not supported in this fp8_rowwise suite "
@@ -459,11 +451,7 @@ def _grouped_gemm(
 
         triton.set_allocator(alloc_fn)
 
-    # === 硬编码固定config（替代autotune）===
-    # 适配 99KB shared memory 的 GPU（如 L20, limit=101376 bytes）。
-    # 128x128x64 时 A/B operand 的 shared 需求达到 131072 bytes 超限，报
-    # OutOfResources。把 BLOCK_SIZE_K 从 64 降到 32，shared 需求减半到
-    # 65536 bytes（64KB），既保留 128x128 输出 tile（性能）又有充足余量。
+    # === 硬编码固定config ===
     BLOCK_SIZE_M = 128
     BLOCK_SIZE_N = 128
     BLOCK_SIZE_K = 32

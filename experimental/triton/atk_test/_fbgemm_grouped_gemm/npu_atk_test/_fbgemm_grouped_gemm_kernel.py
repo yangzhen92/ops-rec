@@ -208,10 +208,6 @@ _NV_CONFIGS = [
         num_warps=num_warps,
         num_ctas=num_ctas,
     )
-    # 保守配置：适配 L20 GPU 的 99KB shared memory 限制
-    # 估算: (M+N)×K×stages×4 ≤ 101376
-    # 最坏: (128+128)×128×3×4 = 393,216 → 降到 (64+128)×64×3×4 = 147,456 仍超
-    # 实测安全: (64+64)×128×3×4 = 196,608 仍超 → 保守用 stages=2
     for block_size_m in [64, 128]
     for block_size_n in [64, 128]
     for block_size_k in [64, 128]
@@ -579,7 +575,6 @@ def _grouped_gemm(
     scatter_add_indices: Optional[torch.Tensor],
 ) -> torch.Tensor:
     # 本套件只支持 base 路径：warp specialization 恒走基础 kernel。
-    # （WS/fp8 有各自的套件副本，见模块头注。）
     if use_warp_specialization:
         warnings.warn(
             "Warp specialization is not supported in this base-only suite "

@@ -6,9 +6,6 @@
 
 <https://github.com/pytorch/FBGEMM/blob/main/fbgemm_gpu/fbgemm_gpu/sll/triton/triton_dense_jagged_cat_jagged_out.py>
 
-GPU 端保留官方固定 `BLOCK_SIZE=128` 的实现；NPU 端在相同 Kernel 上增加
-`BLOCK_SIZE` autotune 配置。
-
 ## 算子功能
 
 算子将每个 batch 的一个 Dense 标量放到对应 Jagged 序列之前。设

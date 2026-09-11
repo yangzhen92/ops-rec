@@ -1,15 +1,23 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 #
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
-
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
 # pyre-unsafe
 
 
-import torch
 import triton
 import triton.language as tl
+
 
 @triton.jit
 def _multi_head_jagged_flash_attention_bwd_kernel(
@@ -77,24 +85,15 @@ def _multi_head_jagged_flash_attention_bwd_kernel(
     offs_m = tl.arange(0, BLOCK_M)
 
     q_ptrs = (
-        q_ptr
-        + pid_head * stride_qh
-        + begin * stride_qm
-        + (offs_m[:, None] * stride_qm + offs_d[None, :] * stride_qd)
+        q_ptr + pid_head * stride_qh + begin * stride_qm + (offs_m[:, None] * stride_qm + offs_d[None, :] * stride_qd)
     )
 
     k_ptrs = (
-        k_ptr
-        + pid_head * stride_kh
-        + begin * stride_kn
-        + (offs_n[:, None] * stride_kn + offs_d[None, :] * stride_kd)
+        k_ptr + pid_head * stride_kh + begin * stride_kn + (offs_n[:, None] * stride_kn + offs_d[None, :] * stride_kd)
     )
 
     v_ptrs = (
-        v_ptr
-        + pid_head * stride_vh
-        + begin * stride_vn
-        + (offs_n[:, None] * stride_vn + offs_d[None, :] * stride_vd)
+        v_ptr + pid_head * stride_vh + begin * stride_vn + (offs_n[:, None] * stride_vn + offs_d[None, :] * stride_vd)
     )
 
     do_ptrs = (
@@ -105,13 +104,9 @@ def _multi_head_jagged_flash_attention_bwd_kernel(
     )
 
     # Load a block of K into [BLOCK_N, BLOCK_D]
-    k = tl.load(
-        k_ptrs, mask=((offs_d[None, :] < D) & (offs_n[:, None] < seqlen)), other=0.0
-    )
+    k = tl.load(k_ptrs, mask=((offs_d[None, :] < D) & (offs_n[:, None] < seqlen)), other=0.0)
     # Load a block of V into [BLOCK_N, BLOCK_D]
-    v = tl.load(
-        v_ptrs, mask=((offs_d[None, :] < D) & (offs_n[:, None] < seqlen)), other=0.0
-    )
+    v = tl.load(v_ptrs, mask=((offs_d[None, :] < D) & (offs_n[:, None] < seqlen)), other=0.0)
 
     # Initialize dv and dk
     dv = tl.zeros([BLOCK_N, BLOCK_D], dtype=tl.float32)
@@ -209,9 +204,7 @@ def _multi_head_jagged_flash_attention_bwd_kernel(
         + (offs_m_curr[:, None] * stride_qm + offs_d[None, :] * stride_qd)
     )
 
-    q_curr = tl.load(
-        q_ptrs_curr, mask=((offs_d[None, :] < D) & (offs_m_curr[:, None] < seqlen))
-    )
+    q_curr = tl.load(q_ptrs_curr, mask=((offs_d[None, :] < D) & (offs_m_curr[:, None] < seqlen)))
 
     # Load a block of lse_i into [BLOCK_M]
     lse_i_curr = tl.load(
@@ -227,9 +220,7 @@ def _multi_head_jagged_flash_attention_bwd_kernel(
     )
 
     # Load do
-    do_curr = tl.load(
-        do_ptrs_curr, mask=((offs_d[None, :] < D) & (offs_m_curr[:, None] < seqlen))
-    )
+    do_curr = tl.load(do_ptrs_curr, mask=((offs_d[None, :] < D) & (offs_m_curr[:, None] < seqlen)))
     Di_curr = tl.load(
         delta_ptr + pid_head * stride_delta_h + begin + offs_m_curr,
         mask=offs_m_curr < seqlen,
@@ -252,12 +243,8 @@ def _multi_head_jagged_flash_attention_bwd_kernel(
             + (offs_n_curr[:, None] * stride_vn + offs_d[None, :] * stride_vd)
         )
 
-        k_curr = tl.load(
-            k_ptrs_curr, mask=((offs_d[None, :] < D) & (offs_n_curr[:, None] < seqlen))
-        )
-        v_curr = tl.load(
-            v_ptrs_curr, mask=((offs_d[None, :] < D) & (offs_n_curr[:, None] < seqlen))
-        )
+        k_curr = tl.load(k_ptrs_curr, mask=((offs_d[None, :] < D) & (offs_n_curr[:, None] < seqlen)))
+        v_curr = tl.load(v_ptrs_curr, mask=((offs_d[None, :] < D) & (offs_n_curr[:, None] < seqlen)))
 
         # gemm [BLOCK_M, BLOCK_D] x [BLOCK_D, BLOCK_N] -> [BLOCK_M, BLOCK_N]
         qk_curr = tl.dot(q_curr, tl.trans(k_curr), allow_tf32=allow_tf32)

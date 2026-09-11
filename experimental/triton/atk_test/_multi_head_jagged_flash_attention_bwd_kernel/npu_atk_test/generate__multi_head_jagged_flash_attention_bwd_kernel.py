@@ -1,4 +1,18 @@
-# generate_multi_head_jagged_flash_attention_bwd_kernel.py
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
 """
 multi_head_jagged_flash_attention_bwd_kernel 算子参数约束生成器
 
@@ -15,6 +29,7 @@ multi_head_jagged_flash_attention_bwd_kernel 算子参数约束生成器
     4. D 通常是 2 的幂次方
     5. offset[-1] <= total_seq
 """
+
 from atk.case_generator.generator.generate_types import GENERATOR_REGISTRY
 from atk.case_generator.generator.base_generator import CaseGenerator
 from atk.configs.case_config import CaseConfig
@@ -78,8 +93,7 @@ class MultiHeadJaggedFlashAttentionBwdKernelGenerator(CaseGenerator):
         return case_config
 
     def _get_dim(self, tensor, idx):
-        if (hasattr(tensor, 'shape') and isinstance(tensor.shape, list)
-                and len(tensor.shape) > idx):
+        if hasattr(tensor, 'shape') and isinstance(tensor.shape, list) and len(tensor.shape) > idx:
             val = tensor.shape[idx]
             return val if isinstance(val, int) else None
         return None

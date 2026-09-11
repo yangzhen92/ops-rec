@@ -1,4 +1,18 @@
 # multi_head_jagged_flash_attention_bwd_kernel_api.py (双精度版)
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
 """
 multi_head_jagged_flash_attention_bwd_kernel ATK API - 双精度测试版本
 
@@ -8,6 +22,7 @@ multi_head_jagged_flash_attention_bwd_kernel ATK API - 双精度测试版本
     dq, dk, dv = mh_backward(q, k, v, o, do, delta, lse, offset)
     q/k/v/o/do [num_heads, total_seq, D], delta/lse [num_heads, total_seq]
 """
+
 import torch
 from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
@@ -15,6 +30,7 @@ from atk.tasks.api_execute.base_api import BaseApi
 
 import sys
 import os
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from triton_multi_head_jagged_flash_attention import _multi_head_jagged_flash_attention_bwd_kernel
 
@@ -193,6 +209,7 @@ class MultiHeadJaggedFlashAttentionBwdKernelApi(BaseApi):
         dv = torch.zeros_like(v)
 
         import triton
+
         grid = (triton.cdiv(max_seq_len, BLOCK_N), B * num_heads)
 
         self._device = device
@@ -225,34 +242,54 @@ class MultiHeadJaggedFlashAttentionBwdKernelApi(BaseApi):
             torch.cuda.synchronize()
 
         _multi_head_jagged_flash_attention_bwd_kernel[self._grid](
-            self._q, self._k, self._v, self._o, self._offset,
-            self._dq, self._dk, self._dv, self._do, self._delta, self._lse,
-            self._q.stride(0), self._q.stride(1), self._q.stride(2),
-            self._k.stride(0), self._k.stride(1), self._k.stride(2),
-            self._v.stride(0), self._v.stride(1), self._v.stride(2),
-            self._o.stride(0), self._o.stride(1), self._o.stride(2),
-            self._lse.stride(0), self._delta.stride(0),
-            self._dq.stride(0), self._dq.stride(1), self._dq.stride(2),
-            self._dk.stride(0), self._dk.stride(1), self._dk.stride(2),
-            self._dv.stride(0), self._dv.stride(1), self._dv.stride(2),
-            self._do.stride(0), self._do.stride(1), self._do.stride(2),
-            self._num_heads, self._max_seq_len, self._D, self._allow_tf32,
-            BLOCK_M=self._BLOCK_M, BLOCK_N=self._BLOCK_N, BLOCK_D=self._BLOCK_D,
+            self._q,
+            self._k,
+            self._v,
+            self._o,
+            self._offset,
+            self._dq,
+            self._dk,
+            self._dv,
+            self._do,
+            self._delta,
+            self._lse,
+            self._q.stride(0),
+            self._q.stride(1),
+            self._q.stride(2),
+            self._k.stride(0),
+            self._k.stride(1),
+            self._k.stride(2),
+            self._v.stride(0),
+            self._v.stride(1),
+            self._v.stride(2),
+            self._o.stride(0),
+            self._o.stride(1),
+            self._o.stride(2),
+            self._lse.stride(0),
+            self._delta.stride(0),
+            self._dq.stride(0),
+            self._dq.stride(1),
+            self._dq.stride(2),
+            self._dk.stride(0),
+            self._dk.stride(1),
+            self._dk.stride(2),
+            self._dv.stride(0),
+            self._dv.stride(1),
+            self._dv.stride(2),
+            self._do.stride(0),
+            self._do.stride(1),
+            self._do.stride(2),
+            self._num_heads,
+            self._max_seq_len,
+            self._D,
+            self._allow_tf32,
+            BLOCK_M=self._BLOCK_M,
+            BLOCK_N=self._BLOCK_N,
+            BLOCK_D=self._BLOCK_D,
         )
 
         if device == 'npu':
             torch.npu.synchronize()
         elif device == 'cuda':
             torch.cuda.synchronize()
-
-        # ====== 输出 dtype 策略（Fix）======
-        # 背景：CPU golden 的 _get_upper_type 会把 fp16/bf16 输入提升为 fp32，
-        #       其输出恒为 fp32。若此处把输出转回原始 dtype（fp16），
-        #       计算出的 dq 值一旦超过 fp16 上限(65504)就会饱和成 ±inf，
-        #       导致 golden=normal / npu=±inf 的精度对比失败（实测 11 例）。
-        # 策略：输出恒保持 fp32，与 CPU golden 的 payload dtype 完全对位。
-        #   - fp16/bf16 输入：golden=fp32，本输出=fp32 → 同 dtype 对比
-        #   - fp32 输入：golden=fp64（bm 任务 _get_upper_type(fp32)=fp64），
-        #     本输出=fp32 → 数值容差内对比（rtol/atol），无 inf/nan 饱和问题
-        # 保留 _orig_dtype 记录（供排查），但不再据此转回。
         return self._dq

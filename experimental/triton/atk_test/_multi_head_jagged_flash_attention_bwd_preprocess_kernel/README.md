@@ -87,41 +87,41 @@ _multi_head_jagged_flash_attention_bwd_preprocess_kernel/
 ```
 
 ## ATK 测试
- 
+
 测试在 NPU / GPU 两端协同进行：
- 
+
 - `npu_atk_test/` 部署到 NPU 端；`gpu_atk_test/` 部署到 GPU 端。
 - GPU 端启动 ATK server，NPU 端作为 ATK 客户端拉起精度/性能测试。
- 
+
 ### 远端 GPU 服务器起监听命令
- 
+
 ```bash
 atk server --devices 0 --plugin_path /path/to/api文件所在文件夹
 ```
- 
+
 ### 3.1 生成测试数据
- 
+
 ```bash
 atk case -f multi_head_jagged_flash_attention_bwd_preprocess_kernel.yaml \
     -p generate_multi_head_jagged_flash_attention_bwd_preprocess_kernel.py
 ```
- 
+
 ### 3.2 精度对比
- 
+
 ```bash
 atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {端口} --devices 0 \
     task -c all__multi_head_jagged_flash_attention_bwd_preprocess_kernel.json --task accuracy \
     -p multi_head_jagged_flash_attention_bwd_preprocess_kernel_api.py
 ```
- 
+
 注：如需保存精度对比数据，需要在命令后加 `--save_data profile`。
- 
+
 ### 3.3 性能对比
- 
+
 ```bash
 atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {端口} --devices 0 \
     task -c multi_head_jagged_flash_attention_bwd_preprocess_kernel_performance.json \
     --task performance_device -p multi_head_jagged_flash_attention_bwd_preprocess_kernel_api.py
 ```
- 
+
 注：如需保存性能对比数据，需要在命令后加 `--save_data profile`。

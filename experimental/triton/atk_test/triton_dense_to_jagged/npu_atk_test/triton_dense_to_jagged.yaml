@@ -1,0 +1,105 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+name: triton_dense_to_jagged
+api: pytorch
+version: v2.1
+api_type: triton_dense_to_jagged
+triton_api_type: triton_dense_to_jagged
+triton_name: triton_dense_to_jagged.triton_dense_to_jagged
+generate: generate_triton_dense_to_jagged
+dtype_numbers: 3334
+outputs: 0
+standard:
+  acc: single_bm
+  perf: not_key
+inputs:
+  - name: dense
+    type: tensor
+    required: true
+    dtypes:
+      values: [ fp32, fp16, bf16 ]
+    ranges:
+      valid:
+        values: [ [-10000, 10000] ]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+      invalid:
+        values: [ [-10000, 10000] ]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+    shapes:
+      dim_numbers:
+        values: [ 3, 4 ]
+      dim_values:
+        values: [ [8, 16], [16, 128], [128, 256] ]
+        weights: [ 0.2, 0.2, 0.6 ]
+      max_length: 4294967296
+    boundary:
+      has_empty: false
+      has_infnan: true
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: jagged_offsets
+    type: tensors
+    required: true
+    tuple_numbers:
+      values: [ 1, 2 ]
+    dtypes:
+      values: [ int32, int64 ]
+    shapes:
+      dim_numbers:
+        values: [ 1 ]
+      dim_values:
+        values: [ [2, 64] ]
+    ranges:
+      valid:
+        values: [ [1, 128] ]
+      invalid:
+        values: [ [1, 128] ]
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: operation_function
+    type: attr
+    required: false
+    dtypes:
+      values: [ string ]
+    ranges:
+      valid:
+        values: [ null, "add", "mul" ]
+        weights: [ 0.2, 0.4, 0.4 ]
+      invalid:
+        values: [ null ]
+
+  - name: operation_jagged_value
+    type: scalar
+    required: false
+    dtypes:
+      values: [  fp32, fp16, bf16 ]
+    ranges:
+      valid:
+        values: [ [-5000, 5000] ]
+      invalid:
+        values: [ [-5000, 5000] ]

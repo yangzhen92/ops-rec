@@ -56,7 +56,7 @@ from triton_multi_head_jagged_flash_attention import (
 )
 
 H, T, D, B = 4, 128, 32, 2
-o = torch.randn((H, T, D), device="cuda")
+o = torch.randn((H, T, D), device="npu")
 do = torch.randn_like(o)
 o_offset = torch.tensor([0, 64, 128], dtype=torch.int64, device="cuda")
 delta = torch.zeros((H, T), dtype=torch.float32, device="cuda")
@@ -98,7 +98,10 @@ atk case -f multi_head_jagged_flash_attention_bwd_preprocess_kernel.yaml \
 GPU 端启动服务后，在 NPU 端运行精度或性能任务：
 
 ```bash
+# GPU端
 atk server --devices 0 --plugin_path /path/to/gpu_atk_test
+
+# NPU端
 atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {端口} --devices 0 \
     task -c all__multi_head_jagged_flash_attention_bwd_preprocess_kernel.json --task accuracy \
     -p multi_head_jagged_flash_attention_bwd_preprocess_kernel_api.py

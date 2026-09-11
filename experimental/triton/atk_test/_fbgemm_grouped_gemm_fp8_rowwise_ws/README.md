@@ -94,7 +94,10 @@ atk case -f _fbgemm_grouped_gemm_fp8_rowwise_ws.yaml \
 GPU 端启动服务后，在 NPU 端执行精度或性能任务：
 
 ```bash
+# GPU端
 atk server --devices 0 --plugin_path /path/to/gpu_atk_test
+
+# NPU端
 atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {端口} --devices 0 \
     task -c all__fbgemm_grouped_gemm_fp8_rowwise_ws.json --task accuracy \
     -p _fbgemm_grouped_gemm_fp8_rowwise_ws_api.py

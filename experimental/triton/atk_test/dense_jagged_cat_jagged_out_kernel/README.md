@@ -52,7 +52,7 @@ import torch
 
 from triton_dense_jagged_cat_jagged_out import dense_jagged_cat_jagged_out
 
-device = "cuda"
+device = "npu"
 a = torch.tensor([10, 20], dtype=torch.float32, device=device)
 b = torch.tensor([1, 2, 3], dtype=torch.float32, device=device)
 offsets = torch.tensor([0, 2, 3], dtype=torch.int32, device=device)
@@ -88,7 +88,10 @@ atk case -f dense_jagged_cat_jagged_out_kernel.yaml \
 GPU 端启动服务后，在 NPU 端运行精度或性能任务：
 
 ```bash
+# GPU端
 atk server --devices 0 --plugin_path /path/to/gpu_atk_test
+
+# NPU端
 atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {端口} --devices 0 \
     task -c all_dense_jagged_cat_jagged_out_kernel.json --task accuracy \
     -p dense_jagged_cat_jagged_out_kernel_api.py

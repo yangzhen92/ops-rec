@@ -1,0 +1,136 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+name: jagged_dense_elementwise_mul_jagged_out_kernel
+api: pytorch
+version: v2.1
+api_type: jagged_dense_elementwise_mul_jagged_out_kernel
+triton_api_type: jagged_dense_elementwise_mul_jagged_out_kernel
+triton_name: triton_jagged_dense_elementwise_mul_jagged_out.jagged_dense_elementwise_mul_jagged_out_kernel
+generate: generate_jagged_dense_elementwise_mul_jagged_out_kernel
+dtype_numbers: 50
+outputs: 0
+standard:
+  acc: double_benchmark
+  perf: not_key
+
+inputs:
+  # a_ptr: 1D jagged tensor [sum(seq_len[i]²)]
+  - name: a_ptr
+    type: tensor
+    required: true
+    dtypes:
+      values: [ fp32, fp16, bf16 ]
+    shapes:
+      dim_numbers:
+        values: [ 1 ]
+      dim_values:
+        values: [ [256, 3072], [3073, 12288], [12289, 24576] ]
+        weights: [ 0.3, 0.4, 0.3 ]
+    ranges:
+      valid:
+        values: [ [-100, 100] ]
+        random_types:
+          - name: nd
+            mean: [0, 50]
+            std: [1, 10]
+      invalid:
+        values: [ [-100, 100] ]
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  # b_ptr: dense tensor [max_seq_len, max_seq_len]，所有batch共享
+  - name: b_ptr
+    type: tensor
+    required: true
+    dtypes:
+      values: [ fp32, fp16, bf16 ]
+    shapes:
+      dim_numbers:
+        values: [ 2 ]
+      dim_values:
+        values: [ [16, 64], [65, 128], [129, 256] ]
+        weights: [ 0.3, 0.4, 0.3 ]
+    ranges:
+      valid:
+        values: [ [-100, 100] ]
+        random_types:
+          - name: nd
+            mean: [0, 50]
+            std: [1, 10]
+      invalid:
+        values: [ [-100, 100] ]
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  # a_seq_lengths_ptr: [B] - 每batch的方阵边长
+  - name: a_seq_lengths_ptr
+    type: tensor
+    required: true
+    dtypes:
+      values: [ int32 ]
+    shapes:
+      dim_numbers:
+        values: [ 1 ]
+      dim_values:
+        values: [ 3, 5, 9, 17 ]
+        weights: [ 0.25, 0.3, 0.25, 0.2 ]
+    ranges:
+      valid:
+        values: [ [1, 256] ]
+      invalid:
+        values: [ [1, 256] ]
+    boundary:
+      has_empty: false
+
+  # a_offsets_ptr: [B+1] - seq_len平方的cumsum
+  - name: a_offsets_ptr
+    type: tensor
+    required: true
+    dtypes:
+      values: [ int32 ]
+    shapes:
+      dim_numbers:
+        values: [ 1 ]
+      dim_values:
+        values: [ 3, 5, 9, 17 ]
+        weights: [ 0.25, 0.3, 0.25, 0.2 ]
+    ranges:
+      valid:
+        values: [ [0, 65535] ]
+      invalid:
+        values: [ [0, 65535] ]
+    boundary:
+      has_empty: false
+
+  # max_seq_len: 标量int
+  - name: max_seq_len
+    type: attrs
+    required: true
+    dtypes:
+      values: [ int ]
+    ranges:
+      valid:
+        values: [ [16, 64], [65, 128], [129, 256] ]
+        weights: [ 0.3, 0.4, 0.3 ]
+      invalid:
+        values: [ [16, 256] ]

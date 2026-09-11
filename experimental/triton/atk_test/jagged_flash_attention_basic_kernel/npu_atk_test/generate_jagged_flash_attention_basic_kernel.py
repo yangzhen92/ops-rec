@@ -14,7 +14,6 @@
 # ==============================================================================
 """
 jagged_flash_attention_basic_kernel 算子参数约束生成器
-
 作用：
 1. 约束 q/v=[total_seq, D]、k=[D, total_seq]、offset=[B+1]，D 取 2 的幂次方
 2. 约束 total_seq ≥ B、q/k/v dtype 一致

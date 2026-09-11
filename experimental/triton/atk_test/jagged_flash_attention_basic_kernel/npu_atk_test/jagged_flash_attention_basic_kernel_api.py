@@ -17,26 +17,16 @@
 
 import os
 import sys
-
 import torch
 from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
 from atk.tasks.api_execute.base_api import BaseApi
 
 
-def _import_local_kernel():
-    """从同目录导入算子 kernel"""
-    source_dir = os.path.dirname(os.path.abspath(__file__))
-    if source_dir not in sys.path:
-        sys.path.insert(0, source_dir)
-    from jagged_flash_attention_basic_kernel import (
-        jagged_flash_attention_basic_kernel as jagged_flash_attention_basic_kernel_impl,
-    )
-
-    return jagged_flash_attention_basic_kernel_impl
-
-
-jagged_flash_attention_basic_kernel = _import_local_kernel()
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from jagged_flash_attention_basic_kernel import (  # noqa: E402
+    jagged_flash_attention_basic_kernel,
+)
 
 
 def get_device():
@@ -198,27 +188,18 @@ class JaggedFlashAttentionBasicKernelApi(BaseApi):
             torch.npu.synchronize()
         elif device == 'cuda':
             torch.cuda.synchronize()
+        # fmt: off
         jagged_flash_attention_basic_kernel[self._grid](
-            q_ptr=self._q,
-            k_ptr=self._k,
-            v_ptr=self._v,
-            offset_ptr=self._offset,
-            o_ptr=self._o,
-            lse_i_ptr=self._lse,
-            stride_qm=self._q.stride(0),
-            stride_qd=self._q.stride(1),
-            stride_kd=self._k.stride(0),
-            stride_kn=self._k.stride(1),
-            stride_vn=self._v.stride(0),
-            stride_vd=self._v.stride(1),
-            stride_om=self._o.stride(0),
-            stride_od=self._o.stride(1),
-            max_seq_len=self._max_seq_len,
-            D=self._D,
-            NEXT_D=self._NEXT_D,
-            use_mask=self._use_mask,
-            allow_tf32=self._allow_tf32,
+            q_ptr=self._q, k_ptr=self._k, v_ptr=self._v, offset_ptr=self._offset,
+            o_ptr=self._o, lse_i_ptr=self._lse,
+            stride_qm=self._q.stride(0), stride_qd=self._q.stride(1),
+            stride_kd=self._k.stride(0), stride_kn=self._k.stride(1),
+            stride_vn=self._v.stride(0), stride_vd=self._v.stride(1),
+            stride_om=self._o.stride(0), stride_od=self._o.stride(1),
+            max_seq_len=self._max_seq_len, D=self._D, NEXT_D=self._NEXT_D,
+            use_mask=self._use_mask, allow_tf32=self._allow_tf32,
         )
+        # fmt: on
         if device == 'npu':
             torch.npu.synchronize()
         elif device == 'cuda':

@@ -12,26 +12,18 @@
 
 ### 输入
 
-- `q` `(total_seq, D)` — Query
-- `k` `(D, total_seq)` — Key，转置形式
-- `v` `(total_seq, D)` — Value
-- `offset` `(B+1,)` — jagged offset，int64
-- `max_seq_len` — 最大序列长度
-- `use_mask` — 是否使用因果 mask
-- `allow_tf32` — 是否允许 TF32
-- `BLOCK_SIZE_M` / `BLOCK_SIZE_N` / `BLOCK_SIZE_D` — 分块大小
+- `q` `(total_seq, D)` / `v` `(total_seq, D)` / `k` `(D, total_seq)`（转置形式）
+- `offset` `(B+1,)` int64 jagged offset；`max_seq_len` 最大序列长度
+- `use_mask` 是否因果 mask；`allow_tf32` 是否允许 TF32；`BLOCK_SIZE_M/N/D` 分块大小
 
 ### 输出
 
-- `o` `(total_seq, D)` — 注意力输出
-- `lse` `(total_seq,)` — log-sum-exp
+- `o` `(total_seq, D)` — 注意力输出；`lse` `(total_seq,)` — log-sum-exp
 
 ### 约束
 
-- q/k/v dtype 一致，支持 `fp32`、`fp16`、`bf16`；`offset` 为 `int64`
-- `D` 取 2 的幂次方；`total_seq ≥ B`（B=4~10）；`offset` 首 0 尾 `total_seq`
-- GPU 端固定 `BLOCK = 32×32×32`；NPU 端通过 `@triton.autotune` 按 `[max_seq_len, D]` 自动选择 BLOCK（16/32 档）
-- NPU 端输入统一转 fp32 编译，输出转回原始 dtype 以对齐双标杆检查
+- q/k/v dtype 一致，支持 `fp32`、`fp16`、`bf16`；`offset` 为 `int64`；`D` 取 2 的幂次方；`total_seq ≥ B`（B=4~10）；`offset` 首 0 尾 `total_seq`
+- GPU 端固定 `BLOCK = 32×32×32`；NPU 端通过 `@triton.autotune` 按 `[max_seq_len, D]` 自动选择 BLOCK（16/32 档）；NPU 端输入统一转 fp32 编译，输出转回原始 dtype 以对齐双标杆检查
 
 ## 目录结构
 
@@ -65,7 +57,6 @@ v = torch.randn(B * seq_len, D, dtype=q.dtype, device=device)
 offset = torch.tensor([0, seq_len, B * seq_len], dtype=torch.int64, device=device)
 o = torch.empty_like(q)
 lse = torch.empty((B * seq_len,), dtype=q.dtype, device=device)
-
 grid = (1, B)
 jagged_flash_attention_basic_kernel[grid](
     q, k, v, offset, o, lse,
@@ -82,8 +73,7 @@ print(o.shape, lse.shape)  # torch.Size([64, 64]) torch.Size([64])
 测试在 NPU / GPU 两端协同进行：
 
 - `npu_atk_test/` 部署到 NPU 端；`gpu_atk_test/` 部署到 GPU 端。
-- 精度测试用例在 NPU 端生成。
-- 性能测试用例复用 `npu_atk_test/jagged_flash_attention_basic_kernel_performance.json`。
+- 精度测试用例在 NPU 端生成，性能测试用例复用 `npu_atk_test/jagged_flash_attention_basic_kernel_performance.json`。
 - GPU 端启动 ATK server，NPU 端作为 ATK 客户端拉起精度/性能测试。
 
 ### 生成测试数据

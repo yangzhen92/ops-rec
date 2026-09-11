@@ -17,26 +17,16 @@
 
 import os
 import sys
-
 import torch
 from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
 from atk.tasks.api_execute.base_api import BaseApi
 
 
-def _import_local_kernel():
-    """从同目录导入算子 kernel"""
-    source_dir = os.path.dirname(os.path.abspath(__file__))
-    if source_dir not in sys.path:
-        sys.path.insert(0, source_dir)
-    from jagged_flash_attention_basic_kernel import (
-        jagged_flash_attention_basic_kernel as jagged_flash_attention_basic_kernel_impl,
-    )
-
-    return jagged_flash_attention_basic_kernel_impl
-
-
-jagged_flash_attention_basic_kernel = _import_local_kernel()
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from jagged_flash_attention_basic_kernel import (  # noqa: E402
+    jagged_flash_attention_basic_kernel,
+)
 
 
 def get_device():
@@ -207,30 +197,16 @@ class JaggedFlashAttentionBasicKernelApi(BaseApi):
             torch.npu.synchronize()
         elif device == 'cuda':
             torch.cuda.synchronize()
+        # fmt: off
         jagged_flash_attention_basic_kernel[self._grid](
-            self._q,
-            self._k,
-            self._v,
-            self._offset,
-            self._o,
-            self._lse,
-            self._q.stride(0),
-            self._q.stride(1),
-            self._k.stride(0),
-            self._k.stride(1),
-            self._v.stride(0),
-            self._v.stride(1),
-            self._o.stride(0),
-            self._o.stride(1),
-            self._max_seq_len,
-            self._D,
-            self._NEXT_D,
-            self._use_mask,
-            self._allow_tf32,
-            BLOCK_SIZE_M=self._BLOCK_SIZE_M,
-            BLOCK_SIZE_N=self._BLOCK_SIZE_N,
+            self._q, self._k, self._v, self._offset, self._o, self._lse,
+            self._q.stride(0), self._q.stride(1), self._k.stride(0), self._k.stride(1),
+            self._v.stride(0), self._v.stride(1), self._o.stride(0), self._o.stride(1),
+            self._max_seq_len, self._D, self._NEXT_D, self._use_mask, self._allow_tf32,
+            BLOCK_SIZE_M=self._BLOCK_SIZE_M, BLOCK_SIZE_N=self._BLOCK_SIZE_N,
             BLOCK_SIZE_D=self._BLOCK_SIZE_D,
         )
+        # fmt: on
         if device == 'npu':
             torch.npu.synchronize()
         elif device == 'cuda':

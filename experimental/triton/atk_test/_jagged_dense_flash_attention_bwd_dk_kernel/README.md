@@ -37,10 +37,12 @@
 | `dv` | 反向使用（本 kernel 不计算），调用时传 `None` |
 | `dbias` | 反向使用（本 kernel 不计算），调用时传 `None` |
 | `max_seq_len` | 每个序列允许的最大长度（`constexpr`），超出会被截断 |
-| `BLOCK_T` | K/T 方向 block 大小（`constexpr`，常用 `32`） |
-| `BLOCK_L` | Q/L 方向 block 大小（`constexpr`，常用 `32`） |
+| `BLOCK_T` | K/T 方向 block 大小（`constexpr`，常用 `32`，NPU 端由 autotune 自动选择） |
+| `BLOCK_L` | Q/L 方向 block 大小（`constexpr`，常用 `32`，NPU 端由 autotune 自动选择） |
 | `BLOCK_D` | D 方向 block 大小（`constexpr`，通常等于 `D`） |
 | `allow_tf32` | 是否允许 TF32（`constexpr`） |
+
+> 说明：NPU 端 kernel 使用 `triton.autotune` 包装，由 `_JAGGED_DENSE_FLASH_ATTENTION_BWD_DK_AUTOTUNE_CONFIGS` 列表在 `BLOCK_T ∈ {16, 32, 64, 128}`、`BLOCK_L ∈ {16, 32}`、`num_warps ∈ {1, 2, 4, 8}` 上自动选优，grid 由 `META["BLOCK_T"]` 动态计算。
 
 > 说明：`sum_B = sum(seq_len[i])`，即所有 batch 内序列长度之和；`B`、`T` 来自 `K` 的形状，`N` 来自 `attn_bias` 的中间维。
 
@@ -97,8 +99,10 @@ _bwd_preprocess_do_o_dot[(num_blocks_t, B)](
     BLOCK_T, BLOCK_D,
 )
 
-# 调用本 kernel 计算 dk
+# 调用本 kernel 计算 dk（GPU 端示例：固定 BLOCK_T / BLOCK_L）
 dk = torch.zeros_like(K)
+BLOCK_T, BLOCK_L, BLOCK_D = 32, 32, D
+num_blocks_t = triton.cdiv(T, BLOCK_T)
 _jagged_dense_flash_attention_bwd_dk_kernel[(num_blocks_t, B)](
     Q, K, V, abias, jagged_offsets,
     Out, do, lse, delta, dq, dk,
@@ -113,7 +117,30 @@ _jagged_dense_flash_attention_bwd_dk_kernel[(num_blocks_t, B)](
     dk.stride(0),  dk.stride(1),  dk.stride(2),
     do.stride(0),  do.stride(1),  do.stride(2),
     D, T,
-    BLOCK_T, BLOCK_L=32, BLOCK_D,
+    BLOCK_T, BLOCK_L, BLOCK_D,
+    allow_tf32=False,
+)
+
+# NPU 端示例：kernel 已用 triton.autotune 包装，grid 由 META["BLOCK_T"] 动态计算
+def _grid(META):
+    return (triton.cdiv(T, META["BLOCK_T"]), B)
+
+_jagged_dense_flash_attention_bwd_dk_kernel[_grid](
+    q_ptr=Q, k_ptr=K, v_ptr=V, ab_ptr=abias,
+    jagged_offsets_ptr=jagged_offsets,
+    out_ptr=Out, do_ptr=do, lse_ptr=lse, delta_ptr=delta,
+    dq_ptr=dq, dk_ptr=dk,
+    dv_ptr=None, dbias_ptr=None,
+    max_seq_len=max_seq_len,
+    stride_ql=Q.stride(0), stride_qd=Q.stride(1),
+    stride_kb=K.stride(0), stride_kd=K.stride(1), stride_kt=K.stride(2),
+    stride_vl=V.stride(0), stride_vd=V.stride(1),
+    stride_ab_b=abias.stride(0), stride_ab_l=abias.stride(1), stride_ab_t=abias.stride(2),
+    stride_ob=Out.stride(0), stride_ot=Out.stride(1), stride_od=Out.stride(2),
+    stride_dk_b=dk.stride(0), stride_dk_d=dk.stride(1), stride_dk_t=dk.stride(2),
+    stride_do_b=do.stride(0), stride_do_t=do.stride(1), stride_do_d=do.stride(2),
+    D=D, T=T,
+    BLOCK_D=D,
     allow_tf32=False,
 )
 

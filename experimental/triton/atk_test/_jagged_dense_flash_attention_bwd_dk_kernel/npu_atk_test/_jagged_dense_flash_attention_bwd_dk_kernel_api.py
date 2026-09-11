@@ -28,6 +28,11 @@ _jagged_dense_flash_attention_bwd_dk_kernel 算子的ATK自定义API执行文件
 import torch
 import triton
 
+# 从被测代码直接引用 triton kernel
+from _jagged_dense_flash_attention_bwd_dk_kernel import (
+    _bwd_preprocess_do_o_dot,
+    _jagged_dense_flash_attention_bwd_dk_kernel,
+)
 from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
 from atk.tasks.api_execute.base_api import BaseApi
@@ -40,16 +45,9 @@ def get_device():
     try:
         if torch.cuda.is_available():
             return 'cuda'
-    except:
+    except Exception:
         pass
     return 'cpu'
-
-
-# 从被测代码直接引用 triton kernel
-from _jagged_dense_flash_attention_bwd_dk_kernel import (
-    _jagged_dense_flash_attention_bwd_dk_kernel,
-    _bwd_preprocess_do_o_dot,
-)
 
 
 @register("_jagged_dense_flash_attention_bwd_dk_kernel")
@@ -60,6 +58,7 @@ class JaggedDenseFlashAttentionBwdDkApi(BaseApi):
         """
         初始化操作，不计入性能统计
         """
+        # pylint: disable=attribute-defined-outside-init
         device = get_device()
 
         # 同步操作
@@ -240,12 +239,11 @@ class JaggedDenseFlashAttentionBwdDkApi(BaseApi):
         self._delta_out = torch.empty_like(lse)
 
         # 设置 block 大小
-        self._BLOCK_T = 32
-        self._BLOCK_L = 32
         self._BLOCK_D = self._D
 
         # 预计算 delta (调用 _bwd_preprocess_do_o_dot kernel)
-        num_blocks_t = triton.cdiv(self._T, self._BLOCK_T)
+        # block size 由 autotune 控制，grid 从 META 动态读取
+        num_blocks_t = triton.cdiv(self._T, 32)
         _bwd_preprocess_do_o_dot[(num_blocks_t, self._B)](
             Out,
             do,
@@ -257,9 +255,18 @@ class JaggedDenseFlashAttentionBwdDkApi(BaseApi):
             do.stride(0),
             do.stride(1),
             do.stride(2),
-            self._BLOCK_T,
+            32,
             self._BLOCK_D,
         )
+
+        # autotune grid：从 META 读取 BLOCK_T
+        def _grid(META):
+            return (
+                triton.cdiv(self._T, META["BLOCK_T"]),
+                self._B,
+            )
+
+        self._grid = _grid
 
     def __call__(self, input_data: InputDataset, with_output: bool = False):
         """
@@ -271,49 +278,45 @@ class JaggedDenseFlashAttentionBwdDkApi(BaseApi):
         elif self._device == 'cuda':
             torch.cuda.synchronize()
 
-        # 调用 kernel
-        num_blocks_t = triton.cdiv(self._T, self._BLOCK_T)
-        _jagged_dense_flash_attention_bwd_dk_kernel[(num_blocks_t, self._B)](
-            self._Q,
-            self._K,
-            self._V,
-            self._attn_bias,
-            self._jagged_offsets,
-            self._Out,
-            self._do,
-            self._lse,
-            self._delta_out,
-            self._dq,
-            self._dk,
-            None,  # dv (not computed by this kernel)
-            None,  # dbias (not computed by this kernel)
-            self._max_seq_len,
-            self._Q.stride(0),
-            self._Q.stride(1),
-            self._K.stride(0),
-            self._K.stride(1),
-            self._K.stride(2),
-            self._V.stride(0),
-            self._V.stride(1),
-            self._attn_bias.stride(0),
-            self._attn_bias.stride(1),
-            self._attn_bias.stride(2),
-            self._Out.stride(0),
-            self._Out.stride(1),
-            self._Out.stride(2),
-            self._dk.stride(0),
-            self._dk.stride(1),
-            self._dk.stride(2),
-            self._do.stride(0),
-            self._do.stride(1),
-            self._do.stride(2),
-            self._D,
-            self._T,
-            self._BLOCK_T,
-            self._BLOCK_L,
-            self._BLOCK_D,
-            self._allow_tf32,
+        # 调用 kernel（autotune：grid 从 META 读取，BLOCK_T/BLOCK_L 由 autotune 注入）
+        _jagged_dense_flash_attention_bwd_dk_kernel[self._grid](
+            q_ptr=self._Q,
+            k_ptr=self._K,
+            v_ptr=self._V,
+            ab_ptr=self._attn_bias,
+            jagged_offsets_ptr=self._jagged_offsets,
+            out_ptr=self._Out,
+            do_ptr=self._do,
+            lse_ptr=self._lse,
+            delta_ptr=self._delta_out,
+            dq_ptr=self._dq,
+            dk_ptr=self._dk,
+            dv_ptr=None,  # dv (not computed by this kernel)
+            dbias_ptr=None,  # dbias (not computed by this kernel)
+            max_seq_len=self._max_seq_len,
+            stride_ql=self._Q.stride(0),
+            stride_qd=self._Q.stride(1),
+            stride_kb=self._K.stride(0),
+            stride_kd=self._K.stride(1),
+            stride_kt=self._K.stride(2),
+            stride_vl=self._V.stride(0),
+            stride_vd=self._V.stride(1),
+            stride_ab_b=self._attn_bias.stride(0),
+            stride_ab_l=self._attn_bias.stride(1),
+            stride_ab_t=self._attn_bias.stride(2),
+            stride_ob=self._Out.stride(0),
+            stride_ot=self._Out.stride(1),
+            stride_od=self._Out.stride(2),
+            stride_dk_b=self._dk.stride(0),
+            stride_dk_d=self._dk.stride(1),
+            stride_dk_t=self._dk.stride(2),
+            stride_do_b=self._do.stride(0),
+            stride_do_t=self._do.stride(1),
+            stride_do_d=self._do.stride(2),
+            D=self._D,
+            T=self._T,
+            BLOCK_D=self._BLOCK_D,
+            allow_tf32=self._allow_tf32,
         )
 
-        
         return self._dk

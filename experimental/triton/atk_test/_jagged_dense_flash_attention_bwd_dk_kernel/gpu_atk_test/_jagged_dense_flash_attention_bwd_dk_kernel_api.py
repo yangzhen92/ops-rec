@@ -28,6 +28,11 @@ _jagged_dense_flash_attention_bwd_dk_kernel 算子的ATK自定义API执行文件
 import torch
 import triton
 
+# 从被测代码直接引用 triton kernel
+from _jagged_dense_flash_attention_bwd_dk_kernel import (
+    _bwd_preprocess_do_o_dot,
+    _jagged_dense_flash_attention_bwd_dk_kernel,
+)
 from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
 from atk.tasks.api_execute.base_api import BaseApi
@@ -40,16 +45,9 @@ def get_device():
     try:
         if torch.cuda.is_available():
             return 'cuda'
-    except:
+    except Exception:
         pass
     return 'cpu'
-
-
-# 从被测代码直接引用 triton kernel
-from _jagged_dense_flash_attention_bwd_dk_kernel import (
-    _jagged_dense_flash_attention_bwd_dk_kernel,
-    _bwd_preprocess_do_o_dot,
-)
 
 
 @register("_jagged_dense_flash_attention_bwd_dk_kernel")
@@ -60,6 +58,7 @@ class JaggedDenseFlashAttentionBwdDkApi(BaseApi):
         """
         初始化操作，不计入性能统计
         """
+        # pylint: disable=attribute-defined-outside-init
         device = get_device()
 
         # 同步操作
@@ -315,5 +314,4 @@ class JaggedDenseFlashAttentionBwdDkApi(BaseApi):
             self._allow_tf32,
         )
 
-        
         return self._dk

@@ -30,6 +30,7 @@ import torch
 import triton  # @manual
 import triton.language as tl  # @manual
 
+
 @triton.jit
 # pyre-fixme[3]: Return type must be annotated.
 # pyre-fixme[2]: Parameter must be annotated.

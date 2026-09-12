@@ -13,6 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
+# generate_triton_jagged_dense_bmm_broadcast_add.py
 """jagged_dense_bmm_broadcast_add_kernel 的 ATK 参数约束生成器。"""
 
 from atk.case_generator.generator.base_generator import CaseGenerator

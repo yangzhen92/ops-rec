@@ -13,6 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
+# triton_jagged_dense_bmm_broadcast_add.yaml
 # jagged_dense_bmm_broadcast_add_kernel 精度测试配置。
 # 输入顺序与 kernel 的真实数据参数一致：offsets、Jagged、Dense、Bias。
 name: triton_jagged_dense_bmm_broadcast_add

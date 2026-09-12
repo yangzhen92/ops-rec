@@ -13,6 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
+# triton_jagged_dense_bmm_broadcast_add_api.py
 """jagged_dense_bmm_broadcast_add_kernel 的 ATK API 封装。"""
 
 from __future__ import annotations

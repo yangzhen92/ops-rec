@@ -89,7 +89,7 @@ __simt_vf__ __aicore__ LAUNCH_BOUND(BLOCK_THREAD_NUM_256) inline void create_q2k
     int32_t stride_b, int32_t stride_h, int32_t stride_q, int32_t stride_f, int32_t Q_LEN, int32_t KV_LEN,
     int32_t n_func, int32_t Q_BLOCK_SIZE_RT, int32_t KV_BLOCK_SIZE_RT, int32_t num_q_blocks, int32_t num_kv_blocks,
     bool check_q_boundary, __gm__ int32_t* mask_block_cnt, __gm__ int32_t* full_block_cnt, __gm__ int32_t* block_id,
-    int32_t hNum, int32_t bNum)
+    int32_t kvSplitMode, int32_t hNum, int32_t bNum)
 {
     const int32_t total_blocks = num_q_blocks * hNum * bNum;
     const int32_t Q_BLOCK_SIZE = (Q_BLOCK_SIZE_T > 0) ? Q_BLOCK_SIZE_T : Q_BLOCK_SIZE_RT;
@@ -102,12 +102,19 @@ __simt_vf__ __aicore__ LAUNCH_BOUND(BLOCK_THREAD_NUM_256) inline void create_q2k
 #endif
     constexpr int32_t TOKENS_PER_THREAD = USE_WARP_LEVEL ? (Q_BLOCK_SIZE_T / WARP_SIZE_CONST) : 1;
 
-    // 共享内存：块级归约使用（warp 级模式分配 1 个即可）
+    // 共享内存：块级归约使用（warp 级模式分配 1 个即可）。
     // block 级模式对 warp_results 做双缓冲(2 * MAX_NUM_WARPS)，按 kv_block 奇偶交替使用，
-    // 从而安全溢出每个 kv_block 末尾的外层 asc_syncthread(), 降低块同步次数。
+    // 从而安全移除每个 kv_block 末尾的外层 asc_syncthreads()，降低块同步次数。
     __ubuf__ int32_t warp_results[USE_WARP_LEVEL ? 1 : (2 * MAX_NUM_WARPS)];
     __ubuf__ int32_t warp_min_results[USE_WARP_LEVEL ? 1 : MAX_NUM_WARPS];
     __ubuf__ int32_t warp_max_results[USE_WARP_LEVEL ? 1 : MAX_NUM_WARPS];
+
+    // 多 warp KV 拆分暂存：各 warp 扫描子区间时暂存 full/mask id 与计数，
+    // 一次 asc_syncthreads 后按前缀计算最终写入位置（仅 warp 级 kvSplitMode 使用）。
+    __ubuf__ int32_t split_full_cnts[WARP_LEVEL_NUM];
+    __ubuf__ int32_t split_mask_cnts[WARP_LEVEL_NUM];
+    __ubuf__ int32_t split_full_stage[WARP_LEVEL_NUM * SPLIT_KV_CAP_PER_WARP];
+    __ubuf__ int32_t split_mask_stage[WARP_LEVEL_NUM * SPLIT_KV_CAP_PER_WARP];
 
     const int32_t tid = AscendC::Simt::GetThreadIdx();
     const int32_t warp_id = tid / WARP_SIZE_CONST;
@@ -124,11 +131,13 @@ __simt_vf__ __aicore__ LAUNCH_BOUND(BLOCK_THREAD_NUM_256) inline void create_q2k
     const int32_t out_idx_stride_q = num_kv_blocks;
 
     // warp 级：每个 warp 处理不同 (b, h, q_block)；块级：整块处理同一 (b, h, q_block)
-    const int32_t grid_ceil = DIVUP(total_blocks, USE_WARP_LEVEL ? WARP_LEVEL_NUM : 1);
+    // 多 warp KV 拆分(kvSplitMode)：block=1 个 q_block，8 个 warp 并行扫描各自 kv 子区间，grid=totalBlocks
+    const int32_t grid_ceil =
+        USE_WARP_LEVEL ? (kvSplitMode ? total_blocks : DIVUP(total_blocks, WARP_LEVEL_NUM)) : total_blocks;
     for (int32_t pass = AscendC::Simt::GetBlockIdx(); pass < grid_ceil; pass += AscendC::Simt::GetBlockNum()) {
         int32_t my_linear;
         if constexpr (USE_WARP_LEVEL) {
-            my_linear = pass * WARP_LEVEL_NUM + warp_id;
+            my_linear = kvSplitMode ? pass : (pass * WARP_LEVEL_NUM + warp_id);
         } else {
             my_linear = pass;
         }
@@ -267,13 +276,24 @@ __simt_vf__ __aicore__ LAUNCH_BOUND(BLOCK_THREAD_NUM_256) inline void create_q2k
         int32_t full_count = 0;
         constexpr int32_t leader_id = 0;
 
-        for (int32_t kv_block = kv_block_start; kv_block < kv_block_end; kv_block++) {
+        // KV 子区间分配：kvSplitMode 下每 warp 只扫描 span 的 1/8（无跨 warp 逐块归约）。
+        int32_t loop_start = kv_block_start;
+        int32_t loop_end = kv_block_end;
+        if (kvSplitMode) {
+            const int32_t span = kv_block_end - kv_block_start;
+            const int32_t per = span / WARP_LEVEL_NUM;
+            const int32_t rem = span % WARP_LEVEL_NUM;
+            loop_start = kv_block_start + warp_id * per + min(warp_id, rem);
+            loop_end = loop_start + per + (warp_id < rem ? 1 : 0);
+        }
+
+        const int32_t inactive_state = check_q_boundary ? STATE_EMPTY : STATE_FULL;
+        for (int32_t kv_block = loop_start; kv_block < loop_end; kv_block++) {
             const int32_t kv_start = kv_block * KV_BLOCK_SIZE;
             const int32_t kv_end = min(kv_start + KV_BLOCK_SIZE, KV_LEN);
             const bool is_kv_block_full = (kv_end == kv_start + KV_BLOCK_SIZE);
 
             uint32_t local_state_mask = 0;
-            const int32_t inactive_state = check_q_boundary ? STATE_EMPTY : STATE_FULL;
             if constexpr (USE_WARP_LEVEL) {
 #pragma unroll
                 for (int32_t t = 0; t < TOKENS_PER_THREAD; t++) {
@@ -283,7 +303,7 @@ __simt_vf__ __aicore__ LAUNCH_BOUND(BLOCK_THREAD_NUM_256) inline void create_q2k
 #ifndef DISABLE_REG_CACHE
                     const bool is_active = token_active_mask & (1 << t);
                     if constexpr (N_FUNC > 0) {
-                        active_state = block_sparse_func::get_token_kv_block_state_from_regs<N_FUNC / 2>(
+                        active_state = block_sparse_func::get_token_kv_block_state_from_regs_skip<N_FUNC / 2>(
                             func_regs[t], kv_start, kv_end);
                     } else {
                         const int32_t local_q_idx = lane_id * TOKENS_PER_THREAD + t;
@@ -329,7 +349,7 @@ __simt_vf__ __aicore__ LAUNCH_BOUND(BLOCK_THREAD_NUM_256) inline void create_q2k
                                     func_regs[0][f] = ptr[f * stride_f];
                                 }
                             }
-                            active_state = block_sparse_func::get_token_kv_block_state_from_regs<N_FUNC / 2>(
+                            active_state = block_sparse_func::get_token_kv_block_state_from_regs_skip<N_FUNC / 2>(
                                 func_regs[0], kv_start, kv_end);
                         } else {
                             active_state = block_sparse_func::get_token_kv_block_state<N_FUNC>(ptr, n_func, stride_f,
@@ -347,7 +367,7 @@ __simt_vf__ __aicore__ LAUNCH_BOUND(BLOCK_THREAD_NUM_256) inline void create_q2k
 
             int32_t kv_block_state;
             if constexpr (USE_WARP_LEVEL) {
-                kv_block_state = block_sparse_func::warp_reduce_state_only(local_state_mask);
+                kv_block_state = block_sparse_func::warp_reduce_state_ballot(local_state_mask);
             } else {
                 // 双缓冲：相邻两个 kv_block 用不同的 warp_results 缓冲，去掉外层同步后仍安全。
                 const int32_t bi = (kv_block - kv_block_start) & 1;
@@ -359,18 +379,66 @@ __simt_vf__ __aicore__ LAUNCH_BOUND(BLOCK_THREAD_NUM_256) inline void create_q2k
                 const bool can_be_full = (!check_q_boundary || is_q_block_full) && is_kv_block_full;
                 const bool is_full_state = (kv_block_state == STATE_FULL);
                 const bool is_mask_or_full = (kv_block_state == STATE_FULL || kv_block_state == STATE_MASK);
-                if (is_full_state && can_be_full) {
-                    block_id[idx_base + full_count] = kv_block;
-                    full_count++;
-                } else if (is_mask_or_full) {
-                    block_id[idx_base + (num_kv_blocks - 1 - mask_count)] = kv_block;
-                    mask_count++;
+                if (kvSplitMode) {
+                    // 暂存到共享，累计计数，待扫描结束后统一按前缀写入全局
+                    if (is_full_state && can_be_full) {
+                        split_full_stage[warp_id * SPLIT_KV_CAP_PER_WARP + full_count] = kv_block;
+                        full_count++;
+                    } else if (is_mask_or_full) {
+                        split_mask_stage[warp_id * SPLIT_KV_CAP_PER_WARP + mask_count] = kv_block;
+                        mask_count++;
+                    }
+                } else {
+                    if (is_full_state && can_be_full) {
+                        block_id[idx_base + full_count] = kv_block;
+                        full_count++;
+                    } else if (is_mask_or_full) {
+                        block_id[idx_base + (num_kv_blocks - 1 - mask_count)] = kv_block;
+                        mask_count++;
+                    }
                 }
             }
-
         }
 
-        if (USE_WARP_LEVEL ? (lane_id == leader_id) : (tid == leader_id)) {
+        if (kvSplitMode) {
+            if (USE_WARP_LEVEL ? (lane_id == leader_id) : (tid == leader_id)) {
+                split_full_cnts[warp_id] = full_count;
+                split_mask_cnts[warp_id] = mask_count;
+            }
+            asc_syncthreads();
+            if (USE_WARP_LEVEL ? (lane_id == leader_id) : (tid == leader_id)) {
+                // full 写前部升序、mask 写后部降序，均与未拆分路径逐块直写顺序一致：
+                // 低 kv warp 的 full 靠前（小 full 在下标低处）、mask 靠后（小 mask 在下标高处）。
+                // warp 前缀 = 低于本 warp（kv 更小子区间）的对应计数之和。
+                int32_t full_off = 0;
+                int32_t mask_prefix = 0;
+#pragma unroll
+                for (int32_t i = 0; i < WARP_LEVEL_NUM; i++) {
+                    if (i < warp_id) {
+                        full_off += split_full_cnts[i];
+                        mask_prefix += split_mask_cnts[i];
+                    }
+                }
+                for (int32_t j = 0; j < full_count; j++) {
+                    block_id[idx_base + full_off + j] = split_full_stage[warp_id * SPLIT_KV_CAP_PER_WARP + j];
+                }
+                for (int32_t j = 0; j < mask_count; j++) {
+                    block_id[idx_base + (num_kv_blocks - 1 - mask_prefix - j)] =
+                        split_mask_stage[warp_id * SPLIT_KV_CAP_PER_WARP + j];
+                }
+                if (warp_id == 0) {
+                    int32_t total_full = 0;
+                    int32_t total_mask = 0;
+#pragma unroll
+                    for (int32_t i = 0; i < WARP_LEVEL_NUM; i++) {
+                        total_full += split_full_cnts[i];
+                        total_mask += split_mask_cnts[i];
+                    }
+                    mask_block_cnt[cnt_offset] = total_mask;
+                    full_block_cnt[cnt_offset] = total_full;
+                }
+            }
+        } else if (USE_WARP_LEVEL ? (lane_id == leader_id) : (tid == leader_id)) {
             mask_block_cnt[cnt_offset] = mask_count;
             full_block_cnt[cnt_offset] = full_count;
         }
@@ -388,7 +456,8 @@ __simt_vf__ __aicore__ LAUNCH_BOUND(BLOCK_THREAD_NUM_256) inline void create_q2k
     asc_vf_call<create_q2k_block_sparse_from_func_kernel_vf<NF, QBS, KVBS>>(                                     \
         dim3{static_cast<uint32_t>(BS)}, (__gm__ int32_t*)func_tensor, strideB, strideH, strideQ, strideF, qLen, \
         kvLen, nFunc, qBlockSize, kvBlockSize, numQBlocks, numKvBlocks, checkQBoundary,                          \
-        (__gm__ int32_t*)mask_block_cnt, (__gm__ int32_t*)full_block_cnt, (__gm__ int32_t*)block_id, hNum, bNum)
+        (__gm__ int32_t*)mask_block_cnt, (__gm__ int32_t*)full_block_cnt, (__gm__ int32_t*)block_id, kvSplitMode, \
+        hNum, bNum)
 
 #define DISPATCH_Q2K_BY_NFUNC(NF, QBS, KVBS, BS) \
     switch (nFunc) {                             \
@@ -465,8 +534,15 @@ extern "C" __global__ __aicore__ void create_q2k_block_sparse_from_func(GM_ADDR 
     int32_t hNum = tilingData.hNum;
     int32_t bNum = tilingData.bNum;
     bool checkQBoundary = (tilingData.checkQBoundary == 1);
+    int32_t kvSplitMode = tilingData.kvSplitMode;
 
 #ifdef ENABLE_WARP_LEVEL_OPT
+    // 统一规则：凡 qBlockSize 能被 warp 大小整除且不超过一个 block 的线程数(256)，
+    // 一律走 warp 级路径
+    // 一个 256 线程 block = 8 个 warp，每个 warp 独立处理一个 (b,h,q_block)，
+    // 避免 block 级路径每个 kv_block 的 asc_syncthreads()。
+    // 覆盖 qBlockSize {32, 64, 128, 256}（qBlockSize=32/64 过去的缺失组合也纳入）。
+    // 模板参数必须是编译期常量，故用 switch 对 qBlockSize 分派，KV_BLOCK_SIZE 走运行期(0)。
     int32_t blockSize = WARP_LEVEL_NUM * WARP_SIZE_CONST;
     switch (qBlockSize) {
         case 32:

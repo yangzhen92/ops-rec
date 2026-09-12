@@ -38,4 +38,7 @@ constexpr int32_t STATE_EMPTY = 0;
 constexpr int32_t STATE_MASK = 1;
 constexpr int32_t STATE_FULL = 2;
 
+constexpr int32_t SPLIT_KV_CAP_PER_WARP = 256;  // 每 warp 暂存的 full/mask kv_block 数上限
+constexpr int32_t SPLIT_MAX_KV_BLOCKS = WARP_LEVEL_NUM * SPLIT_KV_CAP_PER_WARP;  // 2048
+
 #endif  // OPS_ASCEND_ATTENTION_BLOCK_SPARSE_FUNC_OP_KERNEL_COMMON_H

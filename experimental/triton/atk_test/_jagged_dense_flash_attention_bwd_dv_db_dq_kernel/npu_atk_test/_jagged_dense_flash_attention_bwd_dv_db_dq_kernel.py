@@ -46,18 +46,8 @@ def _bwd_preprocess_do_o_dot(
     pid_b = tl.program_id(1)
     offs_d = tl.arange(0, BLOCK_D)
 
-    o_ptrs = (
-        o_ptr
-        + pid_b * stride_ob
-        + offs_t[:, None] * stride_ot
-        + offs_d[None, :] * stride_od
-    )
-    do_ptrs = (
-        do_ptr
-        + pid_b * stride_do_b
-        + offs_t[:, None] * stride_do_t
-        + offs_d[None, :] * stride_do_d
-    )
+    o_ptrs = o_ptr + pid_b * stride_ob + offs_t[:, None] * stride_ot + offs_d[None, :] * stride_od
+    do_ptrs = do_ptr + pid_b * stride_do_b + offs_t[:, None] * stride_do_t + offs_d[None, :] * stride_do_d
     o = tl.load(o_ptrs, mask=(offs_t[:, None] < T), other=0.0)
     do = tl.load(do_ptrs, mask=(offs_t[:, None] < T), other=0.0)
     delta = tl.sum(o * do, axis=1)
@@ -75,6 +65,8 @@ _JAGGED_DENSE_FLASH_ATTENTION_BWD_DV_DB_DQ_AUTOTUNE_CONFIGS = [
     triton.Config({"BLOCK_T": 32, "BLOCK_L": 64}, num_warps=4, num_stages=2),
     triton.Config({"BLOCK_T": 64, "BLOCK_L": 64}, num_warps=8, num_stages=3),
 ]
+
+
 @triton.autotune(
     configs=_JAGGED_DENSE_FLASH_ATTENTION_BWD_DV_DB_DQ_AUTOTUNE_CONFIGS,
     key=["T", "D"],
@@ -154,17 +146,11 @@ def _jagged_dense_flash_attention_bwd_dv_db_dq_kernel(
     offs_d = tl.arange(0, BLOCK_D)
     offs_t = tl.arange(0, BLOCK_T)
 
-    q_ptrs = (
-        q_start_ptr + offs_l_curr[:, None] * stride_ql + offs_d[None, :] * stride_qd
-    )
+    q_ptrs = q_start_ptr + offs_l_curr[:, None] * stride_ql + offs_d[None, :] * stride_qd
     k_ptrs = k_start_ptr + offs_d[:, None] * stride_kd + offs_t[None, :] * stride_kt
-    v_ptrs = (
-        v_start_ptr + offs_l_curr[:, None] * stride_vl + offs_d[None, :] * stride_vd
-    )
+    v_ptrs = v_start_ptr + offs_l_curr[:, None] * stride_vl + offs_d[None, :] * stride_vd
 
-    do_ptrs = (
-        do_start_ptr + offs_t[:, None] * stride_do_t + offs_d[None, :] * stride_do_d
-    )
+    do_ptrs = do_start_ptr + offs_t[:, None] * stride_do_t + offs_d[None, :] * stride_do_d
 
     dq = tl.zeros([BLOCK_L, BLOCK_D], dtype=tl.float32)
     dv = tl.zeros([BLOCK_L, BLOCK_D], dtype=tl.float32)
@@ -193,11 +179,7 @@ def _jagged_dense_flash_attention_bwd_dv_db_dq_kernel(
         # gemm [BLOCK_L, BLOCK_D] x [BLOCK_D, BLOCK_T] -> [BLOCK_L, BLOCK_T]
         qk += tl.dot(q, k, allow_tf32=allow_tf32)
 
-        ab_ptrs = (
-            ab_start_ptr
-            + offs_l_curr[:, None] * stride_ab_l
-            + offs_t_curr[None, :] * stride_ab_t
-        )
+        ab_ptrs = ab_start_ptr + offs_l_curr[:, None] * stride_ab_l + offs_t_curr[None, :] * stride_ab_t
 
         ab = tl.load(
             ab_ptrs,
@@ -212,9 +194,7 @@ def _jagged_dense_flash_attention_bwd_dv_db_dq_kernel(
         qk_mask = (offs_l_curr[:, None] < seqlen) & (offs_t_curr[None, :] < T)
         qk = tl.where(qk_mask, qk, float("-inf"))
 
-        lse_t = tl.load(
-            lse_ptrs + offs_t_curr, mask=(offs_t_curr < T), other=float("inf")
-        )
+        lse_t = tl.load(lse_ptrs + offs_t_curr, mask=(offs_t_curr < T), other=float("inf"))
         # Perform softmax
         p = tl.exp(qk - lse_t[None, :])
         p = tl.where(qk_mask, p, 0.0)
@@ -238,11 +218,7 @@ def _jagged_dense_flash_attention_bwd_dv_db_dq_kernel(
         ds = p * (dp - delta[None, :])
 
         # Save dbias = ds
-        dbias_ptrs = (
-            dbias_start_ptr
-            + offs_l_curr[:, None] * stride_db_l
-            + offs_t_curr[None, :] * stride_db_t
-        )
+        dbias_ptrs = dbias_start_ptr + offs_l_curr[:, None] * stride_db_l + offs_t_curr[None, :] * stride_db_t
         tl.store(
             dbias_ptrs,
             ds,
@@ -257,15 +233,7 @@ def _jagged_dense_flash_attention_bwd_dv_db_dq_kernel(
         do_ptrs += BLOCK_T * stride_do_t
         start_t += BLOCK_T
 
-    dq_ptrs = (
-        dq_start_ptr
-        + offs_l_curr[:, None] * stride_dq_l
-        + offs_d[None, :] * stride_dq_d
-    )
-    dv_ptrs = (
-        dv_start_ptr
-        + offs_l_curr[:, None] * stride_dv_l
-        + offs_d[None, :] * stride_dv_d
-    )
+    dq_ptrs = dq_start_ptr + offs_l_curr[:, None] * stride_dq_l + offs_d[None, :] * stride_dq_d
+    dv_ptrs = dv_start_ptr + offs_l_curr[:, None] * stride_dv_l + offs_d[None, :] * stride_dv_d
     tl.store(dq_ptrs, dq, mask=(offs_l_curr[:, None] < seqlen))
     tl.store(dv_ptrs, dv, mask=(offs_l_curr[:, None] < seqlen))

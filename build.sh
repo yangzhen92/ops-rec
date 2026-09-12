@@ -186,23 +186,6 @@ init_common_cmake_args() {
 }
 
 # ---------------------------------------------------------------------------
-# 工具函数：同步 experimental/triton/ -> ops_rec/experimental/triton/
-# 仅拷贝 .py 文件（不含 test/、README.md 等），清除非 .py 文件。
-# ---------------------------------------------------------------------------
-sync_triton() {
-    local triton_src="${SCRIPT_DIR}/experimental/triton"
-    local triton_dst="${SCRIPT_DIR}/ops_rec/experimental/triton"
-    if [ -d "${triton_src}" ]; then
-        rm -rf "${triton_dst}"
-        cp -a "${triton_src}" "${triton_dst}"
-        find "${triton_dst}" -type f ! -name '*.py' -exec rm -f {} +
-        find "${triton_dst}" -type d -name 'test' -exec rm -rf {} + 2>/dev/null || true
-        find "${triton_dst}" -type d -empty -delete 2>/dev/null || true
-        echo "[INFO] Synced experimental/triton/ -> ${triton_dst} (source only)"
-    fi
-}
-
-# ---------------------------------------------------------------------------
 # 工具函数：同步各算子的 Python autograd 源码 -> 打包 merge 目录 ops_rec/autograd/
 # 源码约定位于每个算子的 torch_extension/ 目录（与 *_plugin.cpp 同处），
 # 打包阶段拷贝到 merge 树 ops_rec/autograd/ 子目录（源码树保留 __init__.py 作为
@@ -388,9 +371,6 @@ main() {
             OP_ARRAY[$i]="$(echo "${OP_ARRAY[$i]}" | xargs)"
         done
     fi
-
-    # 同步 experimental/triton -> ops_rec（每次构建前做一次）
-    sync_triton
 
     # 累积"实际构建"的 (soc leaf) 对，供 verify_merged_ops 校验
     local -a BUILT_OPS=()

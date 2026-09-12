@@ -90,6 +90,10 @@ def build_final_wheel(merge_dir: str, out_dir: str, version: str | None = None) 
         # 复制合并后的内容
         shutil.copytree(merge_path, pkg_dst)
 
+        # 实验性 triton 算子源码在仓库 experimental/triton 单独维护，
+        # 组装 wheel 时同步进最终包树，避免构建过程污染 ops_rec/ 源码树。
+        _sync_experimental_triton(pkg_dst)
+
         dist_info_dir = tmp_path / f"ops_rec-{version}.dist-info"
         dist_info_dir.mkdir(parents=True, exist_ok=True)
 
@@ -219,6 +223,58 @@ def _write_record(tmp_path: Path, dist_info_dir: Path, version: str) -> None:
     (dist_info_dir / "RECORD").write_text("\n".join(record_lines), encoding="utf-8")
 
 
+class TritonSyncCollisionError(Exception):
+    """triton 实验算子收集到同目录同名源文件时抛出，构建中止并给出冲突来源。"""
+
+
+def _sync_experimental_triton(pkg_dst: Path) -> None:
+    """将仓库 experimental/triton/ 的算子源码同步进最终包树 ops_rec/experimental/triton/。
+
+    只同步 atk_test 之外各分类目录（customized_ops/、jagged/ 等）下的算子源码：
+    往 <kind>/ 下收 <kind>/<op>/<op>.py 拍平的 <op>.py，以及 <kind>/<op>.py。
+    同名冲突（如 <kind>/op.py 与 <kind>/op/op.py 并存）视为打包错误，直接抛异常。
+    源码目录缺失时视为无实验算子，静默跳过。
+    """
+    src_root = Path(__file__).resolve().parents[1]
+    src = src_root / "experimental" / "triton"
+    dst = pkg_dst / "experimental" / "triton"
+    if not src.is_dir():
+        return
+    if dst.exists():
+        shutil.rmtree(dst)
+
+    for kind_dir in sorted(p for p in src.iterdir() if p.is_dir()):
+        if kind_dir.name == "atk_test":
+            continue
+        kind_dst = dst / kind_dir.name
+
+        # 1) 预收集目标文件 -> 来源文件，mdict 保证同一目标名只对应一个来源
+        plan: dict[str, Path] = {}
+        for entry in sorted(kind_dir.iterdir()):
+            if entry.is_dir():
+                op_py = entry / (entry.name + ".py")
+                if op_py.is_file():
+                    _add_plan_entry(plan, kind_dst, op_py, entry.name + ".py")
+            elif entry.is_file() and entry.suffix == ".py":
+                _add_plan_entry(plan, kind_dst, entry, entry.name)
+
+        # 2) 按计划拷贝，只产生 <kind>/<op>.py，因此无需再对目标树做清理
+        kind_dst.mkdir(parents=True, exist_ok=True)
+        for name, src_file in plan.items():
+            shutil.copy2(src_file, kind_dst / name)
+
+
+def _add_plan_entry(plan: dict[str, Path], kind_dst: Path, src_file: Path, name: str) -> None:
+    """登记一条待打包文件；目标名已被占用时报出冲突双方的具体位置。"""
+    existing = plan.get(name)
+    if existing is not None:
+        raise TritonSyncCollisionError(
+            f"triton experimental ops collision: '{existing}' and '{src_file}' "
+            f"both map to package path '{kind_dst / name}'; refusing to build wheel"
+        )
+    plan[name] = src_file
+
+
 def _skip_item(name: str) -> bool:
     """过滤在多 SOC 合并时需要跳过的特定文件或目录"""
     return name in frozenset({"lib", "include", ".dist-info", "_available_ops.py"})
@@ -265,6 +321,8 @@ if __name__ == "__main__":
         _exit_error(f"file not found: {exc.filename} ({exc})")
     except zipfile.BadZipFile as exc:
         _exit_error(f"corrupted .whl file: {exc}")
+    except TritonSyncCollisionError as exc:
+        _exit_error(f"wheel build aborted: {exc}")
     except Exception:
         traceback.print_exc()
         _exit_error("merge_wheel failed; see traceback above")

@@ -13,6 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
+# generate_triton_layer_norm_fwd.py
 """triton_layer_norm_fwd 的 ATK shape 约束生成器。
 
 该 kernel 对 X [N, D] 的每一行做 layer normalization。关键约束：

@@ -13,6 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
+# triton_layer_norm_fwd.yaml
 # _layer_norm_fwd 精度/性能测试配置。
 # 该 kernel 对输入 X 做 layer normalization，输出归一化结果 Y，
 # 并（在 COMPUTE_MEAN_AND_RSTD=True 时）产出均值 Mean 与 rstd Rstd。

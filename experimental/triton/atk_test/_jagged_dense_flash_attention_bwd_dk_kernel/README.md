@@ -43,7 +43,7 @@
 | `allow_tf32` | 是否允许 TF32（`constexpr`） |
 
 > 说明：NPU 端 kernel 使用 `triton.autotune` 包装，由 `_JAGGED_DENSE_FLASH_ATTENTION_BWD_DK_AUTOTUNE_CONFIGS` 列表在 `BLOCK_T ∈ {16, 32, 64, 128}`、`BLOCK_L ∈ {16, 32}`、`num_warps ∈ {1, 2, 4, 8}` 上自动选优，grid 由 `META["BLOCK_T"]` 动态计算。
-
+>
 > 说明：`sum_B = sum(seq_len[i])`，即所有 batch 内序列长度之和；`B`、`T` 来自 `K` 的形状，`N` 来自 `attn_bias` 的中间维。
 
 ## 输出
@@ -55,6 +55,9 @@
 ## 使用样例
 
 ### 示例：直接调用 kernel
+
+> 以下示例以 **NPU 端** kernel 为例（已用 `@triton.autotune` 包装，`BLOCK_T` / `BLOCK_L` 由 autotuner 自动选择）。
+> GPU 端 kernel 没有 autotune，需**显式**传入 `BLOCK_T` / `BLOCK_L`，并以 `(cdiv(T, BLOCK_T), B)` 元组作为 grid，无需 callable `_grid`。
 
 ```python
 import torch
@@ -68,10 +71,8 @@ DEVICE = "npu:0"
 B, D, T, N = 4, 16, 64, 8
 max_seq_len = 128
 
-# jagged 输入 Q / V / dq 的总 token 数
 sum_B = B * (T // 2)
 
-# 随机初始化输入张量
 Q      = torch.randn(sum_B, D, dtype=torch.float32, device=DEVICE)
 K      = torch.randn(B, D, T,    dtype=torch.float32, device=DEVICE)
 V      = torch.randn(sum_B, D, dtype=torch.float32, device=DEVICE)
@@ -81,14 +82,14 @@ lse    = torch.randn(B, T,       dtype=torch.float32, device=DEVICE)
 abias  = torch.randn(B, N, T,    dtype=torch.float32, device=DEVICE)
 dq     = torch.zeros(sum_B, D,   dtype=torch.float32, device=DEVICE)
 
-# 构造 jagged_offsets：首元素为 0，末元素为 sum_B
 jagged_offsets = torch.tensor(
     [0, sum_B // 4, sum_B // 2, 3 * sum_B // 4, sum_B],
     dtype=torch.int64, device=DEVICE,
 )
 
-# 预计算 delta = rowsum(O * do)
 delta = torch.empty_like(lse)
+# _bwd_preprocess_do_o_dot 不是 autotune 的，需要手动指定 BLOCK_T / BLOCK_D。
+# 主 kernel 的 BLOCK_T / BLOCK_L 由 autotuner 注入，无需在此声明。
 BLOCK_T, BLOCK_D = 32, D
 num_blocks_t = triton.cdiv(T, BLOCK_T)
 _bwd_preprocess_do_o_dot[(num_blocks_t, B)](
@@ -99,29 +100,10 @@ _bwd_preprocess_do_o_dot[(num_blocks_t, B)](
     BLOCK_T, BLOCK_D,
 )
 
-# 调用本 kernel 计算 dk（GPU 端示例：固定 BLOCK_T / BLOCK_L）
 dk = torch.zeros_like(K)
-BLOCK_T, BLOCK_L, BLOCK_D = 32, 32, D
-num_blocks_t = triton.cdiv(T, BLOCK_T)
-_jagged_dense_flash_attention_bwd_dk_kernel[(num_blocks_t, B)](
-    Q, K, V, abias, jagged_offsets,
-    Out, do, lse, delta, dq, dk,
-    None,                                  # dv: 本 kernel 不计算
-    None,                                  # dbias: 本 kernel 不计算
-    max_seq_len,
-    Q.stride(0), Q.stride(1),
-    K.stride(0), K.stride(1), K.stride(2),
-    V.stride(0), V.stride(1),
-    abias.stride(0), abias.stride(1), abias.stride(2),
-    Out.stride(0), Out.stride(1), Out.stride(2),
-    dk.stride(0),  dk.stride(1),  dk.stride(2),
-    do.stride(0),  do.stride(1),  do.stride(2),
-    D, T,
-    BLOCK_T, BLOCK_L, BLOCK_D,
-    allow_tf32=False,
-)
 
-# NPU 端示例：kernel 已用 triton.autotune 包装，grid 由 META["BLOCK_T"] 动态计算
+# 注意：npu 端 kernel 已加 @triton.autotune，BLOCK_T / BLOCK_L 由 autotuner 从 configs 注入，
+# 调用时最好全用关键字传参（不能显式传 BLOCK_T / BLOCK_L），grid 需从 META 读取 BLOCK_T
 def _grid(META):
     return (triton.cdiv(T, META["BLOCK_T"]), B)
 
@@ -129,8 +111,7 @@ _jagged_dense_flash_attention_bwd_dk_kernel[_grid](
     q_ptr=Q, k_ptr=K, v_ptr=V, ab_ptr=abias,
     jagged_offsets_ptr=jagged_offsets,
     out_ptr=Out, do_ptr=do, lse_ptr=lse, delta_ptr=delta,
-    dq_ptr=dq, dk_ptr=dk,
-    dv_ptr=None, dbias_ptr=None,
+    dq_ptr=dq, dk_ptr=dk, dv_ptr=None, dbias_ptr=None,
     max_seq_len=max_seq_len,
     stride_ql=Q.stride(0), stride_qd=Q.stride(1),
     stride_kb=K.stride(0), stride_kd=K.stride(1), stride_kt=K.stride(2),
@@ -140,12 +121,13 @@ _jagged_dense_flash_attention_bwd_dk_kernel[_grid](
     stride_dk_b=dk.stride(0), stride_dk_d=dk.stride(1), stride_dk_t=dk.stride(2),
     stride_do_b=do.stride(0), stride_do_t=do.stride(1), stride_do_d=do.stride(2),
     D=D, T=T,
-    BLOCK_D=D,
+    BLOCK_D=BLOCK_D,
     allow_tf32=False,
 )
 
 torch.npu.synchronize(DEVICE)
-print("dk.shape:", tuple(dk.shape))        # (B, D, T)
+# dk.shape: (4, 16, 64)
+print("dk.shape:", tuple(dk.shape))
 ```
 
 ---

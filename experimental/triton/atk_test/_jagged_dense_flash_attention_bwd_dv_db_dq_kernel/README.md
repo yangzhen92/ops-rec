@@ -50,13 +50,13 @@ for t in range(0, T, BLOCK_T):
 
 | 参数 | 说明 |
 |------|------|
-| `Q` | Q 的 jagged 扁平值，shape `(sum_B, D)`，`dtype` 支持 fp32 / fp16 / bf16 |
-| `K` | 共享的 K，dense tensor，shape `(B, D, T)` |
-| `V` | V 的 jagged 扁平值，shape `(sum_B, D)` |
-| `Out` | 前向输出，dense tensor，shape `(B, T, D)`，用于预计算 `delta` |
-| `lse` | 前向 `log-sum-exp`，dense tensor，shape `(B, T)` |
-| `do` | 输出梯度，dense tensor，shape `(B, T, D)` |
-| `attn_bias` | attention bias，dense tensor，shape `(B, N, T)` |
+| `Q` | Q 的 jagged 扁平值，shape `(sum_B, D)`，`dtype = fp32` |
+| `K` | 共享的 K，dense tensor，shape `(B, D, T)`，`dtype = fp32` |
+| `V` | V 的 jagged 扁平值，shape `(sum_B, D)`，`dtype = fp32` |
+| `Out` | 前向输出，dense tensor，shape `(B, T, D)`，用于预计算 `delta`，`dtype = fp32` |
+| `lse` | 前向 `log-sum-exp`，dense tensor，shape `(B, T)`，`dtype = fp32` |
+| `do` | 输出梯度，dense tensor，shape `(B, T, D)`，`dtype = fp32` |
+| `attn_bias` | attention bias，dense tensor，shape `(B, N, T)`，`dtype = fp32` |
 | `jagged_offsets` | Q / V 的分段偏移，shape `(B + 1)`，`int64`，首元素为 `0`、末元素为 `sum_B` |
 | `max_seq_len` | Q 单行最大长度（`int`），超过该长度的序列会被截断 |
 | `allow_tf32` | 是否允许 `tl.dot` 使用 TF32（`attr_bool`） |
@@ -85,7 +85,6 @@ for t in range(0, T, BLOCK_T):
 ```python
 import torch
 import triton
-import torch_npu
 from _jagged_dense_flash_attention_bwd_dv_db_dq_kernel import (
     _jagged_dense_flash_attention_bwd_dv_db_dq_kernel,
     _bwd_preprocess_do_o_dot,
@@ -95,8 +94,7 @@ DEVICE = "npu:0"
 B, N, D, T = 4, 8, 64, 32
 MAX_SEQ_LEN = T
 
-# jagged Q/V 共享同一组 offsets
-seq_lens = [12, 8, 16, 10]                       # sum_B = 46
+seq_lens = [12, 8, 16, 10]
 sum_B = sum(seq_lens)
 jagged_offsets = torch.tensor(
     [0] + seq_lens, dtype=torch.int64, device=DEVICE
@@ -112,7 +110,6 @@ do  = torch.randn(B,   T, D,   dtype=torch.float32, device=DEVICE)
 lse = torch.randn(B,   T,     dtype=torch.float32, device=DEVICE)
 attn_bias = torch.randn(B, N, T, dtype=torch.float32, device=DEVICE)
 
-# 输出 / 中间 buffer
 dq    = torch.zeros_like(Q)
 dv    = torch.zeros_like(V)
 dbias = torch.zeros_like(attn_bias)
@@ -128,30 +125,38 @@ _bwd_preprocess_do_o_dot[(num_blocks_t, B)](
     do.stride(0),  do.stride(1),  do.stride(2),
     BLOCK_T, BLOCK_D,
 )
+torch.npu.synchronize(DEVICE)
 
 # 2) 计算 dq / dv / dbias
-num_blocks_l = triton.cdiv(MAX_SEQ_LEN, BLOCK_L)
-grid = (num_blocks_l, B)
-_jagged_dense_flash_attention_bwd_dv_db_dq_kernel[grid](
-    Q, K, V, attn_bias, jagged_offsets,
-    Out, do, lse, delta,
-    dq, None,                # dk 不在本 kernel 中计算
-    dv, dbias,
-    MAX_SEQ_LEN,
-    Q.stride(0),        Q.stride(1),
-    K.stride(0),        K.stride(1),        K.stride(2),
-    V.stride(0),        V.stride(1),
-    attn_bias.stride(0), attn_bias.stride(1), attn_bias.stride(2),
-    Out.stride(0),      Out.stride(1),      Out.stride(2),
-    dq.stride(0),       dq.stride(1),
-    dv.stride(0),       dv.stride(1),
-    dbias.stride(0),    dbias.stride(1),    dbias.stride(2),
-    do.stride(0),       do.stride(1),       do.stride(2),
-    T, BLOCK_T, BLOCK_L, BLOCK_D,
-    True,                              # allow_tf32
+# 注意：kernel 已加 @triton.autotune，BLOCK_T / BLOCK_L 由 autotuner 从 configs 注入，
+# 调用时不能显式传；grid 需从 META 读取 BLOCK_L（该 kernel 按 BLOCK_L 拆 L 维）
+def _grid(META):
+    return (triton.cdiv(MAX_SEQ_LEN, META["BLOCK_L"]), B)
+
+_jagged_dense_flash_attention_bwd_dv_db_dq_kernel[_grid](
+    q_ptr=Q, k_ptr=K, v_ptr=V, ab_ptr=attn_bias,
+    jagged_offsets_ptr=jagged_offsets,
+    out_ptr=Out, do_ptr=do, lse_ptr=lse, delta_ptr=delta,
+    dq_ptr=dq, dk_ptr=None, dv_ptr=dv, dbias_ptr=dbias,
+    max_seq_len=MAX_SEQ_LEN,
+    stride_ql=Q.stride(0),            stride_qd=Q.stride(1),
+    stride_kb=K.stride(0),            stride_kd=K.stride(1),        stride_kt=K.stride(2),
+    stride_vl=V.stride(0),            stride_vd=V.stride(1),
+    stride_ab_b=attn_bias.stride(0),  stride_ab_l=attn_bias.stride(1), stride_ab_t=attn_bias.stride(2),
+    stride_ob=Out.stride(0),          stride_ot=Out.stride(1),      stride_od=Out.stride(2),
+    stride_dq_l=dq.stride(0),         stride_dq_d=dq.stride(1),
+    stride_dv_l=dv.stride(0),         stride_dv_d=dv.stride(1),
+    stride_db_b=dbias.stride(0),      stride_db_l=dbias.stride(1),  stride_db_t=dbias.stride(2),
+    stride_do_b=do.stride(0),         stride_do_t=do.stride(1),     stride_do_d=do.stride(2),
+    T=T,
+    BLOCK_D=BLOCK_D,
+    allow_tf32=True,
 )
 
 torch.npu.synchronize(DEVICE)
+# dq: torch.Size([46, 64]) torch.float32
+# dv: torch.Size([46, 64]) torch.float32
+# dbias: torch.Size([4, 8, 32]) torch.float32
 print("dq:",    dq.shape,    dq.dtype)
 print("dv:",    dv.shape,    dv.dtype)
 print("dbias:", dbias.shape, dbias.dtype)
@@ -164,6 +169,7 @@ print("dbias:", dbias.shape, dbias.dtype)
 - `jagged_offsets[0] == 0` 且 `jagged_offsets[-1] == sum_B = Q.shape[0] = V.shape[0]`。
 - `jagged_offsets` 单调递增；当前 batch 的真实序列长度 `seqlen = jagged_offsets[pid_b + 1] - jagged_offsets[pid_b]`，超过 `max_seq_len` 的部分会被截断。
 - `D`（hidden 维）必须是 **2 的幂次方且 `>= 16`**：Triton `tl.arange(0, BLOCK_D)` 要求范围为 2 的幂次方，`tl.dot` 要求 inner dim `>= 16`。
+- **计算 dtype 强制 fp32**：kernel 内 `dq / dv / qk / dp` 累加器显式声明为 `tl.float32`，`tl.dot` 也未指定 `out_dtype`，故所有张量按 fp32 输入与计算。
 - `max_seq_len >= T`：避免 T 维 tile 循环上界小于实际 key/value 长度。
 - `BLOCK_D` 一般取 `D` 本身，以避免额外的 d 维切分。
 - Q / V / dq / dv 在 `(sum_B, D)` 上需保证连续；K / Out / do / attn_bias 在对应 dense 布局上需保证连续。

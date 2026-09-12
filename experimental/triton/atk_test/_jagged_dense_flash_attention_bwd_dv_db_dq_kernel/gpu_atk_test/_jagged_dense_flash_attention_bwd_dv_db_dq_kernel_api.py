@@ -20,6 +20,12 @@ from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
 from atk.tasks.api_execute.base_api import BaseApi
 
+# 从被测代码直接引用 triton kernel
+from _jagged_dense_flash_attention_bwd_dv_db_dq_kernel import (
+    _jagged_dense_flash_attention_bwd_dv_db_dq_kernel,
+    _bwd_preprocess_do_o_dot,
+)
+
 
 def get_device():
     """获取可用的设备，优先NPU"""
@@ -28,21 +34,43 @@ def get_device():
     try:
         if torch.cuda.is_available():
             return 'cuda'
-    except:
+    except Exception:
         pass
     return 'cpu'
-
-
-# 从被测代码直接引用 triton kernel
-from _jagged_dense_flash_attention_bwd_dv_db_dq_kernel import (
-    _jagged_dense_flash_attention_bwd_dv_db_dq_kernel,
-    _bwd_preprocess_do_o_dot,
-)
 
 
 @register("_jagged_dense_flash_attention_bwd_dv_db_dq_kernel")
 class JaggedDenseFlashAttentionBwdDvDbDqApi(BaseApi):
     """_jagged_dense_flash_attention_bwd_dv_db_dq_kernel 算子的 API 封装"""
+
+    def __init__(self):
+        super().__init__()
+        # 实例属性声明：实际值由 init_by_input_data 填充
+        self._device = None
+        self._Q = None
+        self._K = None
+        self._V = None
+        self._Out = None
+        self._lse = None
+        self._do = None
+        self._attn_bias = None
+        self._jagged_offsets = None
+        self._max_seq_len = None
+        self._allow_tf32 = None
+        self._B = None
+        self._D = None
+        self._T = None
+        self._N = None
+        self._sum_B = None
+        self._dq = None
+        self._dv = None
+        self._dbias = None
+        self._delta = None
+        self._BLOCK_T = None
+        self._BLOCK_L = None
+        self._BLOCK_D = None
+        self._num_blocks_l = None
+        self._grid = None
 
     def init_by_input_data(self, input_data: InputDataset):
         """

@@ -12,21 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""
-_jagged_dense_flash_attention_bwd_dv_db_dq_kernel 算子的ATK自定义API执行文件
 
-用于 Flash Attention 反向传播中计算 dq, dv, dbias：
-- 输入：Q [sum_B, D], K [B, D, T], V [sum_B, D], Out [B, T, D], lse [B, T]
-        do [B, T, D], attn_bias [B, N, T], jagged_offsets [B + 1]
-- 输出：dq [sum_B, D], dv [sum_B, D], dbias [B, N, T]
-
-计算说明：
-- dq: Q 的梯度，jagged tensor，形状 [sum_B, D]
-- dv: V 的梯度，jagged tensor，形状 [sum_B, D]
-- dbias: attention bias 的梯度，dense tensor，形状 [B, N, T]
-
-该 kernel 只计算 dq, dv, dbias，dk 由单独的 kernel 计算
-"""
 import torch
 import triton
 

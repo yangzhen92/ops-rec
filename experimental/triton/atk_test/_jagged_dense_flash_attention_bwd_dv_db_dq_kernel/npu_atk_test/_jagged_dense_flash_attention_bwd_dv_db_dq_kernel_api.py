@@ -12,21 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""
-_jagged_dense_flash_attention_bwd_dv_db_dq_kernel 算子的ATK自定义API执行文件
 
-用于 Flash Attention 反向传播中计算 dq, dv, dbias：
-- 输入：Q [sum_B, D], K [B, D, T], V [sum_B, D], Out [B, T, D], lse [B, T]
-        do [B, T, D], attn_bias [B, N, T], jagged_offsets [B + 1]
-- 输出：dq [sum_B, D], dv [sum_B, D], dbias [B, N, T]
-
-计算说明：
-- dq: Q 的梯度，jagged tensor，形状 [sum_B, D]
-- dv: V 的梯度，jagged tensor，形状 [sum_B, D]
-- dbias: attention bias 的梯度，dense tensor，形状 [B, N, T]
-
-该 kernel 只计算 dq, dv, dbias，dk 由单独的 kernel 计算
-"""
 import torch
 import triton
 
@@ -230,16 +216,19 @@ class JaggedDenseFlashAttentionBwdDvDbDqApi(BaseApi):
         self._delta = torch.empty_like(lse)
 
         # 设置 block 大小
-        self._BLOCK_T = 32
-        self._BLOCK_L = 32
         self._BLOCK_D = self._D
 
-        # 计算 grid
-        self._num_blocks_l = triton.cdiv(self._max_seq_len, self._BLOCK_L)
-        self._grid = (self._num_blocks_l, self._B)
+        # autotune grid：第一维按 BLOCK_L 拆分 L（query 位置），从 META 读取
+        def _grid(META):
+            return (
+                triton.cdiv(self._max_seq_len, META["BLOCK_L"]),
+                self._B,
+            )
 
-        # 预计算 delta (调用 _bwd_preprocess_do_o_dot kernel)
-        num_blocks_t = triton.cdiv(self._T, self._BLOCK_T)
+        self._grid = _grid
+
+        # 预计算 delta (调用 _bwd_preprocess_do_o_dot kernel，固定 BLOCK_T=32)
+        num_blocks_t = triton.cdiv(self._T, 32)
         _bwd_preprocess_do_o_dot[(num_blocks_t, self._B)](
             Out,
             do,
@@ -251,7 +240,7 @@ class JaggedDenseFlashAttentionBwdDvDbDqApi(BaseApi):
             do.stride(0),
             do.stride(1),
             do.stride(2),
-            self._BLOCK_T,
+            32,
             self._BLOCK_D,
         )
 
@@ -265,50 +254,48 @@ class JaggedDenseFlashAttentionBwdDvDbDqApi(BaseApi):
         elif self._device == 'cuda':
             torch.cuda.synchronize()
 
-        # 调用 kernel
+        # 调用 kernel（autotune：grid 从 META 读取，BLOCK_T/BLOCK_L 由 autotune 注入）
         _jagged_dense_flash_attention_bwd_dv_db_dq_kernel[self._grid](
-            self._Q,
-            self._K,
-            self._V,
-            self._attn_bias,
-            self._jagged_offsets,
-            self._Out,
-            self._do,
-            self._lse,
-            self._delta,
-            self._dq,
-            None,  # dk (not computed by this kernel)
-            self._dv,
-            self._dbias,
-            self._max_seq_len,
-            self._Q.stride(0),
-            self._Q.stride(1),
-            self._K.stride(0),
-            self._K.stride(1),
-            self._K.stride(2),
-            self._V.stride(0),
-            self._V.stride(1),
-            self._attn_bias.stride(0),
-            self._attn_bias.stride(1),
-            self._attn_bias.stride(2),
-            self._Out.stride(0),
-            self._Out.stride(1),
-            self._Out.stride(2),
-            self._dq.stride(0),
-            self._dq.stride(1),
-            self._dv.stride(0),
-            self._dv.stride(1),
-            self._dbias.stride(0),
-            self._dbias.stride(1),
-            self._dbias.stride(2),
-            self._do.stride(0),
-            self._do.stride(1),
-            self._do.stride(2),
-            self._T,
-            self._BLOCK_T,
-            self._BLOCK_L,
-            self._BLOCK_D,
-            self._allow_tf32,
+            q_ptr=self._Q,
+            k_ptr=self._K,
+            v_ptr=self._V,
+            ab_ptr=self._attn_bias,
+            jagged_offsets_ptr=self._jagged_offsets,
+            out_ptr=self._Out,
+            do_ptr=self._do,
+            lse_ptr=self._lse,
+            delta_ptr=self._delta,
+            dq_ptr=self._dq,
+            dk_ptr=None,  # dk (not computed by this kernel)
+            dv_ptr=self._dv,
+            dbias_ptr=self._dbias,
+            max_seq_len=self._max_seq_len,
+            stride_ql=self._Q.stride(0),
+            stride_qd=self._Q.stride(1),
+            stride_kb=self._K.stride(0),
+            stride_kd=self._K.stride(1),
+            stride_kt=self._K.stride(2),
+            stride_vl=self._V.stride(0),
+            stride_vd=self._V.stride(1),
+            stride_ab_b=self._attn_bias.stride(0),
+            stride_ab_l=self._attn_bias.stride(1),
+            stride_ab_t=self._attn_bias.stride(2),
+            stride_ob=self._Out.stride(0),
+            stride_ot=self._Out.stride(1),
+            stride_od=self._Out.stride(2),
+            stride_dq_l=self._dq.stride(0),
+            stride_dq_d=self._dq.stride(1),
+            stride_dv_l=self._dv.stride(0),
+            stride_dv_d=self._dv.stride(1),
+            stride_db_b=self._dbias.stride(0),
+            stride_db_l=self._dbias.stride(1),
+            stride_db_t=self._dbias.stride(2),
+            stride_do_b=self._do.stride(0),
+            stride_do_t=self._do.stride(1),
+            stride_do_d=self._do.stride(2),
+            T=self._T,
+            BLOCK_D=self._BLOCK_D,
+            allow_tf32=self._allow_tf32,
         )
 
         # 同步并停止 profiler

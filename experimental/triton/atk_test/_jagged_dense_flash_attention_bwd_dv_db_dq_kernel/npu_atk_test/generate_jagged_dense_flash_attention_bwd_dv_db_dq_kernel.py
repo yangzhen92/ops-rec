@@ -53,19 +53,6 @@ def get_next_power_of_2(n):
 
 @GENERATOR_REGISTRY.register("generate_jagged_dense_flash_attention_bwd_dv_db_dq_kernel")
 class JaggedDenseFlashAttentionBwdDvDbDqGenerator(CaseGenerator):
-    """
-    _jagged_dense_flash_attention_bwd_dv_db_dq_kernel 算子参数约束生成器
-
-    参数约束：
-    1. D 必须是 2 的幂次方（triton arange 要求）
-    2. K: [B, D, T]
-    3. Q, V: [sum_B, D]
-    4. Out, do: [B, T, D]
-    5. lse: [B, T]
-    6. attn_bias: [B, N, T]
-    7. jagged_offsets: [B + 1]，jagged_offsets[-1] = sum_B
-    """
-
     def after_case_config(self, case_config: CaseConfig) -> CaseConfig:
         """
         用例参数约束修改入口

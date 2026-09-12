@@ -67,6 +67,19 @@ def _bwd_preprocess_do_o_dot(
     tl.store(delta_ptrs, delta, mask=(offs_t < T))
 
 
+_JAGGED_DENSE_FLASH_ATTENTION_BWD_DV_DB_DQ_AUTOTUNE_CONFIGS = [
+    triton.Config({"BLOCK_T": 16, "BLOCK_L": 32}, num_warps=1, num_stages=1),
+    triton.Config({"BLOCK_T": 16, "BLOCK_L": 32}, num_warps=2, num_stages=2),
+    triton.Config({"BLOCK_T": 32, "BLOCK_L": 32}, num_warps=2, num_stages=2),
+    triton.Config({"BLOCK_T": 32, "BLOCK_L": 32}, num_warps=4, num_stages=2),
+    triton.Config({"BLOCK_T": 64, "BLOCK_L": 32}, num_warps=4, num_stages=2),
+    triton.Config({"BLOCK_T": 32, "BLOCK_L": 64}, num_warps=4, num_stages=2),
+    triton.Config({"BLOCK_T": 64, "BLOCK_L": 64}, num_warps=8, num_stages=3),
+]
+@triton.autotune(
+    configs=_JAGGED_DENSE_FLASH_ATTENTION_BWD_DV_DB_DQ_AUTOTUNE_CONFIGS,
+    key=["T", "D"],
+)
 @triton.jit
 def _jagged_dense_flash_attention_bwd_dv_db_dq_kernel(
     q_ptr,

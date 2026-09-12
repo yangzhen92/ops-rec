@@ -23,7 +23,7 @@
 
 对每个 batch `b` 与 Q 行块 `l`：
 
-```
+```text
 # 1) 预计算 delta
 delta[t] = sum_d(Out[b, t, d] * do[b, t, d])
 

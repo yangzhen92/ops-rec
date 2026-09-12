@@ -69,6 +69,8 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
                  "func_q_len must be greater than or equal to qLen");
     OPS_LOG_E_IF(nFunc % 2 != 0, context, return ge::GRAPH_FAILED, "nFunc must be divisible by 2");
 
+    auto ascendPlatform = platform_ascendc::PlatformAscendC(context->GetPlatformInfo());
+    const int32_t aivCoreCount = static_cast<int32_t>(ascendPlatform.GetCoreNumAiv());
     int32_t numQBlocks = DIVUP(*qLen, *qBlockSize);
     int32_t numKvBlocks = DIVUP(*kvLen, *kvBlockSize);
     int32_t totalBlocks = numQBlocks * hNum * bNum;
@@ -92,13 +94,22 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
     tiling.set_checkQBoundary(*checkQBoundary ? 1 : 0);
 
 #ifdef ENABLE_WARP_LEVEL_OPT
-    // warp 级(qB<=256)：每个 256 线程 block=8 warps=8 个 q_block；block 级(qB>=256 如 256/512)：每个 block 处理
+    // warp 级(qB<=256)：每个 256 线程 block=8 warps=8 个 q_block；block 级(qB>256 如 512)：每个 block 处理
     // 一个 q_block（256 线程各 1 token 或 split 512 token x2）。block 级若仍用 DIVUP(totalBlocks,8) 会把大批
     // q_block 压到极少数 block/核上，造成严重欠并行，故 block 级应 grid = totalBlocks（每核一个 q_block）。
-    const bool use_warp_level = (*qBlockSize <= BLOCK_THREAD_NUM_256) && (*qBlockSize % 32 == 0);
-    int32_t grid = use_warp_level ? DIVUP(totalBlocks, WARP_LEVEL_NUM) : totalBlocks;
+    const bool use_warp_level =
+        (*qBlockSize >= 32) && (*qBlockSize <= BLOCK_THREAD_NUM_256) && ((*qBlockSize & (*qBlockSize - 1)) == 0);
+    // 多 warp KV 拆分：warp 级路径下，若 q_block 总数不足以占满 AIV 核，则把每个 q_block 的 KV 区间
+    // 拆给 block 内 8 个 warp 并行扫描。grid 改为 totalBlocks（每核一个 q_block），用满空余核，
+    // 直击 q_block 少/单核串行扫描的欠并行根因。
+    const int32_t split_waves = DIVUP(totalBlocks, aivCoreCount);
+    const bool kv_split_mode =
+        use_warp_level && (split_waves <= 2) && (numKvBlocks >= 16) && (numKvBlocks <= SPLIT_MAX_KV_BLOCKS);
+    int32_t grid = kv_split_mode ? totalBlocks : (use_warp_level ? DIVUP(totalBlocks, WARP_LEVEL_NUM) : totalBlocks);
+    tiling.set_kvSplitMode(kv_split_mode ? 1 : 0);
 #else
     int32_t grid = totalBlocks;
+    tiling.set_kvSplitMode(0);
 #endif
     grid = grid >= 65535 ? 65535 : grid;
     context->SetBlockDim(grid);

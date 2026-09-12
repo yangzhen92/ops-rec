@@ -147,7 +147,7 @@ atk server --devices 0 --plugin_path /path/to/api文件所在文件夹
 该命令由 NPU 侧连接 GPU server，分别计算两端的 DX，并比较输出梯度的精度。
 
 ```bash
-atk node --backend triton --devices 0 node --backend npu --devices 0 \
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 \
     task -c all_triton_layer_norm_bwd_dx.json --task accuracy \
     -p triton_layer_norm_bwd_dx_api.py
 ```
@@ -157,7 +157,7 @@ atk node --backend triton --devices 0 node --backend npu --devices 0 \
 该命令读取性能用例 JSON，在 NPU 侧执行设备性能测试并记录 backward kernel 耗时。
 
 ```bash
-atk node --backend triton --devices 0 node --backend npu --devices 0 \
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 \
     task -c triton_layer_norm_bwd_dx_performance.json --task performance_device \
     -p triton_layer_norm_bwd_dx_api.py
 ```

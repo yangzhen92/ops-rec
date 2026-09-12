@@ -13,6 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
+# generate_triton_layer_norm_bwd_dx.py
 """_layer_norm_bwd_dx 的 ATK shape 约束生成器。
 
 关键约束：

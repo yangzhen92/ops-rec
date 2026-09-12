@@ -13,6 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
+# triton_layer_norm_bwd_dx_api.py
 """
 _layer_norm_bwd_dx kernel ATK API 封装 — Autotune 版本。
 

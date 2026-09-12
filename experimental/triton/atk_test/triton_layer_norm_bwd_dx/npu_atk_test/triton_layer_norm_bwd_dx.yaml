@@ -13,6 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
+# triton_layer_norm_bwd_dx.yaml
 # _layer_norm_bwd_dx 精度/性能测试配置。
 #
 # 该 kernel 是 layer norm（非 learnable 分支）的反向，计算输入 X 的梯度 DX。

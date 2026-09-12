@@ -13,6 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
+# triton_jagged_jagged_bmm_reduce_sum_api.py
 """_jagged_jagged_bmm_reduce_sum 的 NPU autotune ATK API 封装。"""
 
 from __future__ import annotations

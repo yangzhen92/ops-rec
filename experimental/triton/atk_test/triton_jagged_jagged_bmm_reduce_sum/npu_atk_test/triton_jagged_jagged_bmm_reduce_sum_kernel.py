@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 #
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
-#
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 #
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.

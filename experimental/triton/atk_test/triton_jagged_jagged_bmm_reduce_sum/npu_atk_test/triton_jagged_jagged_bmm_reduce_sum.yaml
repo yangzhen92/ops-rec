@@ -13,6 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
+# triton_jagged_jagged_bmm_reduce_sum.yaml
 # _jagged_jagged_bmm_reduce_sum 精度测试配置。
 # Out[B, M, N] = sum_k JaggedA[offset+k, :M] * JaggedB[offset+k, :N] (outer product)
 # 输入顺序与 kernel 的数据参数一致：seq_offsets, JaggedA, JaggedB, ReduceOut

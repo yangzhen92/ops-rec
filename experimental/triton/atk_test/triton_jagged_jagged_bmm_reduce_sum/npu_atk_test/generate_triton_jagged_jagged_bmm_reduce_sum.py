@@ -13,6 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
+# generate_triton_jagged_jagged_bmm_reduce_sum.py
 """_jagged_jagged_bmm_reduce_sum 的 ATK 参数约束生成器。"""
 
 from atk.case_generator.generator.base_generator import CaseGenerator

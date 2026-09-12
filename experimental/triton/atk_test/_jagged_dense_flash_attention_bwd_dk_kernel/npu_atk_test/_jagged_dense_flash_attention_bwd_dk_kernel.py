@@ -22,7 +22,6 @@
 # limitations under the License.
 # ==============================================================================
 
-import torch
 import triton
 import triton.language as tl
 
@@ -47,18 +46,8 @@ def _bwd_preprocess_do_o_dot(
     pid_b = tl.program_id(1)
     offs_d = tl.arange(0, BLOCK_D)
 
-    o_ptrs = (
-        o_ptr
-        + pid_b * stride_ob
-        + offs_t[:, None] * stride_ot
-        + offs_d[None, :] * stride_od
-    )
-    do_ptrs = (
-        do_ptr
-        + pid_b * stride_do_b
-        + offs_t[:, None] * stride_do_t
-        + offs_d[None, :] * stride_do_d
-    )
+    o_ptrs = o_ptr + pid_b * stride_ob + offs_t[:, None] * stride_ot + offs_d[None, :] * stride_od
+    do_ptrs = do_ptr + pid_b * stride_do_b + offs_t[:, None] * stride_do_t + offs_d[None, :] * stride_do_d
     o = tl.load(o_ptrs, mask=(offs_t[:, None] < T), other=0.0)
     do = tl.load(do_ptrs, mask=(offs_t[:, None] < T), other=0.0)
     delta = tl.sum(o * do, axis=1)
@@ -75,6 +64,8 @@ _JAGGED_DENSE_FLASH_ATTENTION_BWD_DK_AUTOTUNE_CONFIGS = [
     triton.Config({"BLOCK_T": 16, "BLOCK_L": 16}, num_warps=1, num_stages=1),
     triton.Config({"BLOCK_T": 16, "BLOCK_L": 16}, num_warps=2, num_stages=2),
 ]
+
+
 @triton.autotune(
     configs=_JAGGED_DENSE_FLASH_ATTENTION_BWD_DK_AUTOTUNE_CONFIGS,
     key=["T", "D"],
@@ -147,21 +138,11 @@ def _jagged_dense_flash_attention_bwd_dk_kernel(
     offs_t_curr = pid_t * BLOCK_T + tl.arange(0, BLOCK_T)
     offs_d = tl.arange(0, BLOCK_D)
 
-    k_ptrs = (
-        k_start_ptr + offs_d[:, None] * stride_kd + offs_t_curr[None, :] * stride_kt
-    )
+    k_ptrs = k_start_ptr + offs_d[:, None] * stride_kd + offs_t_curr[None, :] * stride_kt
 
-    do_ptrs = (
-        do_start_ptr
-        + offs_t_curr[:, None] * stride_do_t
-        + offs_d[None, :] * stride_do_d
-    )
+    do_ptrs = do_start_ptr + offs_t_curr[:, None] * stride_do_t + offs_d[None, :] * stride_do_d
 
-    dk_ptrs = (
-        dk_start_ptr
-        + offs_d[:, None] * stride_dk_d
-        + offs_t_curr[None, :] * stride_dk_t
-    )
+    dk_ptrs = dk_start_ptr + offs_d[:, None] * stride_dk_d + offs_t_curr[None, :] * stride_dk_t
 
     dk = tl.zeros([BLOCK_D, BLOCK_T], dtype=tl.float32)
 
@@ -177,9 +158,7 @@ def _jagged_dense_flash_attention_bwd_dk_kernel(
         offs_l_curr = start_l + tl.arange(0, BLOCK_L)
 
         # Load a block of q into [BLOCK_L, BLOCK_D]
-        q_ptrs = (
-            q_start_ptr + offs_l_curr[:, None] * stride_ql + offs_d[None, :] * stride_qd
-        )
+        q_ptrs = q_start_ptr + offs_l_curr[:, None] * stride_ql + offs_d[None, :] * stride_qd
 
         q = tl.load(
             q_ptrs,
@@ -187,9 +166,7 @@ def _jagged_dense_flash_attention_bwd_dk_kernel(
             other=0.0,
         )
 
-        v_ptrs = (
-            v_start_ptr + offs_l_curr[:, None] * stride_vl + offs_d[None, :] * stride_vd
-        )
+        v_ptrs = v_start_ptr + offs_l_curr[:, None] * stride_vl + offs_d[None, :] * stride_vd
 
         v = tl.load(v_ptrs, mask=(offs_l_curr[:, None] < seqlen), other=0.0)
 
@@ -197,15 +174,9 @@ def _jagged_dense_flash_attention_bwd_dk_kernel(
         # gemm [BLOCK_L, BLOCK_D] x [BLOCK_D, BLOCK_T] -> [BLOCK_L, BLOCK_T]
 
         qk = tl.dot(q, k, allow_tf32=allow_tf32)
-        qk = tl.where(
-            (offs_l_curr[:, None] < seqlen) & (offs_t_curr[None, :] < T), qk, 0.0
-        )
+        qk = tl.where((offs_l_curr[:, None] < seqlen) & (offs_t_curr[None, :] < T), qk, 0.0)
 
-        ab_ptrs = (
-            ab_start_ptr
-            + offs_l_curr[:, None] * stride_ab_l
-            + offs_t_curr[None, :] * stride_ab_t
-        )
+        ab_ptrs = ab_start_ptr + offs_l_curr[:, None] * stride_ab_l + offs_t_curr[None, :] * stride_ab_t
 
         ab = tl.load(
             ab_ptrs,

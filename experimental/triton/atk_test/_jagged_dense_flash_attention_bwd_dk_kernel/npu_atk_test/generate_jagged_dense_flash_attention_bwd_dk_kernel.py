@@ -25,8 +25,7 @@ _jagged_dense_flash_attention_bwd_dk_kernel 算子参数约束生成器
 7. jagged_offsets: shape [B + 1]，其中 jagged_offsets[-1] = sum_B
 8. dq: jagged tensor, shape [sum_B, D]
 """
-import random
-import torch
+
 from atk.case_generator.generator.generate_types import GENERATOR_REGISTRY
 from atk.case_generator.generator.base_generator import CaseGenerator
 from atk.configs.case_config import CaseConfig

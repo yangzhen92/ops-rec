@@ -13,6 +13,8 @@
 # limitations under the License.
 # ==============================================================================
 
+
+# pylint: disable=attribute-defined-outside-init
 """
 jagged_jagged_bmm_jagged_out_kernel 算子的 ATK 自定义 API 执行文件
 
@@ -36,6 +38,7 @@ jagged_jagged_bmm_jagged_out_kernel 算子的 ATK 自定义 API 执行文件
     关键：tensor 数据直接用 ATK 采样的真实值（jagged_A/B 已是正确 shape），不再平铺/造数，
     多样性完全来自 ATK 的 shape 采样。
 """
+
 import torch
 from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
@@ -78,11 +81,11 @@ def _split_jagged(total: int, parts: int):
     weights = []
     for _ in range(parts):
         seed = (1103515245 * seed + 12345) & 0x7FFFFFFF
-        weights.append((seed % 997) + 1)   # 1..997，避免全相等
+        weights.append((seed % 997) + 1)  # 1..997，避免全相等
     wsum = sum(weights)
 
-    lengths = [1] * parts          # 每份保底 1
-    remaining = total - parts      # 剩余按权重分配
+    lengths = [1] * parts  # 每份保底 1
+    remaining = total - parts  # 剩余按权重分配
     acc = 0
     for i in range(parts):
         add = remaining * weights[i] // wsum

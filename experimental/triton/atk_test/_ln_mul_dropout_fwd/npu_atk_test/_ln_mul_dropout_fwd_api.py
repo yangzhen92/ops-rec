@@ -13,6 +13,8 @@
 # limitations under the License.
 # ==============================================================================
 
+
+# pylint: disable=attribute-defined-outside-init
 import torch
 from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register

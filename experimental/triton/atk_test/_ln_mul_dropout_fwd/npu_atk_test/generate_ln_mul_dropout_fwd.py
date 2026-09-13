@@ -98,7 +98,7 @@ class LnMulDropoutFwdGenerator(CaseGenerator):
             return 512
 
         dtype = getattr(x, "dtype", None)
-        max_d = self._MAX_D_FP16 if (dtype == 'fp16' or dtype == 'bf16') else self._MAX_D_FP32
+        max_d = self._MAX_D_FP16 if dtype in ("fp16", "bf16") else self._MAX_D_FP32
         v = max(self._MIN_D, min(v, max_d))
         return v
 
@@ -113,16 +113,9 @@ class LnMulDropoutFwdGenerator(CaseGenerator):
         h = self._get_dim(u, 1)
         ud = self._get_dim(u, 2)
 
-        if (
-            h is not None
-            and ud is not None
-            and h > 0
-            and ud > 0
-            and self._is_power_of_two(h)
-            and self._is_power_of_two(ud)
-            and h * ud == D
-        ):
-            return h, ud
+        if h is not None and ud is not None and h > 0 and ud > 0:
+            if self._is_power_of_two(h) and self._is_power_of_two(ud) and h * ud == D:
+                return h, ud
 
         # 确定性回退：H 取 D 的最大 <= MAX_U_HEADS 的 2 的幂因子（>=1）；
         # D 为 2 的幂时 UD=D//H 自动也为 2 的幂，故 H*UD==D 且均 2 的幂。

@@ -26,10 +26,10 @@ class LnMulDropoutFwdGenerator(CaseGenerator):
     # 参考：/test/h00930401/skill/ATKtest/guides/系统化分析.md 30%小/70%大设计。
     # _MAX_D 仅做硬上界钳制（真实上界由 YAML dim_values 决定，已压到 1024）；
     # _MIN_D 提到 64，避免 BLOCK_D=16 的"搬运型" case（算力吃不饱、耗时 <10µs）。
-    _MAX_D_FP32 = 65536 // 4    # 16384
-    _MAX_D_FP16 = 65536 // 2    # 32768
-    _MIN_D = 64                 # 每行至少 64 列，保证单 kernel 有足够并行度避开 <10µs
-    _MAX_U_HEADS = 16           # 3D 分支时 H 上限，控制规模
+    _MAX_D_FP32 = 65536 // 4  # 16384
+    _MAX_D_FP16 = 65536 // 2  # 32768
+    _MIN_D = 64  # 每行至少 64 列，保证单 kernel 有足够并行度避开 <10µs
+    _MAX_U_HEADS = 16  # 3D 分支时 H 上限，控制规模
 
     def after_case_config(self, case_config: CaseConfig) -> CaseConfig:
         if not hasattr(case_config, "inputs") or len(case_config.inputs) < 6:
@@ -114,9 +114,12 @@ class LnMulDropoutFwdGenerator(CaseGenerator):
         ud = self._get_dim(u, 2)
 
         if (
-            h is not None and ud is not None
-            and h > 0 and ud > 0
-            and self._is_power_of_two(h) and self._is_power_of_two(ud)
+            h is not None
+            and ud is not None
+            and h > 0
+            and ud > 0
+            and self._is_power_of_two(h)
+            and self._is_power_of_two(ud)
             and h * ud == D
         ):
             return h, ud

@@ -133,9 +133,6 @@ class JaggedJaggedBmmJaggedOutKernelApi(BaseApi):
         else:
             self._orig_dtype = torch.float32
 
-        # 原始（未强转）实现，保留以便回退：
-        # jagged_A = self._to_tensor(jagged_A_input, device)
-        # jagged_B = self._to_tensor(jagged_B_input, device)
         jagged_A = self._to_tensor(jagged_A_input, device, dtype=torch.float32)
         jagged_B = self._to_tensor(jagged_B_input, device, dtype=torch.float32)
         offsets_m_raw = self._to_tensor(offsets_m_input, device, torch.int32)

@@ -123,9 +123,9 @@ def triton_jagged_jagged_bmm_jagged_out(
     allow_tf32=False,
 ):
     assert jagged_A.size(1) == jagged_B.size(0), "incompatible dimensions"
-    assert offsets_mn.is_contiguous(), "mn offsets mush be contiguous"
-    assert offsets_m.is_contiguous(), "m offsets mush be contiguous"
-    assert offsets_n.is_contiguous(), "n offsets mush be contiguous"
+    assert offsets_mn.is_contiguous(), "mn offsets must be contiguous"
+    assert offsets_m.is_contiguous(), "m offsets must be contiguous"
+    assert offsets_n.is_contiguous(), "n offsets must be contiguous"
 
     B = lengths_m.size(0)
     jagged_C = torch.zeros((lengths_mn.sum()), device=jagged_A.device, dtype=jagged_A.dtype)

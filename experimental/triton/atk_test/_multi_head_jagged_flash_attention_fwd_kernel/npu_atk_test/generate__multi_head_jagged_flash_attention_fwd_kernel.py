@@ -28,6 +28,7 @@ multi_head_jagged_flash_attention_fwd_kernel 算子参数约束生成器
     3. D 通常是 2 的幂次方
     4. offset[-1] <= total_seq
 """
+
 from atk.case_generator.generator.generate_types import GENERATOR_REGISTRY
 from atk.case_generator.generator.base_generator import CaseGenerator
 from atk.configs.case_config import CaseConfig
@@ -83,8 +84,7 @@ class MultiHeadJaggedFlashAttentionFwdKernelGenerator(CaseGenerator):
         return case_config
 
     def _get_dim(self, tensor, idx):
-        if (hasattr(tensor, 'shape') and isinstance(tensor.shape, list)
-                and len(tensor.shape) > idx):
+        if hasattr(tensor, 'shape') and isinstance(tensor.shape, list) and len(tensor.shape) > idx:
             val = tensor.shape[idx]
             return val if isinstance(val, int) else None
         return None

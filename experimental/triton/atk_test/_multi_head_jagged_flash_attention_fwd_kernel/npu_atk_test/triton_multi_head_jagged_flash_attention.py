@@ -14,9 +14,9 @@
 # ==============================================================================
 
 
-import torch
 import triton
 import triton.language as tl
+
 
 @triton.jit
 def _multi_head_jagged_flash_attention_fwd_kernel(
@@ -153,10 +153,7 @@ def _multi_head_jagged_flash_attention_fwd_kernel(
 
     # Store O
     o_ptrs = o_ptr + (
-        pid_head * stride_oh
-        + begin * stride_om
-        + offs_m[:, None] * stride_om
-        + offs_d[None, :] * stride_od
+        pid_head * stride_oh + begin * stride_om + offs_m[:, None] * stride_om + offs_d[None, :] * stride_od
     )
     o_mask = (offs_m[:, None] < seqlen) & (offs_d[None, :] < D)
     tl.store(o_ptrs, acc, mask=o_mask)

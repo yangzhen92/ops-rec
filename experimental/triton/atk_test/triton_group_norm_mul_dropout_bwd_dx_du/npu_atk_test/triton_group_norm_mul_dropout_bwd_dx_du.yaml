@@ -1,0 +1,198 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
+#
+#
+name: triton_group_norm_mul_dropout_bwd_dx_du
+api: pytorch
+version: v2.1
+api_type: triton_group_norm_mul_dropout_bwd_dx_du
+triton_api_type: triton_group_norm_mul_dropout_bwd_dx_du
+triton_name: triton_norm_mul_dropout._group_norm_mul_dropout_bwd_dx_du
+generate: generate_triton_group_norm_mul_dropout_bwd_dx_du
+
+dtype_numbers: 3334
+outputs: 0
+standard:
+  acc: double_benchmark
+  perf: not_key
+
+inputs:
+  - name: X
+    type: tensor
+    required: true
+    dtypes:
+      values: [fp32, fp16, bf16]
+    shapes:
+      dim_numbers:
+        values: [2]
+      dim_values:
+        values: [[16, 1024], [1025, 4096], [4097, 8192], [8193, 16384]]
+        weights: [0.2, 0.2, 0.3, 0.3]
+    ranges:
+      valid:
+        values: [[-100.0, 100.0]]
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: U
+    type: tensor
+    required: true
+    dtypes:
+      values: [fp32, fp16, bf16]
+    shapes:
+      dim_numbers:
+        values: [2]
+      dim_values:
+        values: [[16, 1024], [1025, 4096], [4097, 8192], [8193, 16384]]
+        weights: [0.2, 0.2, 0.3, 0.3]
+    ranges:
+      valid:
+        values: [[-100.0, 100.0]]
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: W
+    type: tensor
+    required: true
+    dtypes:
+      values: [fp32, fp16, bf16]
+    shapes:
+      dim_numbers:
+        values: [1]
+      dim_values:
+        values: [[1, 32]]
+        weights: [1.0]
+    ranges:
+      valid:
+        values: [[-10.0, 10.0]]
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  # B: [num_heads]
+  - name: B
+    type: tensor
+    required: true
+    dtypes:
+      values: [fp32, fp16, bf16]
+    shapes:
+      dim_numbers:
+        values: [1]
+      dim_values:
+        values: [[1, 32]]
+        weights: [1.0]
+    ranges:
+      valid:
+        values: [[-10.0, 10.0]]
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: DY
+    type: tensor
+    required: true
+    dtypes:
+      values: [fp32, fp16, bf16]
+    shapes:
+      dim_numbers:
+        values: [2]
+      dim_values:
+        values: [[16, 1024], [1025, 4096], [4097, 8192], [8193, 16384]]
+        weights: [0.2, 0.2, 0.3, 0.3]
+    ranges:
+      valid:
+        values: [[-100.0, 100.0]]
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+
+  - name: eps
+    type: attr
+    required: true
+    dtypes:
+      values: [float]
+    ranges:
+      valid:
+        values: [[0.00001, 0.00001], [0.000001, 0.000001]]
+        weights: [0.8, 0.2]
+
+  - name: dropout_ratio
+    type: attr
+    required: true
+    dtypes:
+      values: [float]
+    ranges:
+      valid:
+        values: [[0.0, 0.0]]
+        weights: [1.0]
+
+  - name: TRAINING
+    type: attr
+    required: true
+    dtypes:
+      values: [float]
+    ranges:
+      valid:
+        values: [[0.0, 0.0]]
+        weights: [1.0]
+
+  - name: CONCAT_UX
+    type: attr
+    required: true
+    dtypes:
+      values: [float]
+    ranges:
+      valid:
+        values: [[0.0, 0.0]]
+        weights: [1.0]
+
+  - name: num_heads
+    type: attr
+    required: true
+    dtypes:
+      values: [int]
+    ranges:
+      valid:
+        values: [[1, 32]]
+        weights: [1.0]
+
+  - name: linear_dim
+    type: attr
+    required: true
+    dtypes:
+      values: [int]
+    ranges:
+      valid:
+        values: [[16, 4096]]
+        weights: [1.0]

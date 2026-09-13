@@ -23,9 +23,9 @@
 # ==============================================================================
 
 
-import torch
 import triton
 import triton.language as tl
+
 
 @triton.jit
 def _jagged_flash_attention_bwd_basic_kernel(
@@ -77,29 +77,13 @@ def _jagged_flash_attention_bwd_basic_kernel(
     offs_n = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
     offs_m = tl.arange(0, BLOCK_SIZE_M)
 
-    q_ptrs = (
-        q_ptr
-        + begin * stride_qm
-        + (offs_m[:, None] * stride_qm + offs_d[None, :] * stride_qd)
-    )
+    q_ptrs = q_ptr + begin * stride_qm + (offs_m[:, None] * stride_qm + offs_d[None, :] * stride_qd)
 
-    k_ptrs = (
-        k_ptr
-        + begin * stride_kn
-        + (offs_n[:, None] * stride_kn + offs_d[None, :] * stride_kd)
-    )
+    k_ptrs = k_ptr + begin * stride_kn + (offs_n[:, None] * stride_kn + offs_d[None, :] * stride_kd)
 
-    v_ptrs = (
-        v_ptr
-        + begin * stride_vn
-        + (offs_n[:, None] * stride_vn + offs_d[None, :] * stride_vd)
-    )
+    v_ptrs = v_ptr + begin * stride_vn + (offs_n[:, None] * stride_vn + offs_d[None, :] * stride_vd)
 
-    do_ptrs = (
-        do_ptr
-        + begin * stride_dom
-        + (offs_m[:, None] * stride_dom + offs_d[None, :] * stride_dod)
-    )
+    do_ptrs = do_ptr + begin * stride_dom + (offs_m[:, None] * stride_dom + offs_d[None, :] * stride_dod)
 
     # Load K and V
     k = tl.load(k_ptrs, mask=((offs_d[None, :] < D) & (offs_n[:, None] < M)))
@@ -155,17 +139,9 @@ def _jagged_flash_attention_bwd_basic_kernel(
         do_ptrs += BLOCK_SIZE_M * stride_dom
 
     # store back dk and dv
-    dk_ptrs = (
-        dk_ptr
-        + begin * stride_dkn
-        + (offs_n[:, None] * stride_dkn + offs_d[None, :] * stride_dkd)
-    )
+    dk_ptrs = dk_ptr + begin * stride_dkn + (offs_n[:, None] * stride_dkn + offs_d[None, :] * stride_dkd)
 
-    dv_ptrs = (
-        dv_ptr
-        + begin * stride_dvn
-        + (offs_n[:, None] * stride_dvn + offs_d[None, :] * stride_dvd)
-    )
+    dv_ptrs = dv_ptr + begin * stride_dvn + (offs_n[:, None] * stride_dvn + offs_d[None, :] * stride_dvd)
 
     tl.store(dk_ptrs, dk, mask=((offs_d[None, :] < D) & (offs_n[:, None] < M)))
     tl.store(dv_ptrs, dv, mask=((offs_d[None, :] < D) & (offs_n[:, None] < M)))
@@ -173,37 +149,21 @@ def _jagged_flash_attention_bwd_basic_kernel(
     start_m = tl.program_id(axis=0) * BLOCK_SIZE_N
     offs_m_curr = start_m + tl.arange(0, BLOCK_SIZE_N)
 
-    dq_ptrs_curr = (
-        dq_ptr
-        + begin * stride_dqm
-        + (offs_m_curr[:, None] * stride_dqm + offs_d[None, :] * stride_dqd)
-    )
+    dq_ptrs_curr = dq_ptr + begin * stride_dqm + (offs_m_curr[:, None] * stride_dqm + offs_d[None, :] * stride_dqd)
 
     dq_curr = tl.zeros([BLOCK_SIZE_N, BLOCK_SIZE_D], dtype=tl.float32)
 
-    q_ptrs_curr = (
-        q_ptr
-        + begin * stride_qm
-        + (offs_m_curr[:, None] * stride_qm + offs_d[None, :] * stride_qd)
-    )
+    q_ptrs_curr = q_ptr + begin * stride_qm + (offs_m_curr[:, None] * stride_qm + offs_d[None, :] * stride_qd)
 
-    q_curr = tl.load(
-        q_ptrs_curr, mask=((offs_d[None, :] < D) & (offs_m_curr[:, None] < M))
-    )
+    q_curr = tl.load(q_ptrs_curr, mask=((offs_d[None, :] < D) & (offs_m_curr[:, None] < M)))
 
     # Load lse_i
     lse_i_curr = tl.load(lse_ptr + offs_m_curr + begin, mask=offs_m_curr < M)
 
-    do_ptrs_curr = (
-        do_ptr
-        + begin * stride_dom
-        + (offs_m_curr[:, None] * stride_dom + offs_d[None, :] * stride_dod)
-    )
+    do_ptrs_curr = do_ptr + begin * stride_dom + (offs_m_curr[:, None] * stride_dom + offs_d[None, :] * stride_dod)
 
     # Load do
-    do_curr = tl.load(
-        do_ptrs_curr, mask=((offs_d[None, :] < D) & (offs_m_curr[:, None] < M))
-    )
+    do_curr = tl.load(do_ptrs_curr, mask=((offs_d[None, :] < D) & (offs_m_curr[:, None] < M)))
     Di_curr = tl.load(delta_ptr + offs_m_curr + begin, mask=offs_m_curr < M)
 
     # When computing dV, we want to compute [BLOCK_SIZE_N] rows of dV.
@@ -212,23 +172,11 @@ def _jagged_flash_attention_bwd_basic_kernel(
     while block_start < M:
         offs_n_curr = block_start + tl.arange(0, BLOCK_SIZE_M)
 
-        k_ptrs_curr = (
-            k_ptr
-            + begin * stride_kn
-            + (offs_n_curr[:, None] * stride_kn + offs_d[None, :] * stride_kd)
-        )
-        v_ptrs_curr = (
-            v_ptr
-            + begin * stride_vn
-            + (offs_n_curr[:, None] * stride_vn + offs_d[None, :] * stride_vd)
-        )
+        k_ptrs_curr = k_ptr + begin * stride_kn + (offs_n_curr[:, None] * stride_kn + offs_d[None, :] * stride_kd)
+        v_ptrs_curr = v_ptr + begin * stride_vn + (offs_n_curr[:, None] * stride_vn + offs_d[None, :] * stride_vd)
 
-        k_curr = tl.load(
-            k_ptrs_curr, mask=((offs_d[None, :] < D) & (offs_n_curr[:, None] < M))
-        )
-        v_curr = tl.load(
-            v_ptrs_curr, mask=((offs_d[None, :] < D) & (offs_n_curr[:, None] < M))
-        )
+        k_curr = tl.load(k_ptrs_curr, mask=((offs_d[None, :] < D) & (offs_n_curr[:, None] < M)))
+        v_curr = tl.load(v_ptrs_curr, mask=((offs_d[None, :] < D) & (offs_n_curr[:, None] < M)))
 
         qk_curr = tl.dot(q_curr, tl.trans(k_curr), allow_tf32=allow_tf32)
         mn_mask_curr = (offs_m_curr[:, None] < M) & (offs_n_curr[None, :] < M)
@@ -254,6 +202,4 @@ def _jagged_flash_attention_bwd_basic_kernel(
         dq_curr += tl.dot(ds_curr, k_curr, allow_tf32=allow_tf32)
         block_start += BLOCK_SIZE_M
 
-    tl.store(
-        dq_ptrs_curr, dq_curr, mask=((offs_d[None, :] < D) & (offs_m_curr[:, None] < M))
-    )
+    tl.store(dq_ptrs_curr, dq_curr, mask=((offs_d[None, :] < D) & (offs_m_curr[:, None] < M)))

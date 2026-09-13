@@ -13,6 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
+# pylint: disable=attribute-defined-outside-init
 """
 jagged_flash_attention_bwd_basic_kernel ATK API
 
@@ -20,6 +21,7 @@ jagged_flash_attention_bwd_basic_kernel ATK API
     dq, dk, dv = backward(q, k, v, o, do, delta, lse, offset)
     q/k/v/o/do [total_seq, D], delta/lse [total_seq]
 """
+
 import torch
 from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
@@ -27,6 +29,7 @@ from atk.tasks.api_execute.base_api import BaseApi
 
 import sys
 import os
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from triton_jagged_flash_attention_basic import _jagged_flash_attention_bwd_basic_kernel
 
@@ -210,6 +213,7 @@ class JaggedFlashAttentionBwdBasicKernelApi(BaseApi):
         dv = torch.zeros_like(v)
 
         import triton
+
         grid = (triton.cdiv(max_seq_len, BLOCK_SIZE_N), B)
 
         self._device = device
@@ -242,17 +246,37 @@ class JaggedFlashAttentionBwdBasicKernelApi(BaseApi):
             torch.cuda.synchronize()
 
         _jagged_flash_attention_bwd_basic_kernel[self._grid](
-            self._q, self._k, self._v, self._o, self._offset,
-            self._dq, self._dk, self._dv, self._do, self._delta, self._lse,
-            self._q.stride(0), self._q.stride(1),
-            self._k.stride(0), self._k.stride(1),
-            self._v.stride(0), self._v.stride(1),
-            self._o.stride(0), self._o.stride(1),
-            self._dq.stride(0), self._dq.stride(1),
-            self._dk.stride(0), self._dk.stride(1),
-            self._dv.stride(0), self._dv.stride(1),
-            self._do.stride(0), self._do.stride(1),
-            self._max_seq_len, self._D, self._use_mask, self._allow_tf32,
+            self._q,
+            self._k,
+            self._v,
+            self._o,
+            self._offset,
+            self._dq,
+            self._dk,
+            self._dv,
+            self._do,
+            self._delta,
+            self._lse,
+            self._q.stride(0),
+            self._q.stride(1),
+            self._k.stride(0),
+            self._k.stride(1),
+            self._v.stride(0),
+            self._v.stride(1),
+            self._o.stride(0),
+            self._o.stride(1),
+            self._dq.stride(0),
+            self._dq.stride(1),
+            self._dk.stride(0),
+            self._dk.stride(1),
+            self._dv.stride(0),
+            self._dv.stride(1),
+            self._do.stride(0),
+            self._do.stride(1),
+            self._max_seq_len,
+            self._D,
+            self._use_mask,
+            self._allow_tf32,
             BLOCK_SIZE_M=self._BLOCK_SIZE_M,
             BLOCK_SIZE_N=self._BLOCK_SIZE_N,
             BLOCK_SIZE_D=self._BLOCK_SIZE_D,

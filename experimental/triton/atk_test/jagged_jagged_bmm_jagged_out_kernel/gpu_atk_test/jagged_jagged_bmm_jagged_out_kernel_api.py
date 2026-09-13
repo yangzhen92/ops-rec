@@ -44,6 +44,9 @@ from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
 from atk.tasks.api_execute.base_api import BaseApi
 
+# 从被测代码直接引用 wrapper（它已正确处理 grid/launch）
+from triton_jagged_bmm_jagged_out import triton_jagged_jagged_bmm_jagged_out
+
 
 def get_device():
     """获取可用的设备，优先 NPU"""
@@ -55,10 +58,6 @@ def get_device():
     except Exception:
         pass
     return 'cpu'
-
-
-# 从被测代码直接引用 wrapper（它已正确处理 grid/launch）
-from triton_jagged_bmm_jagged_out import triton_jagged_jagged_bmm_jagged_out
 
 
 def _split_jagged(total: int, parts: int):
@@ -171,7 +170,7 @@ class JaggedJaggedBmmJaggedOutKernelApi(BaseApi):
         lengths_mn_t = torch.tensor(lengths_mn, dtype=torch.int32, device=device)
 
         # max_seq_len = max(单 batch 长度)，kernel 不截断、grid 不空转
-        max_seq_len = max(max(lengths_m), max(lengths_n))
+        max_seq_len = max(lengths_m + lengths_n)
 
         self._device = device
         self._jagged_A = jagged_A.contiguous()
@@ -225,8 +224,8 @@ class JaggedJaggedBmmJaggedOutKernelApi(BaseApi):
     def _cumsum_tensor(self, lengths, device):
         """由 lengths 生成 offset 张量：[0, l0, l0+l1, ...]，int32"""
         offsets = [0]
-        for l in lengths:
-            offsets.append(offsets[-1] + l)
+        for length in lengths:
+            offsets.append(offsets[-1] + length)
         return torch.tensor(offsets, dtype=torch.int32, device=device)
 
     def _fit_2d(self, raw, rows, cols, dtype, device):

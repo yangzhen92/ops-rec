@@ -267,10 +267,9 @@ inputs:
     ranges:
       valid:
         values: [
-          [16, 16],
           [32, 32]
         ]
-        weights: [0.5, 0.5]
+        weights: [1.0]
 
   # BLOCK_N（对齐前向）
   - name: BLOCK_N
@@ -281,10 +280,9 @@ inputs:
     ranges:
       valid:
         values: [
-          [16, 16],
           [32, 32]
         ]
-        weights: [0.5, 0.5]
+        weights: [1.0]
 
   # BLOCK_D（对齐前向：保守最大 64）
   - name: BLOCK_D

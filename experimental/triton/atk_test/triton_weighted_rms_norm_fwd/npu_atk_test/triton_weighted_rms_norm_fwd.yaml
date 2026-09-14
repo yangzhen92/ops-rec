@@ -1,0 +1,139 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+# triton_weighted_rms_norm_fwd.yaml
+# _weighted_rms_norm_fwd 精度测试配置。
+# 该 kernel 对 X [N, D] 的每一行做 RMS Norm，并乘上 weight：
+#   y[i,j] = x[i,j] / sqrt(mean(x[i,:]^2) + eps) * w[j]
+#
+# 输入参数：
+#   X: [N, D]    输入
+#   W: [D]       weight（每列一个标量）
+#   Rstd: [N]    输出：rstd（仅输出 buffer，kernel 不读取）
+#   Y: [N, D]    输出：归一化结果（与 X 同 dtype）
+#   D: int       特征维
+#   eps: float   归一化 epsilon
+name: triton_weighted_rms_norm_fwd
+api: pytorch
+version: v2.1
+api_type: triton_weighted_rms_norm_fwd
+triton_api_type: triton_weighted_rms_norm_fwd
+triton_name: triton_layer_norm._weighted_rms_norm_fwd
+generate: generate_weighted_rms_norm_fwd
+
+dtype_numbers: 3334
+outputs: 0
+standard:
+  acc: double_benchmark
+  perf: not_key
+
+inputs:
+  - name: X
+    type: tensor
+    required: true
+    dtypes:
+      values: [fp32, fp16, bf16]
+    ranges:
+      valid:
+        values: [[-100.0, 100.0]]
+    shapes:
+      dim_numbers:
+        values: [2]
+      dim_values:
+        values: [[512, 1024], [1025, 4096], [4097, 8192], [8193, 12888]]
+        weights: [0.15, 0.35, 0.35, 0.15]
+      max_length: 67108864
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: W
+    type: tensor
+    required: true
+    dtypes:
+      values: [fp32, fp16, bf16]
+    ranges:
+      valid:
+        values: [[-1.0, 1.0]]
+    shapes:
+      dim_numbers:
+        values: [1]
+      dim_values:
+        values: [[512, 1024], [1025, 4096], [4097, 8192], [8193, 12888]]
+        weights: [0.15, 0.35, 0.35, 0.15]
+      max_length: 67108864
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: Y
+    type: tensor
+    required: true
+    dtypes:
+      values: [fp32, fp16, bf16]
+    ranges:
+      valid:
+        values: [[-100.0, 100.0]]
+    shapes:
+      dim_numbers:
+        values: [2]
+      dim_values:
+        values: [[512, 1024], [1025, 4096], [4097, 8192], [8193, 12888]]
+        weights: [0.15, 0.35, 0.35, 0.15]
+      max_length: 67108864
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: Rstd
+    type: tensor
+    required: true
+    dtypes:
+      values: [fp32]
+    ranges:
+      valid:
+        values: [[0.0, 10.0]]
+    shapes:
+      dim_numbers:
+        values: [1]
+      dim_values:
+        values: [[512, 1024], [1025, 4096], [4097, 8192], [8193, 12888]]
+        weights: [0.15, 0.35, 0.35, 0.15]
+      max_length: 67108864
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: eps
+    type: scalar
+    required: true
+    dtypes:
+      values: [float]
+    ranges:
+      valid:
+        values: [[1.0e-6, 1.0e-4]]
+      invalid:
+        values: [0.0]

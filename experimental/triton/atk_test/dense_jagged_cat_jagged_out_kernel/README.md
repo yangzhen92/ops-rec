@@ -4,7 +4,7 @@
 
 `dense_jagged_cat_jagged_out_kernel` 源自 PyTorch FBGEMM：
 
-<https://github.com/pytorch/FBGEMM/blob/main/fbgemm_gpu/fbgemm_gpu/sll/triton/triton_dense_jagged_cat_jagged_out.py>
+<https://github.com/pytorch/FBGEMM/blob/864db213490254f41bd0e80144aed8a347f3d228/fbgemm_gpu/fbgemm_gpu/sll/triton/triton_dense_jagged_cat_jagged_out.py#L15>
 
 ## 算子功能
 

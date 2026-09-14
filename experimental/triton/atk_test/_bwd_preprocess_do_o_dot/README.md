@@ -4,7 +4,7 @@
 
 `_bwd_preprocess_do_o_dot` 算子源自 pytorch FBGEMM 代码仓：
 
-<https://github.com/pytorch/FBGEMM/blob/v1.5.0-release/fbgemm_gpu/fbgemm_gpu/sll/triton/triton_jagged_dense_flash_attention.py>
+<https://github.com/pytorch/FBGEMM/blob/c363b1b1077680d198235233f34af253f880d1fe/fbgemm_gpu/fbgemm_gpu/sll/triton/triton_jagged_dense_flash_attention.py#L241>
 
 原始算子按 batch、head 和序列位置计算输出与输出梯度的点积。本目录中的 ATK
 实现将 batch 与 head 统一表示为 `B`，输入形状简化为 `[B, T, D]`。

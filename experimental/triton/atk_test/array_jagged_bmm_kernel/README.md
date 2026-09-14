@@ -4,7 +4,7 @@
 
 `array_jagged_bmm_kernel` 算子源自 PyTorch FBGEMM 代码仓：
 
-<https://github.com/pytorch/FBGEMM/blob/main/fbgemm_gpu/fbgemm_gpu/sll/triton/triton_jagged_bmm_jagged_out.py>
+<https://github.com/pytorch/FBGEMM/blob/864db213490254f41bd0e80144aed8a347f3d228/fbgemm_gpu/fbgemm_gpu/sll/triton/triton_jagged_bmm_jagged_out.py#L15>
 
 ## 功能说明
 

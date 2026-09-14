@@ -4,7 +4,7 @@
 
 `_fbgemm_grouped_gemm_fp8_rowwise_ws` 算子源自 PyTorch FBGEMM：
 
-<https://github.com/pytorch/FBGEMM/blob/main/fbgemm_gpu/experimental/gemm/triton_gemm/grouped_gemm.py>
+<https://github.com/pytorch/FBGEMM/blob/5d0a3d9868e04a0e0dd30906c79a96a001b85f68/fbgemm_gpu/experimental/gemm/triton_gemm/grouped_gemm.py#L791>
 
 该变体在 FP8 行级量化 grouped GEMM 上请求 Warp Specialization（WS）。支持 WS 与 TMA
 的 NVIDIA GPU 执行 WS Kernel；NPU 不支持该路径，运行时给出提示并回退到相同数值语义的

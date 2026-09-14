@@ -4,7 +4,7 @@
 
 本目录的核心 kernel `jagged_jagged_elementwise_arithmetic_ops` 源自 PyTorch FBGEMM 代码仓：
 
-<https://github.com/pytorch/FBGEMM/blob/main/fbgemm_gpu/fbgemm_gpu/triton/jagged/triton_jagged_tensor_ops.py#L16-L69>
+<https://github.com/pytorch/FBGEMM/blob/a01d9aa279ca31d62b424597c53fbc9df4d0bff3/fbgemm_gpu/fbgemm_gpu/triton/jagged/triton_jagged_tensor_ops.py#L19-L62>
 
 ## 功能说明
 
@@ -72,6 +72,22 @@ for b in range(offsets.numel() - 1):
 - 两个输入必须对应相同的 Jagged offsets。offsets 不传入算子，因此无法在运行时检查该条件。
 - `ops_func` 应使用 `"add"` 或 `"mul"`；当前 ATK API 固定执行 `"add"`。
 - 加法输出等价于 `x_values + y_values`，乘法输出等价于 `x_values * y_values`。
+
+## 目录结构
+
+```text
+experimental/triton/atk_test/triton_jagged_jagged_elementwise_arithmetic_ops/
+├── README.md
+├── gpu_atk_test/
+│   ├── triton_jagged_tensor_ops.py                              # GPU 端 Triton kernel 实现
+│   └── triton_jagged_jagged_elementwise_arithmetic_ops_api.py  # GPU 端 ATK API 执行文件
+└── npu_atk_test/
+    ├── triton_jagged_tensor_ops.py                              # NPU 端 Triton kernel 实现
+    ├── triton_jagged_jagged_elementwise_arithmetic_ops_api.py  # NPU 端 ATK API 执行文件
+    ├── triton_jagged_jagged_elementwise_arithmetic_ops.yaml    # ATK 用例参数配置
+    ├── generate_triton_jagged_jagged_elementwise_arithmetic_ops.py # ATK 用例生成器
+    └── all_triton_jagged_jagged_elementwise_arithmetic_ops.json # ATK 测试用例配置
+```
 
 ## ATK 测试
 

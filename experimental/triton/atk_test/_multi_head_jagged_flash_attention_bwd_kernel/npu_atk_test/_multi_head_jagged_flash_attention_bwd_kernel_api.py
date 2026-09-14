@@ -13,6 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
+
+# pylint: disable=attribute-defined-outside-init
 """
 multi_head_jagged_flash_attention_bwd_kernel ATK API - 双精度测试版本
 
@@ -32,7 +34,7 @@ import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from triton_multi_head_jagged_flash_attention import _multi_head_jagged_flash_attention_bwd_kernel
+from triton_multi_head_jagged_flash_attention import _multi_head_jagged_flash_attention_bwd_kernel  # noqa: E402
 
 
 def get_device():
@@ -41,7 +43,7 @@ def get_device():
     try:
         if torch.cuda.is_available():
             return 'cuda'
-    except:
+    except Exception:
         pass
     return 'cpu'
 

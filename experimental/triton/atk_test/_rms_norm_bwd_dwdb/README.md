@@ -4,7 +4,7 @@
 
 `_rms_norm_bwd_dwdb` 算子源自 NVIDIA recsys-examples 代码仓：
 
-<https://github.com/NVIDIA/recsys-examples/blob/main/examples/hstu/ops/triton_ops/triton_layer_norm.py>
+<https://github.com/NVIDIA/recsys-examples/blob/584e20f3ba79f9f96f6bd812d7fc8ac7c5a572a3/examples/hstu/ops/triton_ops/triton_layer_norm.py#L651>
 
 ## 功能说明
 

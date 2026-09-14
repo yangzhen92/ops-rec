@@ -4,7 +4,7 @@
 
 `jagged_jagged_bmm_jagged_out_kernel` 算子源自 PyTorch FBGEMM 代码仓：
 
-<https://github.com/pytorch/FBGEMM/blob/main/fbgemm_gpu/fbgemm_gpu/sll/triton/triton_jagged_bmm_jagged_out.py>
+<https://github.com/pytorch/FBGEMM/blob/a01d9aa279ca31d62b424597c53fbc9df4d0bff3/fbgemm_gpu/fbgemm_gpu/sll/triton/triton_jagged_bmm_jagged_out.py#L102-L192>
 
 ## 功能说明
 
@@ -136,6 +136,16 @@ print(jagged_C.shape)  # torch.Size([8])
 - `max_seq_len` 必须为正数。若需要计算完整矩阵，应满足 `max_seq_len >= max(max(lengths_m), max(lengths_n))`。
 - 配套 wrapper 以零初始化输出；发生截断时，各输出段内未被写入的位置保持为零。
 
+## 目录结构
+
+```text
+experimental/triton/atk_test/jagged_jagged_bmm_jagged_out_kernel/
+├── README.md
+└── gpu_atk_test/
+    ├── triton_jagged_bmm_jagged_out.py                # GPU 端 Triton kernel 与 wrapper
+    └── jagged_jagged_bmm_jagged_out_kernel_api.py    # GPU 端 ATK API 执行文件
+```
+
 ## ATK 测试
 
 以下命令约定 NPU 端已部署 `npu_atk_test/` 目录及对应 YAML、生成器、API 和 JSON 文件。当前工作区中的该算子目录仅包含 `gpu_atk_test/`，如 NPU 侧文件尚未同步，需要先完成部署。
@@ -153,7 +163,7 @@ atk case -f jagged_jagged_bmm_jagged_out_kernel.yaml \
     -p generate_jagged_jagged_bmm_jagged_out_kernel.py
 ```
 
-生成的用例配置文件为 `all_jagged_jagged_bmm_jagged_out_kernel.json`。
+生成的用例配置文件为 `jagged_jagged_bmm_jagged_out_kernel_performance.json`。
 
 ### 远端 GPU 服务器起监听命令
 
@@ -166,16 +176,18 @@ atk server --devices 0 --plugin_path /path/to/api文件所在文件夹
 ```bash
 atk node --backend npu --devices 0 \
     node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 \
-    task -c all_jagged_jagged_bmm_jagged_out_kernel.json --task accuracy \
+    task -c jagged_jagged_bmm_jagged_out_kernel_performance.json --task accuracy \
     -p jagged_jagged_bmm_jagged_out_kernel_api.py
 ```
 
 ### 性能对比
 
+性能测试使用预置用例 `jagged_jagged_bmm_jagged_out_kernel_performance.json`。
+
 ```bash
 atk node --backend npu --devices 0 \
     node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 \
-    task -c all_jagged_jagged_bmm_jagged_out_kernel.json \
+    task -c jagged_jagged_bmm_jagged_out_kernel_performance.json \
     --task performance_device \
     -p jagged_jagged_bmm_jagged_out_kernel_api.py
 ```

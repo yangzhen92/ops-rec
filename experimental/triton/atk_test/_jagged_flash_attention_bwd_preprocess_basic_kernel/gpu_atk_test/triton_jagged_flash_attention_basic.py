@@ -24,9 +24,9 @@
 # pyre-unsafe
 
 
-import torch
 import triton
 import triton.language as tl
+
 
 # Similar to fwd kernel, this one is using a grid of
 # (num_blocks_m, B) where num_blocks_m is seq_len / BLOCK_SIZE_M
@@ -55,11 +55,7 @@ def _jagged_flash_attention_bwd_preprocess_basic_kernel(
     offs_om = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
     offs_od = tl.arange(0, BLOCK_SIZE_D)
 
-    o_offsets = (
-        offs_om[:, None] * stride_om
-        + offs_od[None, :] * stride_od
-        + begin_o * stride_om
-    )
+    o_offsets = offs_om[:, None] * stride_om + offs_od[None, :] * stride_od + begin_o * stride_om
     o_ptrs = o_ptr + o_offsets
     do_ptrs = do_ptr + o_offsets
     o_mask = (offs_om[:, None] < M) & (offs_od[None, :] < D)

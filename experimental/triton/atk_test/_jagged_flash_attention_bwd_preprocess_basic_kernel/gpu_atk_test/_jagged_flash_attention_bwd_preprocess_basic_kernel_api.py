@@ -13,6 +13,8 @@
 # limitations under the License.
 # ==============================================================================
 
+# pylint: disable=attribute-defined-outside-init
+
 """
 jagged_flash_attention_bwd_preprocess_basic_kernel ATK API - 双精度测试版本
 
@@ -21,6 +23,7 @@ jagged_flash_attention_bwd_preprocess_basic_kernel ATK API - 双精度测试版�
 语义：Flash Attention 反向传播预处理
     delta[i] = sum(o[i, :] * do[i, :])
 """
+
 import torch
 from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
@@ -29,8 +32,9 @@ from atk.tasks.api_execute.base_api import BaseApi
 # 导入 Triton kernel
 import sys
 import os
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from triton_jagged_flash_attention_basic import _jagged_flash_attention_bwd_preprocess_basic_kernel
+from triton_jagged_flash_attention_basic import _jagged_flash_attention_bwd_preprocess_basic_kernel  # noqa: E402
 
 
 def get_device():
@@ -96,7 +100,6 @@ def _generate_jagged_offset_by_shape(shape, total_elements, device):
 @register("_jagged_flash_attention_bwd_preprocess_basic_kernel")
 class JaggedFlashAttentionBwdPreprocessBasicKernelApi(BaseApi):
     def init_by_input_data(self, input_data: InputDataset):
-        print('look! init_by_input_data') #调试用，随后删
         """预处理阶段（不计入性能）"""
         device = get_device()
         if device == 'npu':
@@ -122,15 +125,10 @@ class JaggedFlashAttentionBwdPreprocessBasicKernelApi(BaseApi):
         # 记录原始 dtype（以 o 为准）
         if isinstance(o_input, torch.Tensor):
             self._orig_dtype = o_input.dtype
-            print('look! if isinstance(o_input, torch.Tensor)') #调试用，随后删
-            print(o_input.dtype) #调试用，随后删
         else:
             self._orig_dtype = torch.float32
-            print('look! else') #调试用，随后删
-        print(self._orig_dtype) #调试用，随后删
 
         # 转换 tensor 到目标设备（强转 fp32）
-        # 原始（未强转）实现：o = o_input.to(device) / do = do_input.to(device)
         if not isinstance(o_input, torch.Tensor):
             o = torch.tensor(o_input, dtype=torch.float32, device=device)
         else:
@@ -228,6 +226,7 @@ class JaggedFlashAttentionBwdPreprocessBasicKernelApi(BaseApi):
 
         # 计算 grid
         import triton
+
         grid = (
             triton.cdiv(max_seq_len, BLOCK_SIZE_M),
             B,
@@ -277,13 +276,7 @@ class JaggedFlashAttentionBwdPreprocessBasicKernelApi(BaseApi):
 
         # ====== NPU dtype 适配（Fix）======
         # 输入曾被强转 fp32；此处把输出转回原始 dtype，与 GPU golden dtype 一致。
-        # 原始（未转回）实现：return self._delta
-        print('look! -> before') #调试用，随后删
-        print(self._delta.dtype) #调试用，随后删
         orig_dtype = getattr(self, "_orig_dtype", None)
         if orig_dtype is not None and self._delta.dtype != orig_dtype:
-            print('look! -> orig_dtype') #调试用，随后删
-            print(self._delta.dtype) #调试用，随后删
-            print(orig_dtype) #调试用，随后删
             return self._delta.to(orig_dtype)
         return self._delta

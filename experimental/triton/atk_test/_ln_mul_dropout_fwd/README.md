@@ -4,7 +4,7 @@
 
 `_ln_mul_dropout_fwd` 算子源自 NVIDIA recsys-examples 代码仓：
 
-<https://github.com/NVIDIA/recsys-examples/blob/main/examples/hstu/ops/triton_ops/triton_norm_mul_dropout.py>
+<https://github.com/NVIDIA/recsys-examples/blob/97062d97eef53115105063801e35184e36186df5/examples/hstu/ops/triton_ops/triton_norm_mul_dropout.py#L36-L129>
 
 ## 功能说明
 

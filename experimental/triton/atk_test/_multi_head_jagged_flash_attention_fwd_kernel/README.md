@@ -4,7 +4,7 @@
 
 `_multi_head_jagged_flash_attention_fwd_kernel` 算子源自 PyTorch FBGEMM 代码仓：
 
-<https://github.com/pytorch/FBGEMM/blob/fe980ab54a6e28818d81c8694b6564e7f804418b/fbgemm_gpu/fbgemm_gpu/sll/triton_sll.py#L3260-L3392>
+<https://github.com/pytorch/FBGEMM/blob/fe980ab54a6e28818d81c8694b6564e7f804418b/fbgemm_gpu/fbgemm_gpu/sll/triton_sll.py#L3481-L3624>
 
 ## 功能说明
 
@@ -65,12 +65,12 @@ LSE[b, h] = logsumexp(S[b, h], dim=-1)
 
 ## 计算示例
 
-下面使用 PyTorch 表达与算子一致的数学语义，不涉及具体的 Kernel 启动参数：
+下面使用 NPU 上的 PyTorch 运算表达与算子一致的数学语义：
 
 ```python
 import torch
 
-device = "cuda"
+device = "npu"
 H, T, D = 2, 5, 32
 max_seq_len = 3
 
@@ -113,3 +113,60 @@ print(lse.shape)  # torch.Size([2, 5])
 - `max_seq_len` 不仅控制截断，还直接参与输出缩放；即使所有序列均短于该值，修改它也会改变 `o` 的数值。
 - 算子仅在同一 Jagged 序列、同一注意力头内执行全量双向注意力，不提供 causal mask、外部 attention mask 或 dropout。
 - 使用 `allow_tf32=True` 时，GPU 上的 float32 矩阵乘可能采用 TF32，结果会存在相应的数值精度差异。
+
+## 目录结构
+
+```text
+experimental/triton/atk_test/_multi_head_jagged_flash_attention_fwd_kernel/
+├── README.md
+└── gpu_atk_test/
+    ├── triton_multi_head_jagged_flash_attention.py            # GPU 端 Triton kernel 实现
+    └── _multi_head_jagged_flash_attention_fwd_kernel_api.py   # GPU 端 ATK API 执行文件
+```
+
+## ATK 测试
+
+以下命令约定 NPU 端已部署 `npu_atk_test/` 目录及对应 YAML、生成器、API 和 JSON 文件。当前工作区中的该算子目录仅包含 `gpu_atk_test/`，如 NPU 侧文件尚未同步，需要先完成部署。
+
+生成及测试命令均在 NPU 端的 `npu_atk_test` 目录下执行：
+
+```bash
+cd experimental/triton/atk_test/_multi_head_jagged_flash_attention_fwd_kernel/npu_atk_test
+```
+
+### 生成测试数据
+
+```bash
+atk case -f _multi_head_jagged_flash_attention_fwd_kernel.yaml \
+    -p generate_multi_head_jagged_flash_attention_fwd_kernel.py
+```
+
+生成的精度用例配置文件为 `all__multi_head_jagged_flash_attention_fwd_kernel.json`。
+
+### 远端 GPU 服务器起监听命令
+
+```bash
+atk server --devices 0 --plugin_path /path/to/api文件所在文件夹
+```
+
+### 精度对比
+
+```bash
+atk node --backend npu --devices 0 \
+    node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 \
+    task -c all__multi_head_jagged_flash_attention_fwd_kernel.json \
+    --task accuracy \
+    -p _multi_head_jagged_flash_attention_fwd_kernel_api.py
+```
+
+### 性能对比
+
+性能测试使用预置用例 `_multi_head_jagged_flash_attention_fwd_kernel_performance.json`。
+
+```bash
+atk node --backend npu --devices 0 \
+    node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 \
+    task -c _multi_head_jagged_flash_attention_fwd_kernel_performance.json \
+    --task performance_device \
+    -p _multi_head_jagged_flash_attention_fwd_kernel_api.py
+```

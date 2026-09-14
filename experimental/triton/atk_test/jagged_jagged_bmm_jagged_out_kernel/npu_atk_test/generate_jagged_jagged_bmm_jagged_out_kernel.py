@@ -63,8 +63,7 @@ class JaggedJaggedBmmJaggedOutKernelGenerator(CaseGenerator):
         K = self._resolve_K(jagged_A)
 
         # 约束1：total_m ≥ B，保证切分后每 batch 至少 1 行（无空 batch）
-        if total_m < B:
-            total_m = B
+        total_m = max(total_m, B)
 
         # 约束2：自洽 shape
         #   jagged_A [total_m, K]

@@ -4,7 +4,7 @@
 
 `_multi_head_jagged_flash_attention_bwd_preprocess_kernel` 源自 PyTorch FBGEMM：
 
-<https://github.com/pytorch/FBGEMM/blob/main/fbgemm_gpu/fbgemm_gpu/sll/triton/triton_multi_head_jagged_flash_attention.py>
+<https://github.com/pytorch/FBGEMM/blob/a9a74e39371fed72e925e831ca037e5b9bda90fd/fbgemm_gpu/fbgemm_gpu/sll/triton/triton_multi_head_jagged_flash_attention.py#L219>
 
 当前套件只覆盖 Multi-Head Jagged Flash Attention 反向传播的预处理 Kernel，不包含前向、主反向计算和 autograd 封装。
 

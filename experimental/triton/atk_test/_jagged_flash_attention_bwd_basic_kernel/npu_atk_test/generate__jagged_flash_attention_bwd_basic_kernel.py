@@ -70,7 +70,7 @@ class JaggedFlashAttentionBwdBasicKernelGenerator(CaseGenerator):
             B = 8
 
         # 确保 total_seq >= B
-        if total_seq < B:
+        if total_seq < B:  # pylint: disable=consider-using-max-builtin
             total_seq = B
 
         # 约束1: q/k/v/o/do 同 shape [total_seq, D]

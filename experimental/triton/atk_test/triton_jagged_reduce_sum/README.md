@@ -63,16 +63,15 @@ experimental/triton/atk_test/triton_jagged_reduce_sum/
     ├── triton_jagged_reduce_sum_kernel.py
     ├── triton_jagged_reduce_sum_api.py
     ├── triton_jagged_reduce_sum.yaml
-    └── generate_triton_jagged_reduce_sum.py
+    ├── generate_triton_jagged_reduce_sum.py
+    └── triton_jagged_reduce_sum_performance.json
 ```
 
 - `triton_jagged_reduce_sum_kernel.py`：实现分段求和；NPU 文件包含 autotune 配置。
 - `triton_jagged_reduce_sum_api.py`：校验输入，重建合法 offsets，创建输出并启动 kernel。
 - `triton_jagged_reduce_sum.yaml`：定义随机精度用例的 dtype、shape 和数值范围。
 - `generate_triton_jagged_reduce_sum.py`：联动修正 `L`、`D` 和 batch 数，限制内存规模。
-
-当前目录没有单独的 performance JSON，精度和性能任务均使用 case 命令生成的
-`all_triton_jagged_reduce_sum.json`。
+- `triton_jagged_reduce_sum_performance.json`：保存固定的性能测试用例。
 
 ## 调用示例
 
@@ -140,7 +139,7 @@ atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端�
 ### 4. NPU 端执行性能对比
 
 ```bash
-atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c all_triton_jagged_reduce_sum.json --task performance_device -p triton_jagged_reduce_sum_api.py
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c triton_jagged_reduce_sum_performance.json --task performance_device -p triton_jagged_reduce_sum_api.py
 ```
 
-该命令复用生成的完整用例集，分别测量 NPU 与 GPU 的设备执行时间。
+该命令使用固定的性能用例，分别测量 NPU 与 GPU 的设备执行时间。

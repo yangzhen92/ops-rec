@@ -13,9 +13,11 @@
 # limitations under the License.
 # ==============================================================================
 
+# pylint: disable=attribute-defined-outside-init
 """
 triton_jagged_jagged_elementwise_arithmetic_ops 算子的ATK自定义API执行文件
 """
+
 import torch
 from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
@@ -111,10 +113,7 @@ class TritonJaggedJaggedElementwiseArithmeticOpsApi(BaseApi):
 
         # ====== 计算 grid（与原生代码一致）======
         # grid = cdiv(M, row_size) * cdiv(N, col_size)
-        grid = (
-            triton.cdiv(M, thread_block_row_size)
-            * triton.cdiv(N, thread_block_col_size),
-        )
+        grid = (triton.cdiv(M, thread_block_row_size) * triton.cdiv(N, thread_block_col_size),)
 
         # ====== 保存到实例变量 ======
         self._device = device

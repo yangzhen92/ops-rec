@@ -13,9 +13,11 @@
 # limitations under the License.
 # ==============================================================================
 
+# pylint: disable=attribute-defined-outside-init
 """
 triton_jagged_jagged_elementwise_arithmetic_ops 算子的ATK自定义API执行文件 (Autotune版本)
 """
+
 import torch
 from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
@@ -37,6 +39,7 @@ def get_device():
 # ====== 改动1：导入路径指向 autotune/ 目录 ======
 import sys
 import os
+
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, current_dir)
 from triton_jagged_tensor_ops import jagged_jagged_elementwise_arithmetic_ops
@@ -95,7 +98,7 @@ class TritonJaggedJaggedElementwiseArithmeticOpsApi(BaseApi):
         if y_values.ndim != 2:
             raise ValueError(f"y_values must be 2D, got {y_values.ndim}D")
         if x_values.shape != y_values.shape:
-            raise ValueError(f"x_values and y_values must have same shape")
+            raise ValueError("x_values and y_values must have same shape")
 
         # ====== 计算参数 ======
         M, N = x_values.shape
@@ -111,10 +114,7 @@ class TritonJaggedJaggedElementwiseArithmeticOpsApi(BaseApi):
         _M, _N = M, N
 
         def _grid(META):
-            return (
-                triton.cdiv(_M, META["thread_block_row_size"])
-                * triton.cdiv(_N, META["thread_block_col_size"]),
-            )
+            return (triton.cdiv(_M, META["thread_block_row_size"]) * triton.cdiv(_N, META["thread_block_col_size"]),)
 
         # ====== 保存到实例变量 ======
         self._device = device

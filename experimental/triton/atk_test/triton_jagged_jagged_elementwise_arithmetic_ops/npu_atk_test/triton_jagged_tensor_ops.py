@@ -13,12 +13,9 @@
 # limitations under the License.
 # ==============================================================================
 
-from typing import Optional, Union
 
-import torch
 import triton  # @manual
 import triton.language as tl  # @manual
-from torch._tensor import Tensor
 
 
 # ====== Autotune 装饰器（唯一改动：在原生 kernel 前添加，kernel 内部一字不改）======

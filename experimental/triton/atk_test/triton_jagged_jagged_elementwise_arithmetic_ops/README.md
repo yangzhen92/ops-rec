@@ -2,230 +2,116 @@
 
 ## 来源
 
-`jagged_jagged_elementwise_arithmetic_ops` 算子源自 PyTorch FBGEMM 代码仓：
+本目录的核心 kernel `jagged_jagged_elementwise_arithmetic_ops` 源自 PyTorch FBGEMM 代码仓：
 
-<https://github.com/pytorch/FBGEMM/blob/main/fbgemm_gpu/fbgemm_gpu/triton/jagged/triton_jagged_tensor_ops.py>
+<https://github.com/pytorch/FBGEMM/blob/main/fbgemm_gpu/fbgemm_gpu/triton/jagged/triton_jagged_tensor_ops.py#L16-L69>
 
 ## 功能说明
 
-`jagged_jagged_elementwise_arithmetic_ops` 基于 Triton 实现，用于对两个 jagged tensor 的 values 部分执行逐元素加法或乘法。两个输入均以二维矩阵 `(M, N)` 表示，计算公式为：
+`jagged_jagged_elementwise_arithmetic_ops` 用于对两个 Jagged Tensor 已经展平的 values 矩阵执行逐元素加法或乘法。
+
+设两个输入 values 的 shape 均为 `(M, N)`，则：
 
 ```text
-output[m, n] = x_values[m, n] + y_values[m, n]  # ops_func == "add"
-output[m, n] = x_values[m, n] * y_values[m, n]  # ops_func == "mul"
+output[m, n] = x_values[m, n] + y_values[m, n]  ops_func = "add"
+output[m, n] = x_values[m, n] * y_values[m, n]  ops_func = "mul"
 ```
 
-该 kernel 不接收 jagged offsets，只处理已经展平且逻辑位置相互对齐的 values 矩阵。因此，两个输入对应的原始 jagged tensor 应具有相同的 offsets 和特征维度，这一语义约束由调用方保证。
+该算子只处理 values，不接收 Jagged offsets。调用方需要保证 `x_values` 与 `y_values` 来自逻辑结构一致的 Jagged Tensor，即两者具有相同的 offsets，且相同位置的 values 能够一一对应。
 
-kernel 使用一维 program id 映射二维 tile：
-
-```text
-num_group_n = ceil_div(N, thread_block_col_size)
-pid_n = pid % num_group_n
-pid_m = pid // num_group_n
-```
-
-每个 program 处理一个 `(thread_block_row_size, thread_block_col_size)` 数据块，并通过 mask 保护 `M`、`N` 边界。
-
-当前 GPU/NPU ATK API 均固定传入 `ops_func="add"`，所以现有 ATK 用例验证的是逐元素加法；底层 kernel 同时保留 `ops_func="mul"` 的乘法能力。
+算子不会执行广播、Jagged/Dense 格式转换、offset 重排或跨 token 归约。当前 ATK API 固定使用 `ops_func="add"`，因此现有 ATK 用例验证的是逐元素加法；底层 kernel 同时支持乘法。
 
 ## 输入
 
 | 参数 | 说明 |
 |------|------|
-| `x_values` | 第一个 jagged tensor 的展平 values，shape `(M, N)` |
-| `y_values` | 第二个 jagged tensor 的展平 values，shape `(M, N)`，shape、dtype 和内存布局需与 `x_values` 一致 |
+| `x_values` | 第一个 Jagged Tensor 的展平 values，shape 为 `(M, N)` |
+| `y_values` | 第二个 Jagged Tensor 的展平 values，shape 为 `(M, N)` |
+| `ops_func` | 运算类型；`"add"` 表示逐元素加法，`"mul"` 表示逐元素乘法 |
 
-YAML 用例支持 `fp32`、`fp16` 和 `bf16`。用例生成器会将 `y_values` 的 shape 和 dtype 对齐到 `x_values`。
-
-底层 kernel 还接收以下启动参数，这些参数由 ATK API 根据输入自动计算或设置：
-
-| 参数 | 说明 |
-|------|------|
-| `M` | values 矩阵的行数，即 `x_values.shape[0]` |
-| `N` | values 矩阵的列数，即 `x_values.shape[1]` |
-| `stride_row` | 共享的行 stride，取自 `x_values.stride(0)` |
-| `stride_col` | 共享的列 stride，取自 `x_values.stride(1)` |
-| `output` | 预分配输出，shape、dtype 和布局与 `x_values` 相同 |
-| `thread_block_row_size` | 每个 tile 处理的行数，constexpr |
-| `thread_block_col_size` | 每个 tile 处理的列数，constexpr |
-| `ops_func` | 运算类型，`"add"` 表示加法，`"mul"` 表示乘法；当前 ATK API 固定为 `"add"` |
+`x_values` 和 `y_values` 支持 `fp32`、`fp16` 和 `bf16`。
 
 ## 输出
 
-`output`：shape 为 `(M, N)`，dtype 与 `x_values` 相同。
+`output`：shape 为 `(M, N)`，dtype 与输入相同。
 
-当前 ATK API 的输出等价于：
+输出保持 values 的展平顺序，因此在两个输入共享相同 Jagged offsets 时，输出可以直接与同一组 offsets 组合成新的 Jagged Tensor。算子不修改 `x_values` 和 `y_values`。
 
-```python
-output = x_values + y_values
-```
+## 计算示例
 
-算子不修改两个输入，也不执行 broadcasting、offset 变换或 jagged/dense 格式转换。
-
-## GPU 与 NPU 实现差异
-
-GPU 端保留原始固定 tile 配置：
-
-```text
-thread_block_row_size = 32
-thread_block_col_size = 32
-grid = (ceil_div(M, 32) * ceil_div(N, 32),)
-```
-
-NPU 端保持 kernel 计算逻辑不变，并增加以 `(M, N)` 为 key 的 Triton autotune。候选配置为：
-
-| 行 tile | 列 tile | `num_warps` | `num_stages` |
-|--------:|--------:|------------:|-------------:|
-| 16 | 16 | 2 | 2 |
-| 32 | 32 | 4 | 2 |
-| 32 | 32 | 4 | 3 |
-| 64 | 64 | 8 | 3 |
-| 32 | 64 | 4 | 2 |
-| 64 | 32 | 4 | 2 |
-
-NPU API 的 grid 会从 autotune 选中的 `thread_block_row_size` 和 `thread_block_col_size` 动态计算。
-
-## 调用示例
-
-以下示例直接调用 NPU 端 autotune kernel，与 NPU ATK API 的调用方式一致：
+下面使用 NPU 上的 PyTorch 运算展示加法和乘法的等价语义。`offsets` 仅用于说明两个 values 属于相同的 Jagged 结构，不作为该算子的输入：
 
 ```python
 import torch
-import triton
-
-from triton_jagged_tensor_ops import (
-    jagged_jagged_elementwise_arithmetic_ops,
-)
 
 device = "npu"
-x_values = torch.randn((128, 256), dtype=torch.float32, device=device)
+
+# 两个序列的长度分别为 2 和 3，values 的特征维度为 4
+offsets = torch.tensor([0, 2, 5], dtype=torch.int64, device=device)
+x_values = torch.randn((5, 4), dtype=torch.float32, device=device)
 y_values = torch.randn_like(x_values)
-output = torch.empty_like(x_values)
-M, N = x_values.shape
 
+add_output = x_values + y_values
+mul_output = x_values * y_values
 
-def grid(meta):
-    return (
-        triton.cdiv(M, meta["thread_block_row_size"])
-        * triton.cdiv(N, meta["thread_block_col_size"]),
-    )
+print(add_output.shape)  # torch.Size([5, 4])
+print(mul_output.shape)  # torch.Size([5, 4])
 
-
-jagged_jagged_elementwise_arithmetic_ops[grid](
-    x_values,
-    y_values,
-    M,
-    N,
-    x_values.stride(0),
-    x_values.stride(1),
-    output,
-    ops_func="add",
-)
-
-torch.testing.assert_close(output, x_values + y_values)
-print(output.shape)  # torch.Size([128, 256])
-```
-
-如直接调用 GPU 端 kernel，请在 `gpu_atk_test/` 目录运行、将 `device` 改为 `"cuda"`，并显式传入两个 tile 参数及固定 grid：
-
-```python
-block_m, block_n = 32, 32
-grid = (triton.cdiv(M, block_m) * triton.cdiv(N, block_n),)
-
-jagged_jagged_elementwise_arithmetic_ops[grid](
-    x_values,
-    y_values,
-    M,
-    N,
-    x_values.stride(0),
-    x_values.stride(1),
-    output,
-    block_m,
-    block_n,
-    ops_func="add",
-)
+# 输出继续复用同一组 Jagged offsets
+for b in range(offsets.numel() - 1):
+    begin = int(offsets[b].item())
+    end = int(offsets[b + 1].item())
+    print(add_output[begin:end].shape)
 ```
 
 ## 关键约束
 
-- `x_values` 和 `y_values` 必须都是二维 tensor，且 `M > 0`、`N > 0`；当前 YAML 不生成空 tensor。
-- 两个输入必须具有完全相同的 shape 和 dtype，不支持 broadcasting。
-- kernel 只接收一组共享 stride，并使用该 stride 访问 `x_values`、`y_values` 和 `output`，因此三者必须具有相同的内存布局。当前 ATK 用例使用同 shape 的 contiguous tensor。
-- 两个 values 矩阵应对应相同的 jagged offsets；offsets 不传入 kernel，算子无法在运行时检查这一条件。
-- `thread_block_row_size` 和 `thread_block_col_size` 用于 `tl.arange`，应采用 Triton 支持的 2 的幂；当前固定值及 autotune 候选值均满足该条件。
-- 当前 ATK API 仅测试加法。测试乘法时需要直接调用 kernel 并传入 `ops_func="mul"`，或扩展 API/YAML 暴露该参数。
-
-## 目录结构
-
-```text
-experimental/triton/atk_test/triton_jagged_jagged_elementwise_arithmetic_ops/
-├── README.md
-├── gpu_atk_test/
-│   ├── triton_jagged_tensor_ops.py                              # GPU(CUDA) 端固定 tile kernel
-│   └── triton_jagged_jagged_elementwise_arithmetic_ops_api.py   # GPU 端 ATK API
-└── npu_atk_test/
-    ├── triton_jagged_tensor_ops.py                              # NPU 端 autotune kernel
-    ├── triton_jagged_jagged_elementwise_arithmetic_ops.yaml     # ATK 用例设计
-    ├── generate_triton_jagged_jagged_elementwise_arithmetic_ops.py # shape/dtype 约束生成器
-    ├── triton_jagged_jagged_elementwise_arithmetic_ops_api.py   # NPU 端 ATK API
-    └── all_triton_jagged_jagged_elementwise_arithmetic_ops.json # 已生成的测试用例
-```
+- `x_values` 和 `y_values` 必须是二维 tensor，且行数 `M`、列数 `N` 均大于零。
+- 两个输入的 shape、dtype、device 和内存布局必须一致，不支持 broadcasting。
+- 输入与输出需要使用相同的二维 stride 布局；通常应传入 contiguous tensor。
+- 两个输入必须对应相同的 Jagged offsets。offsets 不传入算子，因此无法在运行时检查该条件。
+- `ops_func` 应使用 `"add"` 或 `"mul"`；当前 ATK API 固定执行 `"add"`。
+- 加法输出等价于 `x_values + y_values`，乘法输出等价于 `x_values * y_values`。
 
 ## ATK 测试
 
-测试在 GPU 与 NPU 两端协同进行：`gpu_atk_test/` 部署到 GPU 端，`npu_atk_test/` 部署到 NPU 端。以下生成及测试命令均在 NPU 端的 `npu_atk_test/` 目录中执行：
+以下命令均在 NPU 端的 `npu_atk_test` 目录下执行：
 
 ```bash
 cd experimental/triton/atk_test/triton_jagged_jagged_elementwise_arithmetic_ops/npu_atk_test
 ```
 
-### 远端 GPU 服务器启动监听
-
-在 GPU 端进入 `gpu_atk_test/` 目录后执行：
-
-```bash
-atk server --devices 0 \
-    --plugin_path triton_jagged_jagged_elementwise_arithmetic_ops_api.py
-```
-
-如 GPU server 不在默认地址或端口，请在 NPU 端执行测试时按 ATK 环境配置远端 host/port。
-
 ### 生成测试数据
 
 ```bash
-atk case \
-    -f triton_jagged_jagged_elementwise_arithmetic_ops.yaml \
+atk case -f triton_jagged_jagged_elementwise_arithmetic_ops.yaml \
     -p generate_triton_jagged_jagged_elementwise_arithmetic_ops.py
 ```
 
-生成的用例通常位于：
+生成的用例配置文件为 `all_triton_jagged_jagged_elementwise_arithmetic_ops.json`。
 
-```text
-result/triton_jagged_jagged_elementwise_arithmetic_ops/json/
-all_triton_jagged_jagged_elementwise_arithmetic_ops.json
-```
-
-本目录同时提供可直接复用的 `all_triton_jagged_jagged_elementwise_arithmetic_ops.json`。
-
-### 精度测试
+### 远端 GPU 服务器起监听命令
 
 ```bash
-atk node --backend triton --devices 0 node --backend npu --devices 0 \
+atk server --devices 0 --plugin_path /path/to/api文件所在文件夹
+```
+
+### 精度对比
+
+```bash
+atk node --backend npu --devices 0 \
+    node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 \
     task -c all_triton_jagged_jagged_elementwise_arithmetic_ops.json \
     --task accuracy \
     -p triton_jagged_jagged_elementwise_arithmetic_ops_api.py
 ```
 
-如需保存精度对比数据，在命令末尾增加 `--save_data profile`。
-
-### 性能测试
+### 性能对比
 
 ```bash
-atk node --backend triton --devices 0 node --backend npu --devices 0 \
+atk node --backend npu --devices 0 \
+    node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 \
     task -c all_triton_jagged_jagged_elementwise_arithmetic_ops.json \
     --task performance_device \
     -p triton_jagged_jagged_elementwise_arithmetic_ops_api.py
 ```
-
-如需保存性能对比数据，在命令末尾增加 `--save_data profile`。

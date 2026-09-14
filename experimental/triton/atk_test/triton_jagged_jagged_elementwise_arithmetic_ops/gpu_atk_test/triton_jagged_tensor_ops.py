@@ -22,12 +22,9 @@
 # limitations under the License.
 # ==============================================================================
 
-from typing import Optional, Union
 
-import torch
 import triton  # @manual
 import triton.language as tl  # @manual
-from torch._tensor import Tensor
 
 
 @triton.jit

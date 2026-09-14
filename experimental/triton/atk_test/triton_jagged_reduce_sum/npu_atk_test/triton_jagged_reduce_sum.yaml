@@ -1,0 +1,83 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
+# triton_jagged_reduce_sum.yaml
+# jagged_reduce_sum 精度测试配置。
+# 对外只有两个真实输入：Jagged 和 seq_offsets；Out、stride、BLOCK_D 均由 API 推导。
+name: triton_jagged_reduce_sum
+api: pytorch
+version: v2.1
+api_type: triton_jagged_reduce_sum
+triton_api_type: triton_jagged_reduce_sum
+triton_name: triton_jagged.jagged_reduce_sum
+generate: generate_jagged_reduce_sum
+
+# ATK 按 dtype 生成用例。3 * 3334 约为 10000；若框架要求严格 10000 条，
+# 应在生成后按 fp32=3334、fp16=3333、bf16=3333 的比例裁剪，而不是设置为 10000。
+dtype_numbers: 3334
+outputs: 0
+standard:
+  acc: single_bm
+  perf: not_key
+
+inputs:
+  - name: Jagged
+    type: tensor
+    required: true
+    dtypes:
+      values: [fp32, fp16, bf16]
+    ranges:
+      # 归约结果会回写为输入 dtype。将值约束在 [-1, 1]，避免 fp16/bf16 在长序列求和后溢出。
+      valid:
+        values: [[-4.0, 4.0]]
+    shapes:
+      dim_numbers:
+        values: [2]
+      # 标量池同时为 L、D 提供候选。Generator 会将第二维收敛到 D 候选集，
+      # 并以 (L + B) * D 的总元素数上限修正第一维，避免 OOM。
+      dim_values:
+        values: [[2, 1024], [2049, 4096], [4097, 8192]]
+        weights: [0.30, 0.20, 0.50]
+      max_length: 67108864
+    boundary:
+      # 主用例集不生成 L=0；零长 Jagged 应作为单独边界冒烟用例验证。
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: seq_offsets
+    type: tensor
+    required: true
+    dtypes:
+      # 固定 int64，避免两端因 offset dtype 不同产生无意义差异。
+      values: [int64]
+    ranges:
+      # 实际 offset 值由 API 根据 shape 确定性重建；此处的随机值不会传给 kernel。
+      valid:
+        values: [[0, 1]]
+    shapes:
+      dim_numbers:
+        values: [1]
+      # seq_offsets.shape[0] = B + 1，覆盖 B=1/2/4/8/16/64/256/1024。
+      dim_values:
+        values: [[4, 32]]
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false

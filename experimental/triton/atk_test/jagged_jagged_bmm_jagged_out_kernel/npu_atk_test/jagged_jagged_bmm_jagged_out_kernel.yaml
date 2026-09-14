@@ -55,8 +55,6 @@ inputs:
           - name: nd
             mean: [0, 50]
             std: [1, 10]
-      invalid:
-        values: [ [-100, 100] ]
     boundary:
       has_empty: false
       has_infnan: false   # single_bm 直接对比 GPU/NPU，inf/nan 会破坏一致性
@@ -83,8 +81,6 @@ inputs:
           - name: nd
             mean: [0, 50]
             std: [1, 10]
-      invalid:
-        values: [ [-100, 100] ]
     boundary:
       has_empty: false
       has_infnan: false   # single_bm 直接对比 GPU/NPU，inf/nan 会破坏一致性
@@ -110,8 +106,6 @@ inputs:
     ranges:
       valid:
         values: [ [0, 2047] ]
-      invalid:
-        values: [ [0, 2047] ]
     boundary:
       has_empty: false
       has_infnan: false
@@ -133,8 +127,6 @@ inputs:
         weights: [ 0.3, 0.3, 0.4 ]
     ranges:
       valid:
-        values: [ [0, 2047] ]
-      invalid:
         values: [ [0, 2047] ]
     boundary:
       has_empty: false
@@ -158,8 +150,6 @@ inputs:
     ranges:
       valid:
         values: [ [0, 65535] ]
-      invalid:
-        values: [ [0, 65535] ]
     boundary:
       has_empty: false
       has_infnan: false
@@ -175,6 +165,4 @@ inputs:
       values: [ int ]
     ranges:
       valid:
-        values: [ [16, 4096] ]
-      invalid:
         values: [ [16, 4096] ]

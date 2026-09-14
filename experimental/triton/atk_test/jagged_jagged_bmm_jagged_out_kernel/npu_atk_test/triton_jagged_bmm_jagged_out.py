@@ -26,6 +26,7 @@ import torch
 import triton
 import triton.language as tl
 
+
 @triton.jit
 def jagged_jagged_bmm_jagged_out_kernel(
     a_ptr,
@@ -79,17 +80,9 @@ def jagged_jagged_bmm_jagged_out_kernel(
     offs_bn = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
     offs_k = tl.arange(0, BLOCK_SIZE_K)
 
-    a_ptrs = (
-        a_ptr
-        + (offs_am[:, None] * stride_am + offs_k[None, :] * stride_ak)
-        + begin_a * stride_am
-    )
+    a_ptrs = a_ptr + (offs_am[:, None] * stride_am + offs_k[None, :] * stride_ak) + begin_a * stride_am
 
-    b_ptrs = (
-        b_ptr
-        + (offs_k[:, None] * stride_bk + offs_bn[None, :] * stride_bn)
-        + begin_b * stride_bn
-    )
+    b_ptrs = b_ptr + (offs_k[:, None] * stride_bk + offs_bn[None, :] * stride_bn) + begin_b * stride_bn
 
     c = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
 
@@ -135,9 +128,7 @@ def triton_jagged_jagged_bmm_jagged_out(
     assert offsets_n.is_contiguous(), "n offsets mush be contiguous"
 
     B = lengths_m.size(0)
-    jagged_C = torch.zeros(
-        (lengths_mn.sum()), device=jagged_A.device, dtype=jagged_A.dtype
-    )
+    jagged_C = torch.zeros((lengths_mn.sum()), device=jagged_A.device, dtype=jagged_A.dtype)
 
     BLOCK_SIZE_M = 32
     BLOCK_SIZE_N = 32

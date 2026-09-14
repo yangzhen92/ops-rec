@@ -35,6 +35,7 @@ jagged_jagged_bmm_jagged_out_kernel 算子参数约束生成器
 4. 全程无随机决策依赖具体数据值 —— shape 由 ATK 定，切分在 API 内确定性完成，
    GPU/NPU 输入一致（single_bm 精度对比才有效）。
 """
+
 import random
 from atk.case_generator.generator.generate_types import GENERATOR_REGISTRY
 from atk.case_generator.generator.base_generator import CaseGenerator
@@ -111,16 +112,14 @@ class JaggedJaggedBmmJaggedOutKernelGenerator(CaseGenerator):
 
     def _get_first_dim(self, tensor):
         """安全获取 tensor.shape[0]"""
-        if (hasattr(tensor, 'shape') and isinstance(tensor.shape, list)
-                and len(tensor.shape) > 0):
+        if hasattr(tensor, 'shape') and isinstance(tensor.shape, list) and len(tensor.shape) > 0:
             val = tensor.shape[0]
             return val if isinstance(val, int) else None
         return None
 
     def _get_second_dim(self, tensor):
         """安全获取 tensor.shape[1]"""
-        if (hasattr(tensor, 'shape') and isinstance(tensor.shape, list)
-                and len(tensor.shape) > 1):
+        if hasattr(tensor, 'shape') and isinstance(tensor.shape, list) and len(tensor.shape) > 1:
             val = tensor.shape[1]
             return val if isinstance(val, int) else None
         return None

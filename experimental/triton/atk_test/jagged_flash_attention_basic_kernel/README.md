@@ -4,7 +4,7 @@
 
 `jagged_flash_attention_basic_kernel` 算子源自 PyTorch FBGEMM 代码仓：
 
-<https://github.com/pytorch/FBGEMM/blob/main/fbgemm_gpu/fbgemm_gpu/sll/triton/triton_jagged_flash_attention_basic.py>
+<https://github.com/pytorch/FBGEMM/blob/5d0a3d9868e04a0e0dd30906c79a96a001b85f68/fbgemm_gpu/fbgemm_gpu/sll/triton/triton_jagged_flash_attention_basic.py#L18>
 
 ## 功能说明
 

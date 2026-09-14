@@ -33,7 +33,7 @@ import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from triton_multi_head_jagged_flash_attention import _multi_head_jagged_flash_attention_fwd_kernel   # noqa: E402
+from triton_multi_head_jagged_flash_attention import _multi_head_jagged_flash_attention_fwd_kernel  # noqa: E402
 
 
 def get_device():

@@ -66,8 +66,7 @@ class MultiHeadJaggedFlashAttentionFwdKernelGenerator(CaseGenerator):
             B = 8
 
         # 确保 total_seq >= B
-        if total_seq < B:
-            total_seq = B
+        total_seq = max(total_seq, B)
 
         # 约束1: q/k/v 同 shape
         for t in (q, k, v):

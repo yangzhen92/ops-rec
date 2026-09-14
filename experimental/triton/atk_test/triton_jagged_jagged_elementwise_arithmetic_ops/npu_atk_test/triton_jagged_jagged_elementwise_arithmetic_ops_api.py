@@ -26,11 +26,11 @@ from atk.tasks.api_execute.base_api import BaseApi
 # ====== 改动1：导入路径指向 autotune/ 目录 ======
 import sys
 import os
+import triton
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, current_dir)
-from triton_jagged_tensor_ops import jagged_jagged_elementwise_arithmetic_ops
-import triton
+from triton_jagged_tensor_ops import jagged_jagged_elementwise_arithmetic_ops  # noqa: E402
 
 
 def get_device():

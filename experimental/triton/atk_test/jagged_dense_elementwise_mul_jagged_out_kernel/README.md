@@ -4,7 +4,7 @@
 
 `jagged_dense_elementwise_mul_jagged_out_kernel` 算子源自 PyTorch FBGEMM 代码仓：
 
-<https://github.com/pytorch/FBGEMM/blob/main/fbgemm_gpu/fbgemm_gpu/sll/triton/triton_jagged_dense_elementwise_mul_jagged_out.py>
+<https://github.com/pytorch/FBGEMM/blob/3182ea59fb1c76765f23cd2ff44eea2cfcbd299e/fbgemm_gpu/fbgemm_gpu/sll/triton/triton_jagged_dense_elementwise_mul_jagged_out.py#L15>
 
 ## 功能说明
 

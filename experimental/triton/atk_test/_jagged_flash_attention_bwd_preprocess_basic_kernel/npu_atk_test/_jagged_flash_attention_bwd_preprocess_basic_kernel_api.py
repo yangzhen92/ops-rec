@@ -12,14 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""
-jagged_flash_attention_bwd_preprocess_basic_kernel ATK API - 双精度测试版本
 
-强制 fp32 转换，用于双标杆精度测试。
-
-语义：Flash Attention 反向传播预处理
-    delta[i] = sum(o[i, :] * do[i, :])
-"""
+# pylint: disable=attribute-defined-outside-init
 import torch
 from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
@@ -28,8 +22,9 @@ from atk.tasks.api_execute.base_api import BaseApi
 # 导入 Triton kernel
 import sys
 import os
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from triton_jagged_flash_attention_basic import _jagged_flash_attention_bwd_preprocess_basic_kernel
+from triton_jagged_flash_attention_basic import _jagged_flash_attention_bwd_preprocess_basic_kernel  # noqa: E402
 
 
 def get_device():
@@ -39,7 +34,7 @@ def get_device():
     try:
         if torch.cuda.is_available():
             return 'cuda'
-    except:
+    except Exception:
         pass
     return 'cpu'
 
@@ -222,6 +217,7 @@ class JaggedFlashAttentionBwdPreprocessBasicKernelApi(BaseApi):
 
         # 计算 grid
         import triton
+
         grid = (
             triton.cdiv(max_seq_len, BLOCK_SIZE_M),
             B,

@@ -28,6 +28,7 @@ jagged_flash_attention_bwd_preprocess_basic_kernel 算子参数约束生成器
     3. D 通常是 2 的幂次方（16, 32, 64, 128）
     4. max_seq_len >= max(seq_lengths)
 """
+
 from atk.case_generator.generator.generate_types import GENERATOR_REGISTRY
 from atk.case_generator.generator.base_generator import CaseGenerator
 from atk.configs.case_config import CaseConfig
@@ -90,16 +91,14 @@ class JaggedFlashAttentionBwdPreprocessBasicKernelGenerator(CaseGenerator):
 
     def _get_first_dim(self, tensor):
         """安全获取 tensor.shape[0]"""
-        if (hasattr(tensor, 'shape') and isinstance(tensor.shape, list)
-                and len(tensor.shape) > 0):
+        if hasattr(tensor, 'shape') and isinstance(tensor.shape, list) and len(tensor.shape) > 0:
             val = tensor.shape[0]
             return val if isinstance(val, int) else None
         return None
 
     def _get_second_dim(self, tensor):
         """安全获取 tensor.shape[1]"""
-        if (hasattr(tensor, 'shape') and isinstance(tensor.shape, list)
-                and len(tensor.shape) > 1):
+        if hasattr(tensor, 'shape') and isinstance(tensor.shape, list) and len(tensor.shape) > 1:
             val = tensor.shape[1]
             return val if isinstance(val, int) else None
         return None

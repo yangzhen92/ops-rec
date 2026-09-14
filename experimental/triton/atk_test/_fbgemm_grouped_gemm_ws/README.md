@@ -4,7 +4,7 @@
 
 `_fbgemm_grouped_gemm_ws` 源自 PyTorch FBGEMM：
 
-<https://github.com/pytorch/FBGEMM/blob/main/fbgemm_gpu/experimental/gemm/triton_gemm/grouped_gemm.py>
+<https://github.com/pytorch/FBGEMM/blob/5d0a3d9868e04a0e0dd30906c79a96a001b85f68/fbgemm_gpu/experimental/gemm/triton_gemm/grouped_gemm.py#L465>
 
 当前套件测试 BF16 grouped GEMM 的 warp specialization（WS）路径。
 

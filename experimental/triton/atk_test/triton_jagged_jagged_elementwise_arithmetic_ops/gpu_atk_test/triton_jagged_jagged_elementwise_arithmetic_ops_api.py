@@ -22,6 +22,8 @@ import torch
 from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
 from atk.tasks.api_execute.base_api import BaseApi
+from triton_jagged_tensor_ops import jagged_jagged_elementwise_arithmetic_ops
+import triton
 
 
 def get_device():
@@ -31,15 +33,9 @@ def get_device():
     try:
         if torch.cuda.is_available():
             return 'cuda'
-    except:
+    except Exception:
         pass
     return 'cpu'
-
-
-# 从被测代码直接引用 Triton kernel
-# 注意：需要确保 triton_jagged_tensor_ops.py 在当前目录或 Python 路径中
-from triton_jagged_tensor_ops import jagged_jagged_elementwise_arithmetic_ops
-import triton
 
 
 @register("triton_jagged_jagged_elementwise_arithmetic_ops")

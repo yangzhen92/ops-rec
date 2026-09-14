@@ -23,19 +23,6 @@ from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
 from atk.tasks.api_execute.base_api import BaseApi
 
-
-def get_device():
-    """获取可用的设备，优先NPU"""
-    if hasattr(torch, 'npu') and torch.npu.is_available():
-        return 'npu'
-    try:
-        if torch.cuda.is_available():
-            return 'cuda'
-    except:
-        pass
-    return 'cpu'
-
-
 # ====== 改动1：导入路径指向 autotune/ 目录 ======
 import sys
 import os
@@ -44,6 +31,18 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, current_dir)
 from triton_jagged_tensor_ops import jagged_jagged_elementwise_arithmetic_ops
 import triton
+
+
+def get_device():
+    """获取可用的设备，优先NPU"""
+    if hasattr(torch, 'npu') and torch.npu.is_available():
+        return 'npu'
+    try:
+        if torch.cuda.is_available():
+            return 'cuda'
+    except Exception:
+        pass
+    return 'cpu'
 
 
 @register("triton_jagged_jagged_elementwise_arithmetic_ops")

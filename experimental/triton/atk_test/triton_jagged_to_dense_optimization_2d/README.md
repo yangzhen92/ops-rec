@@ -4,7 +4,7 @@
 
 `triton_jagged_to_dense_optimization_2d` 算子源自 PyTorch FBGEMM 代码仓：
 
-<https://github.com/pytorch/FBGEMM/blob/main/fbgemm_gpu/fbgemm_gpu/triton/jagged/triton_jagged_tensor_ops.py>
+<https://github.com/pytorch/FBGEMM/blob/a8ec4b2c9771302c4b58118d3e0f53886faac251/fbgemm_gpu/fbgemm_gpu/triton/jagged/triton_jagged_tensor_ops.py#L378>
 
 ## 功能说明
 

@@ -40,6 +40,16 @@ from common import (
 )
 
 
+def switch_to_contiguous_if_needed(x: torch.Tensor) -> torch.Tensor:
+    if not torch.jit.is_scripting() and torch.compiler.is_compiling():
+        # Tell Dynamo this data-dependent value is in the range (0, 10**9)
+        torch._check(x.size(0) > 0)
+        torch._check(x.size(0) < 10**9)
+    if x.stride(-1) == 1:
+        return x
+    return x.contiguous()
+
+
 @triton.jit
 def _ln_mul_dropout_fwd(
     X,

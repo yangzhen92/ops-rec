@@ -4,7 +4,7 @@
 
 `jagged_2_softmax_backward_kernel` 算子源自 PyTorch FBGEMM 代码仓：
 
-<https://github.com/pytorch/FBGEMM/blob/main/fbgemm_gpu/fbgemm_gpu/sll/triton/triton_jagged_softmax.py>
+<https://github.com/pytorch/FBGEMM/blob/8cb147638c271d59e47c74a0a2d3aff62a4fb5bd/fbgemm_gpu/fbgemm_gpu/sll/triton/triton_jagged_softmax.py#L293>
 
 ## 功能说明
 

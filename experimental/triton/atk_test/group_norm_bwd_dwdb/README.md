@@ -4,7 +4,7 @@
 
 `group_norm_bwd_dwdb` 算子源自 NVIDIA recsys-examples 代码仓：
 
-<https://github.com/NVIDIA/recsys-examples/blob/main/examples/hstu/ops/triton_ops/triton_norm_mul_dropout.py>
+<https://github.com/NVIDIA/recsys-examples/blob/15184ab124fd7c6eece48a357a99fa4629dde800/examples/hstu/ops/triton_ops/triton_norm_mul_dropout.py#L1016>
 
 ## 功能说明
 

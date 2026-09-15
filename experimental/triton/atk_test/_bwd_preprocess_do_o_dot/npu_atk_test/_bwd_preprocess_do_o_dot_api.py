@@ -142,7 +142,6 @@ class BwdPreprocessDoODotApi(BaseApi):
             self._do.stride(0),
             self._do.stride(1),
             self._do.stride(2),
-            # self._BLOCK_T,
             BLOCK_D=self._BLOCK_D,
         )
 
@@ -154,8 +153,6 @@ class BwdPreprocessDoODotApi(BaseApi):
 
         if with_output:
             # 输入曾被强转 fp32 以通过编译；此处把输出转回原始 dtype
-            # 原始输入：
-            # return self._delta
             orig_dtype = getattr(self, "_orig_dtype", None)
             if orig_dtype is not None and self._delta.dtype != orig_dtype:
                 self._delta = self._delta.to(orig_dtype)

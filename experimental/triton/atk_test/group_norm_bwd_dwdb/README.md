@@ -101,7 +101,7 @@ atk server --devices 0 --plugin_path /path/to/api文件所在文件夹
 
 ```bash
 atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 \
-    task -c all_group_norm_bwd_dwdb.json --task accuracy \
+    task -c group_norm_bwd_dwdb_performance.json --task accuracy \
     -p group_norm_bwd_dwdb_api.py
 ```
 

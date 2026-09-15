@@ -4,7 +4,7 @@
 
 算子源自 NVIDIA recsys-examples 的 Triton jagged kernel：
 
-<https://github.com/NVIDIA/recsys-examples/blob/v25.05/examples/hstu/ops/triton_ops/triton_jagged.py>
+<https://github.com/NVIDIA/recsys-examples/blob/a247bd4baf4dc74c3e19b4f2ed1fd1b62eb75586/examples/hstu/ops/triton_ops/triton_jagged.py>
 
 ## 算子功能
 
@@ -97,7 +97,7 @@ atk server --devices 0 --plugin_path /path/to/api文件所在文件夹
 
 ```bash
 atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 \
-    task -c all_triton_jagged_dense_bmm_broadcast_add.json --task accuracy \
+    task -c triton_jagged_dense_bmm_broadcast_add_performance.json --task accuracy \
     -p triton_jagged_dense_bmm_broadcast_add_api.py
 ```
 

@@ -4,7 +4,7 @@
 
 `triton_layer_norm_bwd_dx` 算子源自 NVIDIA recsys-examples 代码仓中的 Triton layer normalization kernel 实现：
 
-<https://github.com/NVIDIA/recsys-examples/blob/main/examples/hstu/ops/triton_ops/triton_layer_norm.py>
+<https://github.com/NVIDIA/recsys-examples/blob/a247bd4baf4dc74c3e19b4f2ed1fd1b62eb75586/examples/hstu/ops/triton_ops/triton_layer_norm.py>
 
 ## 算子功能
 
@@ -148,7 +148,7 @@ atk server --devices 0 --plugin_path /path/to/api文件所在文件夹
 
 ```bash
 atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 \
-    task -c all_triton_layer_norm_bwd_dx.json --task accuracy \
+    task -c triton_layer_norm_bwd_dx_performance.json --task accuracy \
     -p triton_layer_norm_bwd_dx_api.py
 ```
 

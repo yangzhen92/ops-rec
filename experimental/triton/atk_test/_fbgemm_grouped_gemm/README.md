@@ -90,7 +90,7 @@ atk server --devices 0 --plugin_path /path/to/gpu_atk_test
 在 NPU 端运行精度测试：
 
 ```bash
-atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端监听端口} --devices 0     task -c all__fbgemm_grouped_gemm.json --task accuracy -p _fbgemm_grouped_gemm_api.py
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端监听端口} --devices 0     task -c _fbgemm_grouped_gemm_performance.json --task accuracy -p _fbgemm_grouped_gemm_api.py
 ```
 
 运行性能测试：

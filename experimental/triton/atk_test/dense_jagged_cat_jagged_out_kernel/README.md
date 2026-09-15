@@ -97,7 +97,7 @@ atk case -f dense_jagged_cat_jagged_out_kernel.yaml \
 
 ```bash
 atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {端口} --devices 0 \
-    task -c all_dense_jagged_cat_jagged_out_kernel.json --task accuracy \
+    task -c dense_jagged_cat_jagged_out_kernel_performance.json --task accuracy \
     -p dense_jagged_cat_jagged_out_kernel_api.py
 ```
 

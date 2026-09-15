@@ -4,7 +4,7 @@
 
 `_layer_norm_bwd_dwdb` 算子源自 NVIDIA recsys-examples：
 
-<https://github.com/NVIDIA/recsys-examples/blob/main/examples/hstu/ops/triton_ops/triton_layer_norm.py>
+<https://github.com/NVIDIA/recsys-examples/blob/a247bd4baf4dc74c3e19b4f2ed1fd1b62eb75586/examples/hstu/ops/triton_ops/triton_layer_norm.py>
 
 ## 功能说明
 
@@ -37,7 +37,7 @@ FINAL_DB[d] = sum(DB[n, d], n=0..N-1)
 ## 目录结构
 
 ```text
-experimental/triton/atk_test/triton_layer_norm_bwd_dwdb/
+experimental/triton/atk_test/layer_norm_bwd_dwdb/
 ├── README.md
 ├── gpu_atk_test/
 │   ├── triton_layer_norm_bwd_dwdb_kernel.py
@@ -59,14 +59,32 @@ experimental/triton/atk_test/triton_layer_norm_bwd_dwdb/
 ## 调用示例
 
 ```python
-from triton_layer_norm_bwd_dwdb_api import LayerNormBwdDwdbApi
+import torch
+import triton
 
-api = LayerNormBwdDwdbApi()
-api.init_by_input_data(input_data)
-final_dw, final_db = api()
+from triton_layer_norm_bwd_dwdb_kernel import _layer_norm_bwd_dwdb
+
+n, d = 128, 1024
+device = "cuda"
+dw = torch.randn((n, d), dtype=torch.float32, device=device)
+db = torch.randn_like(dw)
+final_dw = torch.empty((d,), dtype=dw.dtype, device=device)
+final_db = torch.empty_like(final_dw)
+block_n = 64
+block_d = 32
+grid = (triton.cdiv(d, block_d),)
+
+_layer_norm_bwd_dwdb[grid](
+    dw,
+    db,
+    final_dw,
+    final_db,
+    n,
+    d,
+    BLOCK_N=block_n,
+    BLOCK_D=block_d,
+)
 ```
-
-`input_data` 由 ATK 构造，实际测试时通常无需手工实例化 API。
 
 ## ATK 测试
 
@@ -90,7 +108,7 @@ atk case -f triton_layer_norm_bwd_dwdb.yaml -p generate_triton_layer_norm_bwd_dw
 ### 3. NPU 端执行精度对比
 
 ```bash
-atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c all_triton_layer_norm_bwd_dwdb.json --task accuracy -p triton_layer_norm_bwd_dwdb_api.py
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c triton_layer_norm_bwd_dwdb_performance.json --task accuracy -p triton_layer_norm_bwd_dwdb_api.py
 ```
 
 该命令分别执行 NPU 与远端 GPU 实现，并比较 `FINAL_DW`、`FINAL_DB` 的数值误差。

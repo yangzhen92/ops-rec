@@ -98,7 +98,7 @@ atk case -f _rms_norm_bwd_dwdb.yaml -p generate_rms_norm_bwd_dwdb.py
 ### 3.2 精度对比
 
 ```bash
-atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c all__rms_norm_bwd_dwdb.json --task accuracy -p _rms_norm_bwd_dwdb_api.py
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c _rms_norm_bwd_dwdb_performance.json --task accuracy -p _rms_norm_bwd_dwdb_api.py
 ```
 
 注：如需保存精度对比数据，需要在命令后加 `--save_data profile`。
@@ -106,7 +106,7 @@ atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端�
 ### 3.3 性能对比
 
 ```bash
-atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c all__rms_norm_bwd_dwdb.json --task performance_device -p _rms_norm_bwd_dwdb_api.py
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c _rms_norm_bwd_dwdb_performance.json --task performance_device -p _rms_norm_bwd_dwdb_api.py
 ```
 
 注：如需保存性能对比数据，需要在命令后加 `--save_data profile`。

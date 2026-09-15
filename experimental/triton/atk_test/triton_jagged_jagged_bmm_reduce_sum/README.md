@@ -4,7 +4,7 @@
 
 `triton_jagged_jagged_bmm_reduce_sum` 算子源自 NVIDIA recsys-examples 中的 Triton jagged kernel：
 
-<https://github.com/NVIDIA/recsys-examples/blob/v25.05/examples/hstu/ops/triton_ops/triton_jagged.py>
+<https://github.com/NVIDIA/recsys-examples/blob/a247bd4baf4dc74c3e19b4f2ed1fd1b62eb75586/examples/hstu/ops/triton_ops/triton_jagged.py>
 
 ## 算子功能
 
@@ -100,14 +100,6 @@ _jagged_jagged_bmm_reduce_sum[grid](
 )
 ```
 
-## GPU 与 NPU 实现
-
-- GPU API 使用固定配置 `BLOCK_M=64`、`BLOCK_N=64`、`BLOCK_K=32`。
-- NPU kernel 使用 `@triton.autotune`，在 `BLOCK_M/BLOCK_N={64,128}`、`BLOCK_K={32,64}` 的 8 种组合中选择配置。
-- NPU autotune key 为 `M`、`N` 和 `AUTOTUNE_MAX_SEQ_LEN`。
-- 两端 API 使用相同算法确定性重建 offsets，确保每段至少包含一个 token。
-- ATK CPU golden 可能将 fp32 输入提升为 fp64；API 会在启动 kernel 前转换回 fp32，因为 `tl.dot` 不支持 fp64。
-
 ## 关键约束
 
 - 满足 `L >= B >= 1`，每个 batch 至少包含一个 token。
@@ -166,7 +158,7 @@ atk server --devices 0 --plugin_path /path/to/api文件所在文件夹
 ```bash
 atk node --backend npu --devices 0 \
     node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 \
-    task -c all_triton_jagged_jagged_bmm_reduce_sum.json --task accuracy \
+    task -c triton_jagged_jagged_bmm_reduce_sum_performance.json --task accuracy \
     -p triton_jagged_jagged_bmm_reduce_sum_api.py
 ```
 

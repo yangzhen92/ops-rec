@@ -230,6 +230,8 @@ class LnMulDropoutBwdDxDuApi(BaseApi):
         self._stride_y = stride_y
 
     def __call__(self, input_data: InputDataset, with_output: bool = False):
+        _synchronize(self._device)
+
         _ln_mul_dropout_bwd_dx_du[(self._tile_num,)](
             self._dx,
             self._du,

@@ -1,4 +1,3 @@
-# generate_jagged_dense_flash_attention_bwd_dv_db_dq_kernel.py
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -99,13 +98,13 @@ class JaggedDenseFlashAttentionBwdDvDbDqGenerator(CaseGenerator):
                 rv = max_seq_len.range_values
                 # 如果 range_values 是一个列表，取第一个元素作为最小值
                 if isinstance(rv, list):
-                    min_val = rv[0] if isinstance(rv[0], (int, float)) else rv
+                    min_val = rv[0] if isinstance(rv[0], (int, float)) else None
                 else:
-                    min_val = rv
+                    min_val = rv if isinstance(rv, (int, float)) else None
 
                 # 如果 max_seq_len < T，则调整为 T
                 if isinstance(min_val, (int, float)) and min_val < T:
-                    if isinstance(rv, list) and len(rv) > 1:
+                    if isinstance(rv, list) and len(rv) > 1 and isinstance(rv[1], (int, float)):
                         max_seq_len.range_values = [T, rv[1]]
                     else:
                         max_seq_len.range_values = T

@@ -16,7 +16,6 @@
 #
 #   W: [D] layernorm weight
 #   B: [D] layernorm bias
-#   eps: float, dropout_ratio: float, TRAINING: bool, CONCAT_UX: bool
 name: triton_ln_mul_dropout_bwd_dx_du
 api: pytorch
 version: v2.1

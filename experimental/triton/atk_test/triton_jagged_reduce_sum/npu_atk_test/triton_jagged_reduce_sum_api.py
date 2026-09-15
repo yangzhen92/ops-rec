@@ -91,7 +91,6 @@ def _build_offsets(batch_size: int, total_length: int, d: int, device: str) -> t
     return torch.tensor(offsets, device=device, dtype=torch.int64)
 
 
-@register("jagged_reduce_sum")
 @register("triton_jagged_reduce_sum")
 class TritonJaggedReduceSumApi(BaseApi):
     """jagged_reduce_sum 的 Autotune API 封装。"""
@@ -120,7 +119,8 @@ class TritonJaggedReduceSumApi(BaseApi):
             raise ValueError("Generator must enforce (L + B) * D <= 2^24")
 
         device = _get_device()
-        # 原始 offsets 的随机值不参与执行，只使用其长度 B+1。由 shape 重建能保证两端一致。
+        # ATK generator can coordinate tensor shapes but cannot populate prefix-sum data.
+        # seq_offsets is therefore a B+1 shape carrier; execution uses deterministic valid offsets.
         self._jagged = jagged_input.to(device).contiguous()
         self._seq_offsets = _build_offsets(batch_size, total_length, d, device)
         self._out = torch.empty((batch_size, d), device=device, dtype=self._jagged.dtype)
@@ -136,7 +136,6 @@ class TritonJaggedReduceSumApi(BaseApi):
 
     def __call__(self, input_data: InputDataset, with_output: bool = False):
         # 性能计时路径中不再构造数据或计算元数据，只有同步和 kernel launch。
-        _synchronize(self._device)
         jagged_reduce_sum[self._grid](
             seq_offsets=self._seq_offsets,
             Jagged=self._jagged,

@@ -4,7 +4,7 @@
 
 `jagged_reduce_sum` 算子源自 Meta generative-recommenders：
 
-<https://github.com/meta-recsys/generative-recommenders/blob/main/generative_recommenders/ops/triton/triton_jagged.py>
+<https://github.com/meta-recsys/generative-recommenders/blob/4a33ba4405ebf85599acae40527e6ffb964292f7/generative_recommenders/ops/triton/triton_jagged.py>
 
 ## 功能说明
 
@@ -38,7 +38,9 @@ Out[b, d] = sum(Jagged[n, d], n=start..end-1)
 - `seq_offsets` 必须是一维 `int64` tensor，长度至少为 `2`。
 - 合法 offsets 满足首元素为 `0`、末元素为 `L`，并且单调不减。
 - `D > 0`，允许某些分段长度为 `0`。
-- API 根据输入 shape 确定性重建 offsets，保证 NPU 与 GPU 使用相同分段。
+- ATK generator 只能联动修正 tensor shape，不能写入前缀和数据；因此测试中的
+  `seq_offsets` 仅用其长度表示 `B + 1`，API 会根据 `L`、`D` 和 `B` 确定性重建合法
+  offsets，保证 NPU 与 GPU 使用相同分段。传入的随机 offsets 数值不会参与 kernel。
 - generator 将 `D` 映射到预设候选值，并限制 `(L + B) * D <= 2^24`。
 
 ## Kernel 实现
@@ -75,7 +77,7 @@ experimental/triton/atk_test/triton_jagged_reduce_sum/
 
 ## 调用示例
 
-下面示例直接调用 GPU 端 kernel；NPU 端通常通过 API 使用 autotune 版本。
+下面示例直接调用 NPU 端 autotune kernel。
 
 ```python
 import torch
@@ -83,15 +85,14 @@ import triton
 
 from triton_jagged_reduce_sum_kernel import jagged_reduce_sum
 
-device = "cuda"
+device = "npu"
 jagged = torch.randn((9, 64), device=device, dtype=torch.float32)
 seq_offsets = torch.tensor([0, 2, 2, 6, 9], device=device, dtype=torch.int64)
 
 batch_size = seq_offsets.numel() - 1
 d = jagged.shape[1]
 out = torch.empty((batch_size, d), device=device, dtype=jagged.dtype)
-block_d = triton.next_power_of_2(d) if d < 64 else 64
-grid = (batch_size, triton.cdiv(d, block_d))
+grid = lambda meta: (batch_size, triton.cdiv(d, meta["BLOCK_D"]))
 
 jagged_reduce_sum[grid](
     seq_offsets=seq_offsets,
@@ -100,7 +101,6 @@ jagged_reduce_sum[grid](
     D=d,
     stride_jn=jagged.stride(0),
     stride_ob=out.stride(0),
-    BLOCK_D=block_d,
 )
 print(out.shape)
 ```
@@ -130,7 +130,7 @@ atk server --devices 0 --plugin_path /path/to/gpu_atk_test
 ### 3. NPU 端执行精度对比
 
 ```bash
-atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c all_triton_jagged_reduce_sum.json --task accuracy -p triton_jagged_reduce_sum_api.py
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c triton_jagged_reduce_sum_performance.json --task accuracy -p triton_jagged_reduce_sum_api.py
 ```
 
 该命令在本地 NPU 和指定的远端 GPU 上执行相同用例，并比较 `Out` 的数值结果。需要保存

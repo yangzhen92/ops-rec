@@ -48,8 +48,12 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
     tiling.set_nBlocks(numBlocks);
     tiling.set_maxBlocks(maxBlocks);
 
-    // 使用多核执行
-    int grid = numBlocks >= MAX_NUM_BLOCKS ? MAX_NUM_BLOCKS : numBlocks;
+    // 工作按输出元素区间划分，核数与行数无关，直接用满 AIV。
+    // gridDim 硬件上限 65535，AIV 核数远小于该值，此处仅作防御性钳制。
+    auto ascendPlatform = platform_ascendc::PlatformAscendC(context->GetPlatformInfo());
+    int64_t grid = static_cast<int64_t>(ascendPlatform.GetCoreNumAiv());
+    grid = grid < 1 ? 1 : grid;
+    grid = grid > MAX_NUM_BLOCKS ? MAX_NUM_BLOCKS : grid;
 
     context->SetBlockDim(grid);
 

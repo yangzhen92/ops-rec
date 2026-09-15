@@ -1,10 +1,10 @@
-# triton_ln_mul_dropout_bwd_dx_du
+# _ln_mul_dropout_bwd_dx_du
 
 ## 来源
 
 `_ln_mul_dropout_bwd_dx_du` 算子源自 NVIDIA recsys-examples：
 
-<https://github.com/NVIDIA/recsys-examples/blob/main/examples/hstu/ops/triton_ops/triton_norm_mul_dropout.py>
+<https://github.com/NVIDIA/recsys-examples/blob/a247bd4baf4dc74c3e19b4f2ed1fd1b62eb75586/examples/hstu/ops/triton_ops/triton_norm_mul_dropout.py>
 
 ## 功能说明
 
@@ -46,7 +46,7 @@ kernel 还会生成 partial `DW/DB`，供 `_ln_mul_dropout_bwd_dwdb` 后续规�
 ## 目录结构
 
 ```text
-experimental/triton/atk_test/triton_ln_mul_dropout_bwd_dx_du/
+experimental/triton/atk_test/_ln_mul_dropout_bwd_dx_du/
 ├── README.md
 ├── gpu_atk_test/
 │   ├── triton_ln_mul_dropout_bwd_dx_du_kernel.py
@@ -68,14 +68,29 @@ experimental/triton/atk_test/triton_ln_mul_dropout_bwd_dx_du/
 ## 调用示例
 
 ```python
-from triton_ln_mul_dropout_bwd_dx_du_api import LnMulDropoutBwdDxDuApi
+import torch
 
-api = LnMulDropoutBwdDxDuApi()
-api.init_by_input_data(input_data)
-dx, du = api()
+from triton_ln_mul_dropout_bwd_dx_du_kernel import _ln_mul_dropout_bwd_dx_du
+
+n, d = 128, 1024
+x = torch.randn((n, d), device="cuda", dtype=torch.float16)
+u = torch.randn_like(x)
+dy = torch.randn_like(x)
+dx, du = torch.empty_like(x), torch.empty_like(u)
+dw = torch.empty((32, d), device="cuda", dtype=torch.float32)
+db = torch.empty_like(dw)
+w, b = torch.ones((d,), device="cuda"), torch.zeros((d,), device="cuda")
+mean = x.float().mean(dim=1)
+rstd = torch.rsqrt(x.float().var(dim=1, unbiased=False) + 1e-5)
+
+_ln_mul_dropout_bwd_dx_du[(32,)](
+    dx, du, dy, dw, db, x, u, x, w, b, mean, rstd,
+    dx.stride(0), du.stride(0), 1, dy.stride(0), x.stride(0),
+    u.stride(0), 1, x.stride(0), d, 1e-5, 0, 0.0,
+    N=n, NUM_U_SLICES=1, UD=d, BLOCK_D=1024,
+    TRAINING=False, CONCAT_UX=False, COMPUTE_Y=False, num_warps=4,
+)
 ```
-
-`input_data` 由 ATK 构造。直接使用 API 可复用与测试一致的均值、方差和启动参数准备逻辑。
 
 ## ATK 测试
 
@@ -99,7 +114,7 @@ atk case -f triton_ln_mul_dropout_bwd_dx_du.yaml -p generate_triton_ln_mul_dropo
 ### 3. NPU 端执行精度对比
 
 ```bash
-atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c all_triton_ln_mul_dropout_bwd_dx_du.json --task accuracy -p triton_ln_mul_dropout_bwd_dx_du_api.py
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c triton_ln_mul_dropout_bwd_dx_du_performance.json --task accuracy -p triton_ln_mul_dropout_bwd_dx_du_api.py
 ```
 
 该命令执行 NPU 与远端 GPU 实现并比较 `DX/DU`，用于发现数值精度差异。

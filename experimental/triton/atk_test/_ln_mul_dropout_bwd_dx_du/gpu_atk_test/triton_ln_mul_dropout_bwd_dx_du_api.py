@@ -45,10 +45,13 @@ def _synchronize(device: str) -> None:
 
 def _compute_tile_num(n: int, device: str) -> int:
     if device == "npu":
-        return max(1, min(64 * 64, n // 4))
+        properties = triton.runtime.driver.active.utils.get_device_properties(torch.npu.current_device())
+        compute_units = properties.get("num_vectorcore")
     else:
-        sms = torch.cuda.get_device_properties(device).multi_processor_count
-        return max(1, min(sms * 64, n // 4))
+        compute_units = torch.cuda.get_device_properties(torch.cuda.current_device()).multi_processor_count
+    if not isinstance(compute_units, int) or compute_units <= 0:
+        raise RuntimeError(f"Unable to determine compute unit count for {device}")
+    return max(1, min(compute_units * 64, n // 4))
 
 
 def _compute_block_d(d: int, dtype: torch.dtype) -> int:
@@ -64,7 +67,6 @@ def _compute_num_warps(block_d: int) -> int:
 
 
 @register("triton_ln_mul_dropout_bwd_dx_du")
-@register("_ln_mul_dropout_bwd_dx_du")
 class LnMulDropoutBwdDxDuApi(BaseApi):
     def init_by_input_data(self, input_data: InputDataset):
         x_input = input_data.kwargs.get("X")
@@ -91,10 +93,18 @@ class LnMulDropoutBwdDxDuApi(BaseApi):
 
         if x_input.ndim != 2:
             raise ValueError(f"Expected X to be 2D, got {x_input.ndim}D")
+        if u_input.ndim != 2:
+            raise ValueError(f"Expected U to be 2D, got {u_input.ndim}D")
+        if dy_input.ndim != 2:
+            raise ValueError(f"Expected DY to be 2D, got {dy_input.ndim}D")
         if x_input.shape != u_input.shape:
             raise ValueError(f"X shape {x_input.shape} must match U shape {u_input.shape}")
 
         n, d = x_input.shape
+        if d > 4096:
+            raise ValueError(f"Expected feature dimension D <= 4096, got {d}")
+        if not 0.0 <= dropout_ratio < 1.0:
+            raise ValueError(f"dropout_ratio must be in [0, 1), got {dropout_ratio}")
 
         if dy_input.shape[0] != n:
             raise ValueError(f"DY rows {dy_input.shape[0]} != X rows {n}")
@@ -106,45 +116,46 @@ class LnMulDropoutBwdDxDuApi(BaseApi):
                 raise ValueError(f"DY dim {dy_input.shape[1]} != X dim {d}")
 
         if w_input is not None:
+            if not isinstance(w_input, torch.Tensor):
+                raise ValueError("W must be a tensor when provided")
             w = w_input
-            if w.dim() != 1 or w.numel() != d:
-                raise ValueError(f"W must be 1D with {d} elements")
+            if w.shape != (d,):
+                raise ValueError(f"W shape must be ({d},), got {tuple(w.shape)}")
         else:
             w = torch.ones(d, dtype=x_input.dtype, device=device)
 
         if b_input is not None:
+            if not isinstance(b_input, torch.Tensor):
+                raise ValueError("B must be a tensor when provided")
             b = b_input
-            if b.dim() != 1 or b.numel() != d:
-                raise ValueError(f"B must be 1D with {d} elements")
+            if b.shape != (d,):
+                raise ValueError(f"B shape must be ({d},), got {tuple(b.shape)}")
         else:
             b = torch.zeros(d, dtype=x_input.dtype, device=device)
 
-        x_cpu = x_input.cpu() if x_input.device.type != "cpu" else x_input
+        x_cpu = x_input.detach().cpu().float()
 
         if mean_input is not None:
+            if not isinstance(mean_input, torch.Tensor):
+                raise ValueError("Mean must be a tensor when provided")
             mean = mean_input
-            if mean.numel() != n:
-                raise ValueError(f"Mean numel {mean.numel()} != N {n}")
+            if mean.shape != (n,):
+                raise ValueError(f"Mean shape must be ({n},), got {tuple(mean.shape)}")
         else:
             mean = x_cpu.mean(dim=1, keepdim=False)
 
         if rstd_input is not None:
+            if not isinstance(rstd_input, torch.Tensor):
+                raise ValueError("Rstd must be a tensor when provided")
             rstd = rstd_input
-            if rstd.numel() != n:
-                raise ValueError(f"Rstd numel {rstd.numel()} != N {n}")
+            if rstd.shape != (n,):
+                raise ValueError(f"Rstd shape must be ({n},), got {tuple(rstd.shape)}")
         else:
             var = x_cpu.var(dim=1, unbiased=False, keepdim=False)
             rstd = 1.0 / torch.sqrt(var + eps)
 
-        u_is_3d = u_input.dim() == 3
-        if u_is_3d:
-            num_u_slices = u_input.size(1)
-            ud = u_input.size(-1)
-            if ud != d:
-                raise ValueError(f"3D U: last dim {ud} != D {d}")
-        else:
-            num_u_slices = 1
-            ud = d
+        num_u_slices = 1
+        ud = d
 
         x = x_input.to(torch.float32).contiguous() if x_input.dtype == torch.float64 else x_input.contiguous()
         u = u_input.to(torch.float32).contiguous() if u_input.dtype == torch.float64 else u_input.contiguous()
@@ -166,7 +177,6 @@ class LnMulDropoutBwdDxDuApi(BaseApi):
         _dweight = torch.empty((tile_num, d), dtype=torch.float32, device=device)
         _dbias = torch.empty((tile_num, d), dtype=torch.float32, device=device)
 
-        y = None
         if concat_ux:
             y = torch.empty((n, 3 * d), dtype=x.dtype, device=device)
         else:
@@ -177,12 +187,12 @@ class LnMulDropoutBwdDxDuApi(BaseApi):
 
         stride_dx = dx.stride(0)
         stride_du0 = du.stride(0)
-        stride_du1 = du.stride(1) if u_is_3d else 1
+        stride_du1 = 1
         stride_dy = dy.stride(0)
         stride_x = x.stride(0)
         stride_u0 = u.stride(0)
-        stride_u1 = u.stride(1) if u_is_3d else 1
-        stride_y = y.stride(0) if y is not None else 0
+        stride_u1 = 1
+        stride_y = y.stride(0)
 
         self._device = device
         self._dx = dx
@@ -207,7 +217,6 @@ class LnMulDropoutBwdDxDuApi(BaseApi):
         self._block_d = block_d
         self._num_warps = num_warps
         self._tile_num = tile_num
-        self._u_is_3d = u_is_3d
         self._training = training
         self._concat_ux = concat_ux
         self._compute_y = compute_y
@@ -221,7 +230,6 @@ class LnMulDropoutBwdDxDuApi(BaseApi):
         self._stride_y = stride_y
 
     def __call__(self, input_data: InputDataset, with_output: bool = False):
-        _synchronize(self._device)
         _ln_mul_dropout_bwd_dx_du[(self._tile_num,)](
             self._dx,
             self._du,

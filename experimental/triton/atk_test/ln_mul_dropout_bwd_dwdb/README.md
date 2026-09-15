@@ -4,7 +4,7 @@
 
 `_ln_mul_dropout_bwd_dwdb` 算子源自 NVIDIA recsys-examples：
 
-<https://github.com/NVIDIA/recsys-examples/blob/main/examples/hstu/ops/triton_ops/triton_norm_mul_dropout.py>
+<https://github.com/NVIDIA/recsys-examples/blob/a247bd4baf4dc74c3e19b4f2ed1fd1b62eb75586/examples/hstu/ops/triton_ops/triton_norm_mul_dropout.py>
 
 ## 功能说明
 
@@ -38,7 +38,7 @@ FINAL_DB[d] = sum(DB[n, d], n=0..N-1)
 ## 目录结构
 
 ```text
-experimental/triton/atk_test/triton_ln_mul_dropout_bwd_dwdb/
+experimental/triton/atk_test/ln_mul_dropout_bwd_dwdb/
 ├── README.md
 ├── gpu_atk_test/
 │   ├── triton_ln_mul_dropout_bwd_dwdb_kernel.py
@@ -60,14 +60,23 @@ experimental/triton/atk_test/triton_ln_mul_dropout_bwd_dwdb/
 ## 调用示例
 
 ```python
-from triton_ln_mul_dropout_bwd_dwdb_api import LnMulDropoutBwdDwdbApi
+import torch
+import triton
 
-api = LnMulDropoutBwdDwdbApi()
-api.init_by_input_data(input_data)
-final_dw, final_db = api()
+from triton_ln_mul_dropout_bwd_dwdb_kernel import _ln_mul_dropout_bwd_dwdb
+
+n, d = 128, 1024
+dw = torch.randn((n, d), device="cuda", dtype=torch.float16)
+db = torch.randn_like(dw)
+final_dw = torch.empty((d,), device="cuda", dtype=dw.dtype)
+final_db = torch.empty_like(final_dw)
+block_n, block_d = 64, 32
+grid = (triton.cdiv(d, block_d),)
+
+_ln_mul_dropout_bwd_dwdb[grid](
+    dw, db, final_dw, final_db, n, d, BLOCK_N=block_n, BLOCK_D=block_d
+)
 ```
-
-`input_data` 由 ATK 生成并传入；API 会以 partial tensor 的实际 shape 确定 `N` 和 `D`。
 
 ## ATK 测试
 

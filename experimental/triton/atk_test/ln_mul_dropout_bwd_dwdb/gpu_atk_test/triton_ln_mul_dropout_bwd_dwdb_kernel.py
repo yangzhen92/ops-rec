@@ -28,15 +28,6 @@ import triton
 import triton.language as tl
 
 
-@triton.autotune(
-    configs=[
-        triton.Config({"BLOCK_N": 32}),
-        triton.Config({"BLOCK_N": 64}),
-        triton.Config({"BLOCK_N": 128}),
-        triton.Config({"BLOCK_N": 256}),
-    ],
-    key=["D"],
-)
 @triton.jit
 def _ln_mul_dropout_bwd_dwdb(
     DW,
@@ -55,7 +46,7 @@ def _ln_mul_dropout_bwd_dwdb(
 
     for i in range(0, N, BLOCK_N):
         rows = i + tl.arange(0, BLOCK_N)
-        # pyre-fixme[16]: `int` has no attribute `__getitem__`.
+        # Pyre models tl.arange as int and reports a false positive for Triton broadcasting.
         mask = (rows[:, None] < N) & (cols[None, :] < D)
         offs = rows[:, None] * D + cols[None, :]
         dw += tl.load(DW + offs, mask=mask, other=0.0)

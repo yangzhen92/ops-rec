@@ -100,7 +100,7 @@ atk case -f triton_ln_mul_dropout_bwd_dwdb.yaml -p generate_triton_ln_mul_dropou
 ### 3. NPU 端执行精度对比
 
 ```bash
-atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c all_triton_ln_mul_dropout_bwd_dwdb.json --task accuracy -p triton_ln_mul_dropout_bwd_dwdb_api.py
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c triton_ln_mul_dropout_bwd_dwdb_performance.json --task accuracy -p triton_ln_mul_dropout_bwd_dwdb_api.py
 ```
 
 该命令在 NPU 本地和远端 GPU 分别执行规约，并比较最终 `DW/DB` 输出。

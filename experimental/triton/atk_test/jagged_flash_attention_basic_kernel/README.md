@@ -94,7 +94,7 @@ atk server --devices 0 --plugin_path /path/to/api文件所在文件夹
 
 ```bash
 atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 \
-    task -c all_jagged_flash_attention_basic_kernel.json --task accuracy \
+    task -c jagged_flash_attention_basic_kernel_performance.json --task accuracy \
     -p jagged_flash_attention_basic_kernel_api.py
 ```
 

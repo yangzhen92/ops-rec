@@ -4,7 +4,7 @@
 
 `triton_dense_to_jagged` 算子源自 FBGEMM 代码仓：
 
-<https://github.com/pytorch/FBGEMM/blob/v1.5.0-release/fbgemm_gpu/fbgemm_gpu/triton/jagged/triton_jagged_tensor_ops.py>
+<https://github.com/pytorch/FBGEMM/blob/c363b1b1077680d198235233f34af253f880d1fe/fbgemm_gpu/fbgemm_gpu/triton/jagged/triton_jagged_tensor_ops.py#L628>
 
 ## 算子功能
 

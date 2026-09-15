@@ -45,7 +45,6 @@ def _synchronize(device: str) -> None:
 
 
 @register("triton_weighted_rms_norm_fwd")
-@register("_weighted_rms_norm_fwd")
 class WeightedRmsNormFwdApi(BaseApi):
     """_weighted_rms_norm_fwd kernel 的 API 封装。"""
 
@@ -66,12 +65,20 @@ class WeightedRmsNormFwdApi(BaseApi):
             raise ValueError(f"Expected W to be 1D, got {w_input.ndim}D")
         if x_input.dtype not in _SUPPORTED_DTYPES:
             raise ValueError(f"Unsupported dtype: {x_input.dtype}")
-        if x_input.shape[0] == 0:
-            raise ValueError("X must have non-zero row count")
+        if 0 in x_input.shape:
+            raise ValueError("X dimensions must be non-zero")
 
         n, d = x_input.shape
         if w_input.shape[0] != d:
             raise ValueError(f"W first dim {w_input.shape[0]} != X second dim {d}")
+        if y_input.shape != x_input.shape:
+            raise ValueError(f"Y shape {tuple(y_input.shape)} must match X shape {tuple(x_input.shape)}")
+        if rstd_input.shape != (n,):
+            raise ValueError(f"Rstd shape must be ({n},), got {tuple(rstd_input.shape)}")
+        if w_input.dtype != x_input.dtype or y_input.dtype != x_input.dtype:
+            raise ValueError("X, W, and Y must use the same dtype")
+        if rstd_input.dtype != torch.float32:
+            raise ValueError(f"Rstd must use fp32, got {rstd_input.dtype}")
 
         device = _get_device()
         self._device = device
@@ -86,6 +93,8 @@ class WeightedRmsNormFwdApi(BaseApi):
             w = w.to(dtype)
 
         max_fused_size = 65536 // element_size
+        if d > max_fused_size:
+            raise ValueError(f"D={d} exceeds the 64 KB row limit for {dtype}")
         block_d = min(max_fused_size, triton.next_power_of_2(d))
         num_warps = min(max(block_d // 256, 1), 8)
 
@@ -93,6 +102,8 @@ class WeightedRmsNormFwdApi(BaseApi):
         rstd = torch.empty((n,), dtype=torch.float32, device=device)
         grid = (n,)
         eps = float(eps_input) if eps_input is not None else 1e-5
+        if eps <= 0:
+            raise ValueError(f"eps must be greater than 0, got {eps}")
         self._x = x
         self._w = w
         self._y = y

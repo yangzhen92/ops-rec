@@ -4,7 +4,7 @@
 
 `triton_weighted_rms_norm_fwd` 算子源自 NVIDIA recsys-examples：
 
-<https://github.com/NVIDIA/recsys-examples/blob/main/examples/hstu/ops/triton_ops/triton_layer_norm.py>
+<https://github.com/NVIDIA/recsys-examples/blob/a247bd4baf4dc74c3e19b4f2ed1fd1b62eb75586/examples/hstu/ops/triton_ops/triton_layer_norm.py>
 
 ## 功能说明
 
@@ -64,7 +64,6 @@ experimental/triton/atk_test/triton_weighted_rms_norm_fwd/
 
 ```python
 import torch
-import triton
 
 from triton_weighted_rms_norm_fwd_kernel import _weighted_rms_norm_fwd
 
@@ -74,7 +73,6 @@ w = torch.randn((d,), device="npu", dtype=x.dtype)
 y = torch.empty_like(x)
 rstd = torch.empty((n,), device="npu", dtype=torch.float32)
 
-block_d = triton.next_power_of_2(d)
 _weighted_rms_norm_fwd[(n,)](
     x,
     y,
@@ -84,7 +82,6 @@ _weighted_rms_norm_fwd[(n,)](
     1e-5,
     x.stride(0),
     y.stride(0),
-    BLOCK_D=block_d,
 )
 ```
 

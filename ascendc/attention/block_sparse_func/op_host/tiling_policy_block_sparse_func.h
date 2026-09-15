@@ -23,6 +23,7 @@ namespace optiling {
 
 BEGIN_TILING_DATA_DEF(DualExclusiveScanTilingData)
 TILING_DATA_FIELD_DEF(int32_t, totalLength);
+TILING_DATA_FIELD_DEF(int32_t, coreNum);
 END_TILING_DATA_DEF;
 
 BEGIN_TILING_DATA_DEF(ExtractCompactTilingData)

@@ -31,10 +31,25 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
 
     int64_t totalLength = maskCntShape->GetStorageShape().GetShapeSize();
 
+    auto ascendPlatform = platform_ascendc::PlatformAscendC(context->GetPlatformInfo());
+    int64_t maxAivCores = static_cast<int64_t>(ascendPlatform.GetCoreNumAiv());
+    constexpr int64_t ELEMS_PER_CORE = 8192;
+    int64_t coreNum = (totalLength + ELEMS_PER_CORE - 1) / ELEMS_PER_CORE;
+    coreNum = coreNum > maxAivCores ? maxAivCores : coreNum;
+    coreNum = coreNum < 1 ? 1 : coreNum;
+
     // 设置 tiling 数据
     DualExclusiveScanTilingData tiling;
     tiling.set_totalLength(totalLength);
-    context->SetBlockDim(1);  // 单线程执行
+    tiling.set_coreNum(coreNum);
+
+    // 多核并发执行：各核先算本地总和，经 workspace 交换 + SyncAll 同步后叠加核间前缀
+    context->SetBlockDim(coreNum);
+
+    // workspace 布局（int32 计）：[0, coreNum+1) 存各核 mask 总和，[coreNum+1, 2*coreNum+2) 存 full 总和
+    size_t* currentWorkspace = context->GetWorkspaceSizes(1);
+    size_t systemWorkspaceSize = ascendPlatform.GetLibApiWorkSpaceSize();
+    currentWorkspace[0] = static_cast<size_t>(2 * (coreNum + 1)) * sizeof(int32_t) + systemWorkspaceSize;
 
     OPS_LOG_E_IF_NULL("raw tilingData", context->GetRawTilingData(), return ge::GRAPH_FAILED);
     tiling.SaveToBuffer(context->GetRawTilingData()->GetData(), context->GetRawTilingData()->GetCapacity());

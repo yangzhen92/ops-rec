@@ -143,7 +143,7 @@ atk server --devices 0 --plugin_path /path/to/gpu_atk_test
 
 ```bash
 atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端监听端口} --devices 0 \
-    task -c all__fbgemm_grouped_gemm_fp8_rowwise.json --task accuracy \
+    task -c _fbgemm_grouped_gemm_fp8_rowwise_performance.json --task accuracy \
     -p _fbgemm_grouped_gemm_fp8_rowwise_api.py
 ```
 

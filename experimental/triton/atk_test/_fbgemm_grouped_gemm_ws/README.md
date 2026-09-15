@@ -92,7 +92,7 @@ atk case -f _fbgemm_grouped_gemm_ws.yaml -p generate_fbgemm_grouped_gemm_ws.py
 ### 3.2 精度对比
 
 ```bash
-atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端监听端口} --devices 0 task -c all__fbgemm_grouped_gemm_ws.json --task accuracy -p _fbgemm_grouped_gemm_ws_api.py
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端监听端口} --devices 0 task -c _fbgemm_grouped_gemm_ws_performance.json --task accuracy -p _fbgemm_grouped_gemm_ws_api.py
 ```
 
 注：如需保存精度对比数据，需要在命令后加 `--save_data profile`。

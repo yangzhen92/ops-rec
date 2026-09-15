@@ -106,6 +106,8 @@ class LnMulDropoutBwdDwdbApi(BaseApi):
         self._grid = (triton.cdiv(d, self._block_d),)
 
     def __call__(self, input_data: InputDataset, with_output: bool = False):
+        _synchronize(self._device)
+
         _ln_mul_dropout_bwd_dwdb[self._grid](
             DW=self._dw,
             DB=self._db,

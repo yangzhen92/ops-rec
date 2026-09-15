@@ -111,6 +111,8 @@ class LnMulDropoutBwdDwdbApi(BaseApi):
         self._grid = grid
 
     def __call__(self, input_data: InputDataset, with_output: bool = False):
+        _synchronize(self._device)
+
         _ln_mul_dropout_bwd_dwdb[self._grid](
             self._dw,
             self._db,

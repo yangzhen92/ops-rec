@@ -13,8 +13,6 @@
 # limitations under the License.
 # ==============================================================================
 
-#
-#
 name: triton_group_norm_mul_dropout_bwd_dx_du
 api: pytorch
 version: v2.1

@@ -28,12 +28,23 @@ import triton
 import triton.language as tl
 
 
+_MAX_FUSED_WORDS = 16384
+
+
 def _group_norm_mul_dropout_bwd_dx_du_prune_configs(configs, named_args, **kwargs):
     d = named_args.get("D")
     if d is None:
         return configs
-    pruned = [c for c in configs if c.kwargs.get("BLOCK_D", 0) >= d]
-    return pruned if pruned else configs
+    block_h = named_args.get("BLOCK_H", 1)
+    covering = [
+        config
+        for config in configs
+        if config.kwargs.get("BLOCK_D", 0) >= d and config.kwargs.get("BLOCK_D", 0) * block_h <= _MAX_FUSED_WORDS
+    ]
+    bounded = [config for config in covering if config.kwargs.get("BLOCK_D", 0) <= 2 * d]
+    if bounded:
+        return bounded
+    return covering[:1] if covering else configs
 
 
 @triton.autotune(

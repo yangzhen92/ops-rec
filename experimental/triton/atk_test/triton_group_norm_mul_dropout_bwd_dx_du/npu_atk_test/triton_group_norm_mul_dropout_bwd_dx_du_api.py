@@ -29,8 +29,8 @@ from triton_group_norm_mul_dropout_bwd_dx_du_kernel import _group_norm_mul_dropo
 _SUPPORTED_DTYPES = {torch.float32, torch.float16, torch.bfloat16}
 
 
-_MAX_FUSED_WORDS = 16384
 _MAX_BLOCK_D = 4096
+_HEAD_CANDIDATES = (32, 16, 8, 4, 2, 1)
 
 
 def _get_device() -> str:
@@ -56,7 +56,6 @@ def _next_pow2(n: int) -> int:
 
 
 @register("triton_group_norm_mul_dropout_bwd_dx_du")
-@register("_group_norm_mul_dropout_bwd_dx_du")
 class TritonGroupNormMulDropoutBwdDxDuApi(BaseApi):
     def init_by_input_data(self, input_data: InputDataset):
         x_input = input_data.kwargs.get("X")
@@ -91,14 +90,7 @@ class TritonGroupNormMulDropoutBwdDxDuApi(BaseApi):
 
         n, inner = x.shape
 
-        _HEAD_CANDIDATES = [1, 2, 4, 8, 16, 32]
-        num_heads = None
-        for candidate in _HEAD_CANDIDATES:
-            if inner % candidate == 0:
-                num_heads = candidate
-                break
-        if num_heads is None:
-            num_heads = 1
+        num_heads = next(candidate for candidate in _HEAD_CANDIDATES if inner % candidate == 0)
         linear_dim = inner // num_heads
         if linear_dim <= 0:
             raise ValueError(f"linear_dim must be positive, got {linear_dim}")
@@ -125,14 +117,12 @@ class TritonGroupNormMulDropoutBwdDxDuApi(BaseApi):
         u_d = _aligned(u)
         dy_d = _aligned(dy)
 
-        if isinstance(w, torch.Tensor) and w.numel() == num_heads:
-            w_d = _aligned(w)
-        else:
-            w_d = torch.ones(num_heads, dtype=dtype)
-        if isinstance(b, torch.Tensor) and b.numel() == num_heads:
-            b_d = _aligned(b)
-        else:
-            b_d = torch.zeros(num_heads, dtype=dtype)
+        if w.numel() != num_heads or b.numel() != num_heads:
+            raise ValueError(
+                f"W/B must each contain num_heads={num_heads} elements, got W={w.numel()} and B={b.numel()}"
+            )
+        w_d = _aligned(w)
+        b_d = _aligned(b)
 
         x_cpu = x_d.cpu()
         if dtype == torch.float32:
@@ -152,16 +142,7 @@ class TritonGroupNormMulDropoutBwdDxDuApi(BaseApi):
                 f"linear_dim {linear_dim} exceeds max supported BLOCK_D {_MAX_BLOCK_D}; "
                 f"this case cannot be executed correctly and should be filtered by generator."
             )
-        block_d = _next_pow2(linear_dim)
         block_h = _next_pow2(num_heads)
-        if block_d * block_h > _MAX_FUSED_WORDS:
-            while block_d > 1 and block_d * block_h > _MAX_FUSED_WORDS:
-                block_d >>= 1
-
-        if block_d < linear_dim:
-            raise ValueError(f"BLOCK_D {block_d} < linear_dim {linear_dim}; cannot cover full feature dim")
-        block_d = min(block_d, _MAX_BLOCK_D)
-        num_warps = min(max(block_d * block_h // 256, 1), 8)
 
         dim = inner
         if dim <= 1024:
@@ -195,9 +176,7 @@ class TritonGroupNormMulDropoutBwdDxDuApi(BaseApi):
         self._n = n
         self._linear_dim = linear_dim
         self._num_heads = num_heads
-        self._block_d = block_d
         self._block_h = block_h
-        self._num_warps = num_warps
         self._group_n = group_n
         self._eps = eps
         self._seed = seed

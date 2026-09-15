@@ -106,7 +106,7 @@ atk case -f _fbgemm_grouped_gemm_fp8_rowwise_ws.yaml \
 
 ```bash
 atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {端口} --devices 0 \
-    task -c all__fbgemm_grouped_gemm_fp8_rowwise_ws.json --task accuracy \
+    task -c _fbgemm_grouped_gemm_fp8_rowwise_ws_performance.json --task accuracy \
     -p _fbgemm_grouped_gemm_fp8_rowwise_ws_api.py
 ```
 

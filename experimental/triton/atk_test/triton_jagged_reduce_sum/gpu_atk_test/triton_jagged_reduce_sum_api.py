@@ -123,6 +123,8 @@ class TritonJaggedReduceSumApi(BaseApi):
 
     def __call__(self, input_data: InputDataset, with_output: bool = False):
         # 性能计时路径中不再构造数据或计算元数据，只有同步和 kernel launch。
+        _synchronize(self._device)
+
         jagged_reduce_sum[self._grid](
             seq_offsets=self._seq_offsets,
             Jagged=self._jagged,

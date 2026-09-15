@@ -15,7 +15,7 @@
 
 | 产品 | 是否支持 |
 | :--- | :------: |
-| Atlas 950 系列产品 | √ |
+| Ascend 950PR&950DT 系列产品 | √ |
 | Atlas A3  训练/推理系列产品 | × |
 | Atlas A2  训练/推理系列产品 | × |
 
@@ -88,7 +88,7 @@ SIMT 内核由 `op_kernel/build_hstu_mask_arbitrary_func_kernel.h` 的 `SimtBuil
 
 | 产品 | 是否支持 |
 | :--- | :------: |
-| Atlas 950 系列产品 | √ |
+| Ascend 950PR&950DT 系列产品 | √ |
 | Atlas A3  训练/推理系列产品 | × |
 | Atlas A2  训练/推理系列产品 | × |
 

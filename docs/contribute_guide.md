@@ -187,7 +187,7 @@ extern "C" __global__ __aicore__ void my_op(GM_ADDR xGm, GM_ADDR yGm,
 
 ### SOC 架构特化代码
 
-如同一算子在 Atlas 950 与 Atlas A2/A3 上实现差异较大，可将特化代码放入子目录：
+如同一算子在 Ascend 950PR&950DT 系列产品 与 Atlas A2/A3 上实现差异较大，可将特化代码放入子目录：
 
 ```text
 op_host/atlas950/<op_name>_tiling.cpp    # 仅 950 SOC 编译

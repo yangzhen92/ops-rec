@@ -28,7 +28,7 @@ ops-rec 是面向大规模推荐场景的高性能算子库，基于昇腾 CANN 
 | --- | --- | --- |
 | `atlas_a2` | Ascend910B* | Atlas A2 训练/推理系列 |
 | `atlas_a3` | Ascend910_93* | Atlas A3 训练/推理系列 |
-| `atlas_950` | Ascend950* | Atlas 950系列 |
+| `atlas_950` | Ascend950* | Ascend 950PR&950DT 系列产品 |
 
 > 运行时 `import ops_rec` 会通过 `acl.get_soc_name()` 自动检测芯片型号，并按 `cmake/soc_ops_config.cmake` 中的白名单加载对应算子实现。不同 SOC 支持的算子集合不同，同一算子在 950 上可能提供 FP8 等额外能力。
 
@@ -38,39 +38,39 @@ ops-rec 是面向大规模推荐场景的高性能算子库，基于昇腾 CANN 
 
 | 算子 | 接口签名 | 功能简介 | 硬件支持 |
 | ---- | -------- | -------- | -------- |
-| [ln_mul](../../ascendc/activation/ln_mul/docs/torch_ln_mul.md) | `ops_rec.ascendc.activation.ln_mul(x, u, gamma, beta)` | 对输入 x 做 LayerNorm 后与 u 相乘，融合归一化与特征缩放 | Atlas A2, Atlas A3, Atlas 950 |
-| [in_linear_silu](../../ascendc/activation/in_linear_silu/in_linear_silu_forward/docs/torch_in_linear_silu.md) | `ops_rec.ascendc.activation.in_linear_silu(x, weight, bias, split_arg_list)` | Linear + Silu 融合后拆分为 User/Value/Query/Key 四个向量（HSTU 注意力前处理），反向内部调用 `in_linear_silu_backward` | Atlas A2, Atlas A3, Atlas 950 |
-| [in_linear_silu_backward](../../ascendc/activation/in_linear_silu/in_linear_silu_backward/docs/torch_in_linear_silu_backward.md) | `ops_rec.ascendc.activation.in_linear_silu_backward(x, weight, bias, user_grad, value_grad, query_grad, key_grad, linear_output, attr_dict)` | in_linear_silu 反向传播，计算 x、weight、bias 的梯度 | Atlas A2, Atlas A3, Atlas 950 |
+| [ln_mul](../../ascendc/activation/ln_mul/docs/torch_ln_mul.md) | `ops_rec.ascendc.activation.ln_mul(x, u, gamma, beta)` | 对输入 x 做 LayerNorm 后与 u 相乘，融合归一化与特征缩放 | Atlas A2, Atlas A3, Ascend 950PR&950DT 系列产品 |
+| [in_linear_silu](../../ascendc/activation/in_linear_silu/in_linear_silu_forward/docs/torch_in_linear_silu.md) | `ops_rec.ascendc.activation.in_linear_silu(x, weight, bias, split_arg_list)` | Linear + Silu 融合后拆分为 User/Value/Query/Key 四个向量（HSTU 注意力前处理），反向内部调用 `in_linear_silu_backward` | Atlas A2, Atlas A3, Ascend 950PR&950DT 系列产品 |
+| [in_linear_silu_backward](../../ascendc/activation/in_linear_silu/in_linear_silu_backward/docs/torch_in_linear_silu_backward.md) | `ops_rec.ascendc.activation.in_linear_silu_backward(x, weight, bias, user_grad, value_grad, query_grad, key_grad, linear_output, attr_dict)` | in_linear_silu 反向传播，计算 x、weight、bias 的梯度 | Atlas A2, Atlas A3, Ascend 950PR&950DT 系列产品 |
 
 ### attention（注意力算子）
 
 | 算子 | 接口签名 | 功能简介 | 硬件支持 |
 | ---- | -------- | -------- | -------- |
-| [hstu_dense](../../ascendc/attention/hstu_v1/hstu_forward_v1/docs/torch_hstu_forward.md) | `ops_rec.ascendc.attention.hstu_dense(q, k, v, mask=None, attn_bias=None, mask_type=0, max_seq_len=0, silu_scale=0.0)` | HSTU 融合注意力前向（dense 格式），支持 GQA 与 dim 不等 | Atlas A2, Atlas A3, Atlas 950 |
-| [hstu_jagged](../../ascendc/attention/hstu_v1/hstu_forward_v1/docs/torch_hstu_forward.md) | `ops_rec.ascendc.attention.hstu_jagged(q, k, v, mask=None, attn_bias=None, mask_type=0, max_seq_len=0, max_seq_len_k=0, silu_scale=0.0, seq_offset=None, seq_offset_k=None, ...)` | HSTU 前向（jagged 格式），支持 equal / delta 双 overload 自动分派 | Atlas A2, Atlas A3, Atlas 950 |
-| [hstu_paged](../../ascendc/attention/hstu_v1/hstu_forward_v1/docs/torch_hstu_forward.md) | `ops_rec.ascendc.attention.hstu_paged(q, k, v, kv_cache=None, ...)` | HSTU 前向（paged 格式，kv_cache 分页），支持增量推理 | Atlas A2, Atlas A3, Atlas 950 |
-| [hstu_dense_backward](../../ascendc/attention/hstu_v1/hstu_backward_v1/docs/torch_hstu_dense_backward.md) | `ops_rec.ascendc.attention.hstu_dense_backward(grad, q, k, v, mask=None, attn_bias=None, mask_type=0, max_seq_len=0, silu_scale=0.0)` | HSTU 反向（dense 格式），计算 q/k/v/attn_bias 梯度 | Atlas A2, Atlas A3, Atlas 950 |
-| [hstu_jagged_backward](../../ascendc/attention/hstu_v1/hstu_backward_v1/docs/torch_hstu_jagged_backward.md) | `ops_rec.ascendc.attention.hstu_jagged_backward(grad, q, k, v, mask=None, attn_bias=None, mask_type=0, max_seq_len_q=0, max_seq_len_k=0, silu_scale=0.0, seq_offset_q=None, seq_offset_k=None, ...)` | HSTU 反向（jagged 格式），支持 equal / delta 双 overload | Atlas A2, Atlas A3, Atlas 950 |
-| [hstu_backward_v2](../../ascendc/attention/hstu_v2/docs/torch_hstu_backward_v2.md) | `ops_rec.ascendc.attention.hstu_backward_v2(grad, q, k, v, max_seqlen_q, max_seqlen_k, seq_offset_q, seq_offset_k, rab=None, ...)` | HSTU V2 反向，统一 jagged 格式，支持窗口掩码（causal / no mask） | Atlas 950 |
-| [disentangle_attention](../../ascendc/attention/disentangle_attention/docs/torch_disentangle_attention.md) | `ops_rec.ascendc.attention.disentangle_attention(query_layer, key_layer, value_layer, pos_key_layer, pos_query_layer, relative_pos, attn_mask, pos_attr_type="c2p\|p2c", score_scale=1.0)` | DeBERTa 解耦注意力，支持 c2p / p2c 与双向三种位置编码模式 | Atlas A2, Atlas A3, Atlas 950 |
-| [create_q2k_block_sparse_from_func](../../ascendc/attention/block_sparse_func/docs/torch_create_q2k_block_sparse_from_func.md) | `ops_rec.ascendc.attention.create_q2k_block_sparse_from_func(func_tensor, q_len, kv_len, q_block_size, kv_block_size, check_q_boundary, debug=False)` | Q2K（正向）块稀疏张量生成，输出 mask/full 块数与块索引表 | Atlas 950 |
-| [create_k2q_block_sparse_from_func](../../ascendc/attention/block_sparse_func/docs/torch_create_k2q_block_sparse_from_func.md) | `ops_rec.ascendc.attention.create_k2q_block_sparse_from_func(func_tensor, q_len, kv_len, q_block_size, kv_block_size, debug=False)` | K2Q（反向/transpose）块稀疏张量生成，内部含 kv-range 优化 | Atlas 950 |
-| [compact_no_sync](../../ascendc/attention/block_sparse_func/docs/torch_compact_no_sync.md) | `ops_rec.ascendc.attention.compact_no_sync(mask_block_cnt, full_block_cnt, block_idx)` | 块索引无同步压缩，输出 CSR 风格 offset 与压缩索引缓冲 | Atlas 950 |
-| [build_hstu_mask_arbitrary_func](../../ascendc/attention/arbitrary_func/docs/torch_build_hstu_mask_arbitrary_func.md) | `ops_rec.ascendc.attention.build_hstu_mask_arbitrary_func(offsets, ctx_lens, tgt_lens, target_group_size, total_seqlen)` | 构造 HSTU 任意函数掩码（af 编码），区分 ctx/history/target | Atlas 950 |
-| [build_sla_mask_arbitrary_func](../../ascendc/attention/arbitrary_func/docs/torch_build_sla_mask_arbitrary_func.md) | `ops_rec.ascendc.attention.build_sla_mask_arbitrary_func(offsets, total_seqlen, sla_k1, sla_k2, contextual_seq_len, num_targets=None)` | 构造 SLA（半局部注意力）任意函数掩码（af 编码） | Atlas 950 |
-| [fa_infer_with_arbitrary_func](../../ascendc/attention/fa_infer_with_arbitrary_func/fa_infer_with_arbitrary_func_forward/docs/torch_fa_infer_with_arbitrary_func.md) | `ops_rec.ascendc.attention.fa_infer_with_arbitrary_func(q, k, v, arbitrary_func, q2k_block_sparse)` | Flash Attention 推理：任意区间掩码 + 块稀疏跳过，高效注意力前向 | Atlas 950 |
+| [hstu_dense](../../ascendc/attention/hstu_v1/hstu_forward_v1/docs/torch_hstu_forward.md) | `ops_rec.ascendc.attention.hstu_dense(q, k, v, mask=None, attn_bias=None, mask_type=0, max_seq_len=0, silu_scale=0.0)` | HSTU 融合注意力前向（dense 格式），支持 GQA 与 dim 不等 | Atlas A2, Atlas A3, Ascend 950PR&950DT 系列产品 |
+| [hstu_jagged](../../ascendc/attention/hstu_v1/hstu_forward_v1/docs/torch_hstu_forward.md) | `ops_rec.ascendc.attention.hstu_jagged(q, k, v, mask=None, attn_bias=None, mask_type=0, max_seq_len=0, max_seq_len_k=0, silu_scale=0.0, seq_offset=None, seq_offset_k=None, ...)` | HSTU 前向（jagged 格式），支持 equal / delta 双 overload 自动分派 | Atlas A2, Atlas A3, Ascend 950PR&950DT 系列产品 |
+| [hstu_paged](../../ascendc/attention/hstu_v1/hstu_forward_v1/docs/torch_hstu_forward.md) | `ops_rec.ascendc.attention.hstu_paged(q, k, v, kv_cache=None, ...)` | HSTU 前向（paged 格式，kv_cache 分页），支持增量推理 | Atlas A2, Atlas A3, Ascend 950PR&950DT 系列产品 |
+| [hstu_dense_backward](../../ascendc/attention/hstu_v1/hstu_backward_v1/docs/torch_hstu_dense_backward.md) | `ops_rec.ascendc.attention.hstu_dense_backward(grad, q, k, v, mask=None, attn_bias=None, mask_type=0, max_seq_len=0, silu_scale=0.0)` | HSTU 反向（dense 格式），计算 q/k/v/attn_bias 梯度 | Atlas A2, Atlas A3, Ascend 950PR&950DT 系列产品 |
+| [hstu_jagged_backward](../../ascendc/attention/hstu_v1/hstu_backward_v1/docs/torch_hstu_jagged_backward.md) | `ops_rec.ascendc.attention.hstu_jagged_backward(grad, q, k, v, mask=None, attn_bias=None, mask_type=0, max_seq_len_q=0, max_seq_len_k=0, silu_scale=0.0, seq_offset_q=None, seq_offset_k=None, ...)` | HSTU 反向（jagged 格式），支持 equal / delta 双 overload | Atlas A2, Atlas A3, Ascend 950PR&950DT 系列产品 |
+| [hstu_backward_v2](../../ascendc/attention/hstu_v2/docs/torch_hstu_backward_v2.md) | `ops_rec.ascendc.attention.hstu_backward_v2(grad, q, k, v, max_seqlen_q, max_seqlen_k, seq_offset_q, seq_offset_k, rab=None, ...)` | HSTU V2 反向，统一 jagged 格式，支持窗口掩码（causal / no mask） | Ascend 950PR&950DT 系列产品 |
+| [disentangle_attention](../../ascendc/attention/disentangle_attention/docs/torch_disentangle_attention.md) | `ops_rec.ascendc.attention.disentangle_attention(query_layer, key_layer, value_layer, pos_key_layer, pos_query_layer, relative_pos, attn_mask, pos_attr_type="c2p\|p2c", score_scale=1.0)` | DeBERTa 解耦注意力，支持 c2p / p2c 与双向三种位置编码模式 | Atlas A2, Atlas A3, Ascend 950PR&950DT 系列产品 |
+| [create_q2k_block_sparse_from_func](../../ascendc/attention/block_sparse_func/docs/torch_create_q2k_block_sparse_from_func.md) | `ops_rec.ascendc.attention.create_q2k_block_sparse_from_func(func_tensor, q_len, kv_len, q_block_size, kv_block_size, check_q_boundary, debug=False)` | Q2K（正向）块稀疏张量生成，输出 mask/full 块数与块索引表 | Ascend 950PR&950DT 系列产品 |
+| [create_k2q_block_sparse_from_func](../../ascendc/attention/block_sparse_func/docs/torch_create_k2q_block_sparse_from_func.md) | `ops_rec.ascendc.attention.create_k2q_block_sparse_from_func(func_tensor, q_len, kv_len, q_block_size, kv_block_size, debug=False)` | K2Q（反向/transpose）块稀疏张量生成，内部含 kv-range 优化 | Ascend 950PR&950DT 系列产品 |
+| [compact_no_sync](../../ascendc/attention/block_sparse_func/docs/torch_compact_no_sync.md) | `ops_rec.ascendc.attention.compact_no_sync(mask_block_cnt, full_block_cnt, block_idx)` | 块索引无同步压缩，输出 CSR 风格 offset 与压缩索引缓冲 | Ascend 950PR&950DT 系列产品 |
+| [build_hstu_mask_arbitrary_func](../../ascendc/attention/arbitrary_func/docs/torch_build_hstu_mask_arbitrary_func.md) | `ops_rec.ascendc.attention.build_hstu_mask_arbitrary_func(offsets, ctx_lens, tgt_lens, target_group_size, total_seqlen)` | 构造 HSTU 任意函数掩码（af 编码），区分 ctx/history/target | Ascend 950PR&950DT 系列产品 |
+| [build_sla_mask_arbitrary_func](../../ascendc/attention/arbitrary_func/docs/torch_build_sla_mask_arbitrary_func.md) | `ops_rec.ascendc.attention.build_sla_mask_arbitrary_func(offsets, total_seqlen, sla_k1, sla_k2, contextual_seq_len, num_targets=None)` | 构造 SLA（半局部注意力）任意函数掩码（af 编码） | Ascend 950PR&950DT 系列产品 |
+| [fa_infer_with_arbitrary_func](../../ascendc/attention/fa_infer_with_arbitrary_func/fa_infer_with_arbitrary_func_forward/docs/torch_fa_infer_with_arbitrary_func.md) | `ops_rec.ascendc.attention.fa_infer_with_arbitrary_func(q, k, v, arbitrary_func, q2k_block_sparse)` | Flash Attention 推理：任意区间掩码 + 块稀疏跳过，高效注意力前向 | Ascend 950PR&950DT 系列产品 |
 
 ### mixing（混合算子）
 
 | 算子 | 接口签名 | 功能简介 | 硬件支持 |
 | ---- | -------- | -------- | -------- |
-| [token_mixing](../../ascendc/mixing/token_mixing/docs/torch_token_mixing.md) | `ops_rec.ascendc.mixing.token_mixing(x, gamma, beta, epsilon=1e-7)` | Token 混合归一化：将张量与其转置相加后做 LayerNorm | Atlas A2, Atlas A3, Atlas 950 |
+| [token_mixing](../../ascendc/mixing/token_mixing/docs/torch_token_mixing.md) | `ops_rec.ascendc.mixing.token_mixing(x, gamma, beta, epsilon=1e-7)` | Token 混合归一化：将张量与其转置相加后做 LayerNorm | Atlas A2, Atlas A3, Ascend 950PR&950DT 系列产品 |
 
 ### sequence（序列算子）
 
 | 算子 | 接口签名 | 功能简介 | 硬件支持 |
 | ---- | -------- | -------- | -------- |
-| [reverse_sequence](../../ascendc/sequence/reverse_sequence/docs/torch_reverse_sequence.md) | `ops_rec.ascendc.sequence.reverse_sequence(input, seq_lengths)` | 按 `seq_lengths` 指定的长度对每个 batch 的有效行进行逆序（其余行保持原值） | Atlas A2, Atlas A3, Atlas 950 |
+| [reverse_sequence](../../ascendc/sequence/reverse_sequence/docs/torch_reverse_sequence.md) | `ops_rec.ascendc.sequence.reverse_sequence(input, seq_lengths)` | 按 `seq_lengths` 指定的长度对每个 batch 的有效行进行逆序（其余行保持原值） | Atlas A2, Atlas A3, Ascend 950PR&950DT 系列产品 |
 
 > **注意**：上表中 `接口签名` 列为算子接口概览，完整的参数列表、类型约束、默认值及返回值说明请进入各算子对应的 docs 页面查看。
 
@@ -87,7 +87,7 @@ ascendc/
 │   ├── hstu_v1/                                   # HSTU V1（dense / jagged / paged 三种布局）
 │   │   ├── hstu_forward_v1/                       # 前向
 │   │   └── hstu_backward_v1/                      # 反向
-│   ├── hstu_v2/                                   # HSTU V2 反向（统一 jagged 格式，仅 Atlas 950）
+│   ├── hstu_v2/                                   # HSTU V2 反向（统一 jagged 格式，仅 Ascend 950PR&950DT 系列产品）
 │   ├── disentangle_attention/                     # 解耦注意力 (DeBERTa)
 │   ├── block_sparse_func/                         # 块稀疏张量生成（FULL/MASK/EMPTY 分类）
 │   ├── arbitrary_func/                            # 任意函数掩码 af 编码（HSTU / SLA）

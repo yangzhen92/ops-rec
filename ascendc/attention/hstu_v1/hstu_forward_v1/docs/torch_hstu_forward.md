@@ -4,7 +4,7 @@
 
 | 产品 | 是否支持 |
 | :--- | :------: |
-| Atlas 950 系列产品 | √ |
+| Ascend 950PR&950DT 系列产品 | √ |
 | Atlas A3  训练/推理系列产品 | √ |
 | Atlas A2  训练/推理系列产品 | √ |
 
@@ -65,7 +65,7 @@ ops_rec.ascendc.attention.hstu_paged(
 
 | 参数名 | 输入/输出 | 参数类型 | 数据类型 | 数据格式 | shape | 说明 |
 |--------|---------|---------|---------|---------|-------|------|
-| q | 输入 | Tensor | FLOAT32/FLOAT16/BFLOAT16（A5 另支持 FP8_E4M3FN） | ND | [B, S, N_q, D_q] 或 [s_b, N_q, D_q] | Query 张量 |
+| q | 输入 | Tensor | FLOAT32/FLOAT16/BFLOAT16（Ascend 950PR&950DT 系列产品 另支持 FP8_E4M3FN） | ND | [B, S, N_q, D_q] 或 [s_b, N_q, D_q] | Query 张量 |
 | k | 输入 | Tensor | 同 q | ND | [B, S, N_k, D_q] 或 [s_b, N_k, D_q] | Key 张量（GQA 时 N_k < N_q） |
 | v | 输入 | Tensor | 同 q | ND | [B, S, N_k, D_v] 或 [s_b, N_k, D_v] | Value 张量 |
 | mask | 输入 | Tensor（可选） | 同 q | ND | [B, N, S, S] | mask_type=3 时必传 |
@@ -80,7 +80,7 @@ ops_rec.ascendc.attention.hstu_paged(
 | target_group_size | 输入 | int | - | - | - | 内置 target mask 分组大小 |
 | alpha | 输入 | float（可选） | - | - | - | Alpha 缩放参数 |
 | deterministic | 输入 | bool | - | - | - | 确定性计算开关 |
-| output | 输出 | Tensor | 同 q（A5 FP8 输入时为 FLOAT16） | ND | [B, S, N_q, D_v] 或 [s_b, N_q, D_v] | 输出张量 |
+| output | 输出 | Tensor | 同 q（Ascend 950PR&950DT 系列产品 FP8 输入时为 FLOAT16） | ND | [B, S, N_q, D_v] 或 [s_b, N_q, D_v] | 输出张量 |
 
 ## 约束说明
 
@@ -93,7 +93,7 @@ ops_rec.ascendc.attention.hstu_paged(
 - v_dim 需为 16 的倍数，范围 [16, 512]
 - mask_type=1（上三角）暂不支持
 - max_seq_len 范围 [1, 20480]
-- FP8（fp8_e4m3fn）仅在 Atlas 950 上支持
+- FP8（fp8_e4m3fn）仅在 Ascend 950PR&950DT 系列产品 上支持
 
 ### torch 扩展层额外校验
 

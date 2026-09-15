@@ -133,7 +133,7 @@ atk case -f _group_norm_mul_dropout_fwd.yaml -p generate_group_norm_mul_dropout_
 ### 3.3 精度对比
 
 ```bash
-atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c all__group_norm_mul_dropout_fwd.json --task accuracy -p _group_norm_mul_dropout_fwd_api.py
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c _group_norm_mul_dropout_fwd_performance.json --task accuracy -p _group_norm_mul_dropout_fwd_api.py
 ```
 
 如需保存精度对比数据，在命令末尾增加 `--save_data profile`。
@@ -141,7 +141,7 @@ atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端�
 ### 3.4 性能对比
 
 ```bash
-atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c all__group_norm_mul_dropout_fwd.json --task performance_device -p _group_norm_mul_dropout_fwd_api.py
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c _group_norm_mul_dropout_fwd_performance.json --task performance_device -p _group_norm_mul_dropout_fwd_api.py
 ```
 
 如需保存性能对比数据，在命令末尾增加 `--save_data profile`。

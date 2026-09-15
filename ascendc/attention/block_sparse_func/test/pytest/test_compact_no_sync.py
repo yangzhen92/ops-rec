@@ -417,6 +417,158 @@ def test_compact_no_sync_max_blocks_one(device, B, H, num_blocks, max_blocks):
 
 
 # ---------------------------------------------------------------------------
+# Multi-core & partition-boundary coverage
+# (paths added by the dual_exclusive_scan / extract_compact rework)
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("device", ["npu:0"])
+@pytest.mark.parametrize(
+    "B,H,num_blocks,max_blocks",
+    [
+        (1, 1, 8192, 4),  # n_flat = 8192: single-core boundary (coreNum == 1)
+        (1, 1, 8193, 4),  # n_flat = 8193: two cores, tail core owns 1 element
+        (1, 2, 8192, 4),  # n_flat = 16384: exactly two cores, even split
+        (2, 4, 7500, 4),  # n_flat = 60000: many cores, uneven tail chunk
+    ],
+)
+def test_compact_no_sync_multicore_scan(device, B, H, num_blocks, max_blocks):
+    """Exercise the multi-core exclusive-scan path.
+
+    dual_exclusive_scan only enables the workspace + SyncAll inter-core prefix
+    exchange when n_flat > ELEMS_PER_CORE (8192). The shapes here cross the
+    single/two/many-core boundaries, including a tail core that owns exactly
+    one element and cores with uneven chunk sizes.
+    """
+    _require_npu(device)
+
+    rng = np.random.default_rng(seed=B * 1000 + num_blocks)
+    mask_cnt = rng.integers(0, max_blocks + 1, size=(B, H, num_blocks), dtype=np.int32)
+    full_cnt = rng.integers(0, max_blocks + 1, size=(B, H, num_blocks), dtype=np.int32)
+    block_idx = rng.integers(0, 1000, size=(B, H, num_blocks, max_blocks), dtype=np.int32)
+
+    cpu_out = compact_no_sync_cpu(mask_cnt, full_cnt, block_idx)
+
+    npu_out = ops_rec.ascendc.attention.compact_no_sync(
+        torch.from_numpy(mask_cnt).to(device),
+        torch.from_numpy(full_cnt).to(device),
+        torch.from_numpy(block_idx).to(device),
+    )
+    _check_tuple(npu_out, cpu_out, f"multicore_scan B={B} H={H} num={num_blocks}")
+
+    # Inter-core prefix stitching must still land the grand totals.
+    mo, fo = _to_cpu_int(npu_out[1]), _to_cpu_int(npu_out[4])
+    assert mo[-1] == int(mask_cnt.sum())
+    assert fo[-1] == int(full_cnt.sum())
+
+
+@pytest.mark.parametrize("device", ["npu:0"])
+@pytest.mark.parametrize(
+    "B,H,num_blocks,max_blocks",
+    [
+        (1, 1, 2, 4096),  # single row of 4096 spans several 1024-thread slots
+        (2, 2, 3, 2048),
+    ],
+)
+def test_compact_no_sync_long_rows(device, B, H, num_blocks, max_blocks):
+    """Rows longer than the 1024-thread VF width.
+
+    extract_compact partitions work by output-element intervals, so one row
+    with cnt > 1024 is split across multiple thread slots: interval starts
+    and ends land mid-row (binary search + in-row idx != 0), and the
+    reversed mask reads walk backwards across a slot boundary.
+    """
+    _require_npu(device)
+
+    n_flat = B * H * num_blocks
+    mask_cnt = np.zeros((B, H, num_blocks), dtype=np.int32)
+    full_cnt = np.zeros((B, H, num_blocks), dtype=np.int32)
+    # Alternate fully-full and fully-masked rows of length max_blocks.
+    flat_mc = mask_cnt.reshape(-1)
+    flat_fc = full_cnt.reshape(-1)
+    for i in range(n_flat):
+        if i % 2 == 0:
+            flat_fc[i] = max_blocks
+        else:
+            flat_mc[i] = max_blocks
+    block_idx = np.arange(n_flat * max_blocks, dtype=np.int32).reshape(B, H, num_blocks, max_blocks)
+
+    cpu_out = compact_no_sync_cpu(mask_cnt, full_cnt, block_idx)
+
+    npu_out = ops_rec.ascendc.attention.compact_no_sync(
+        torch.from_numpy(mask_cnt).to(device),
+        torch.from_numpy(full_cnt).to(device),
+        torch.from_numpy(block_idx).to(device),
+    )
+    _check_tuple(npu_out, cpu_out, f"long_rows B={B} H={H} num={num_blocks} max={max_blocks}")
+
+
+@pytest.mark.parametrize("device", ["npu:0"])
+@pytest.mark.parametrize(
+    "B,H,num_blocks,max_blocks",
+    [(1, 1, 8200, 8)],  # n_flat = 8200 > 8192: scan runs on 2 cores
+)
+def test_compact_no_sync_skewed_counts(device, B, H, num_blocks, max_blocks):
+    """Alternating fully-loaded and empty rows across the multi-core boundary.
+
+    Row-level count variance is the load-imbalance case the interval
+    partitioning in extract_compact is designed to absorb: the half-full
+    rows are spread evenly over the output element space instead of
+    piling up on the cores that own the loaded rows.
+    """
+    _require_npu(device)
+
+    mask_cnt = np.zeros((B, H, num_blocks), dtype=np.int32)
+    full_cnt = np.zeros((B, H, num_blocks), dtype=np.int32)
+    flat_fc = full_cnt.reshape(-1)
+    flat_fc[0::2] = max_blocks  # even rows fully full, odd rows empty
+    block_idx = np.arange(B * H * num_blocks * max_blocks, dtype=np.int32).reshape(B, H, num_blocks, max_blocks)
+
+    cpu_out = compact_no_sync_cpu(mask_cnt, full_cnt, block_idx)
+
+    npu_out = ops_rec.ascendc.attention.compact_no_sync(
+        torch.from_numpy(mask_cnt).to(device),
+        torch.from_numpy(full_cnt).to(device),
+        torch.from_numpy(block_idx).to(device),
+    )
+    _check_tuple(npu_out, cpu_out, "skewed_counts")
+
+
+@pytest.mark.parametrize("device", ["npu:0"])
+@pytest.mark.parametrize(
+    "B,H,num_blocks,max_blocks",
+    [(1, 1, 8200, 8)],
+)
+def test_compact_no_sync_empty_stretches(device, B, H, num_blocks, max_blocks):
+    """Long empty stretches around a narrow loaded band.
+
+    copy_range must binary-search past thousands of empty rows and skip
+    them without copying; threads whose whole interval falls inside an
+    empty stretch must return without writing anything. The loaded band
+    also straddles the scan core boundary (row 4100) so both cores see a
+    mix of empty and loaded rows.
+    """
+    _require_npu(device)
+
+    mask_cnt = np.zeros((B, H, num_blocks), dtype=np.int32)
+    full_cnt = np.zeros((B, H, num_blocks), dtype=np.int32)
+    flat_mc = mask_cnt.reshape(-1)
+    flat_fc = full_cnt.reshape(-1)
+    # Loaded band in the middle; rows before/after are all empty.
+    flat_fc[4000:4100] = max_blocks  # ends exactly at the scan core boundary
+    flat_fc[4100:4200] = 3
+    flat_mc[4050:4150] = 2  # mask band crosses the core boundary
+    block_idx = np.arange(B * H * num_blocks * max_blocks, dtype=np.int32).reshape(B, H, num_blocks, max_blocks)
+
+    cpu_out = compact_no_sync_cpu(mask_cnt, full_cnt, block_idx)
+
+    npu_out = ops_rec.ascendc.attention.compact_no_sync(
+        torch.from_numpy(mask_cnt).to(device),
+        torch.from_numpy(full_cnt).to(device),
+        torch.from_numpy(block_idx).to(device),
+    )
+    _check_tuple(npu_out, cpu_out, "empty_stretches")
+
+
+# ---------------------------------------------------------------------------
 # Output metadata
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize("device", ["npu:0"])

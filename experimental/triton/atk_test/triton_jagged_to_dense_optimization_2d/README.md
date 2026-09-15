@@ -104,7 +104,7 @@ atk server --devices 0 --plugin_path /path/to/api文件所在文件夹
 
 ```bash
 atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 \
-    task -c all_triton_jagged_to_dense_optimization_2d.json --task accuracy \
+    task -c  triton_jagged_to_dense_optimization_2d_performance.json --task accuracy \
     -p triton_jagged_to_dense_optimization_2d_api.py
 ```
 

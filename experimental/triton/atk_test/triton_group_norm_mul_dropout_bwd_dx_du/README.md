@@ -4,7 +4,7 @@
 
 `_group_norm_mul_dropout_bwd_dx_du` 算子源自 NVIDIA recsys-examples：
 
-<https://github.com/NVIDIA/recsys-examples/blob/main/examples/hstu/ops/triton_ops/triton_norm_mul_dropout.py>
+<https://github.com/NVIDIA/recsys-examples/blob/a247bd4baf4dc74c3e19b4f2ed1fd1b62eb75586/examples/hstu/ops/triton_ops/triton_norm_mul_dropout.py>
 
 ## 功能说明
 
@@ -72,15 +72,66 @@ experimental/triton/atk_test/triton_group_norm_mul_dropout_bwd_dx_du/
 
 ## 调用示例
 
-通常应通过同目录的 `triton_group_norm_mul_dropout_bwd_dx_du_api.py` 调用，API 会构造
-`Mean`、`Rstd`、partial `DW/DB` 和 kernel 启动参数：
+下面的示例直接构造 `Mean`、`Rstd`、partial `DW/DB` 和 kernel 启动参数：
 
 ```python
-from triton_group_norm_mul_dropout_bwd_dx_du_api import TritonGroupNormMulDropoutBwdDxDuApi
+import torch
+import triton
 
-api = TritonGroupNormMulDropoutBwdDxDuApi()
-api.init_by_input_data(input_data)
-dx, du = api()
+from triton_group_norm_mul_dropout_bwd_dx_du_kernel import _group_norm_mul_dropout_bwd_dx_du
+
+n, heads, d = 8, 32, 128
+device = "cuda"
+x = torch.randn((n, heads * d), dtype=torch.float32, device=device)
+u = torch.randn_like(x)
+dy = torch.randn_like(x)
+w = torch.randn((heads,), dtype=x.dtype, device=device)
+bias = torch.randn((heads,), dtype=x.dtype, device=device)
+
+x_grouped = x.reshape(n, heads, d)
+mean = x_grouped.mean(dim=2).reshape(-1).contiguous()
+rstd = torch.rsqrt(x_grouped.var(dim=2, unbiased=False) + 1e-5).reshape(-1).contiguous()
+dx = torch.empty_like(x)
+du = torch.empty_like(u)
+group_n = n
+dw = torch.zeros((group_n, heads), dtype=torch.float32, device=device)
+db = torch.zeros_like(dw)
+block_d = triton.next_power_of_2(d)
+block_h = triton.next_power_of_2(heads)
+grid = (n,)
+
+_group_norm_mul_dropout_bwd_dx_du[grid](
+    dx,
+    du,
+    dy,
+    dw,
+    db,
+    x,
+    u,
+    None,
+    w,
+    bias,
+    mean,
+    rstd,
+    dx.stride(0),
+    du.stride(0),
+    dy.stride(0),
+    x.stride(0),
+    u.stride(0),
+    0,
+    d,
+    heads,
+    1e-5,
+    42,
+    0.0,
+    GROUP_N=group_n,
+    BLOCK_D=block_d,
+    BLOCK_H=block_h,
+    TRAINING=False,
+    CONCAT_UX=False,
+    COMPUTE_Y=False,
+    num_warps=8,
+)
 ```
 
 ## ATK 测试
@@ -108,7 +159,7 @@ atk case -f triton_group_norm_mul_dropout_bwd_dx_du.yaml -p generate_triton_grou
 ### 3. NPU 端执行精度对比
 
 ```bash
-atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c all_triton_group_norm_mul_dropout_bwd_dx_du.json --task accuracy -p triton_group_norm_mul_dropout_bwd_dx_du_api.py
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c triton_group_norm_mul_dropout_bwd_dx_du_performance.json --task accuracy -p triton_group_norm_mul_dropout_bwd_dx_du_api.py
 ```
 
 该命令在 NPU 设备 `0` 执行本地实现，并连接指定 GPU 服务执行标杆实现，然后比较 `DX/DU`。

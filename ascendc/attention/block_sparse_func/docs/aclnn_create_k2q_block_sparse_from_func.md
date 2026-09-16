@@ -20,9 +20,23 @@ K2Q（反向/transpose）：根据函数编码张量 `func_tensor`，为每个 (
 - K2Q 始终进行 q_boundary 检查：部分 q_block（不足 q_block_size）不能判为 FULL
 
 `func_tensor` 布局为 [B, H, func_q_len, n_func]，`n_func` 为偶数，每个 q token 的合法
-kv 区间为 `[F_{2i}, F_{2i+1})` 的并集。该算子可传入 `ComputeQBlockKvRange` 预计算得到的
-`q_block_kv_min` / `q_block_kv_max`，用于跳过与当前 kv_block 无交叠的 q_block（kv-range
-优化）。
+kv 区间为 `[F_{2i}, F_{2i+1})` 的并集。
+
+算子内部按任务规模自适应选择实现路径：
+
+- 大 shape（两阶段）：第一阶段以 (b, h, q_block, kv 列 tile) 为任务粒度（寄存器缓存 func 值，
+  消除按 kv_block 切分导致的 func_tensor 读放大；大 q_len、小 B*H 用例行任务不足时，由 Host
+  按 2 倍核数目标把每行 kv 列切成多个 tile 倍增 warp 并行度，避免少量核激活、每 warp 串行
+  扫整行 kv 列），将块状态写入 workspace 状态矩阵；跨核同步后第二阶段按列有序紧缩，保证
+  full 列表递增、mask 列表递减
+- 小 shape（单阶段）：并行度不足且 func_tensor 列访问量不超过阈值（按 L2 流量预算
+  128MB）时，以 (b, h, 连续 kv 列组) 为任务，block 内 8 个 warp 交错各领一列、warp 级
+  ballot 归约（无块内栅栏）单遍有序写出结果，省去状态矩阵与跨核同步开销；列组宽度
+  `kvColsPerTask` 由 Host 按 2 倍核数目标任务数动态设定（8 的倍数，[8, 64]），兼顾
+  "多 block 小规模"（q_len 小、kv_block_size 小、num_kv_blocks 100+）场景的满核并行
+  与任务调度开销
+- 每 q_block 的 kv 遍历范围由 kernel 内 warp/block 归约计算（kv-range 裁剪），
+  无需外部预计算
 
 ## 函数原型
 
@@ -32,8 +46,6 @@ workspace 大小和执行器，再调用 `aclnnCreateK2qBlockSparseFromFunc` 接
 ```c
 aclnnStatus aclnnCreateK2qBlockSparseFromFuncGetWorkspaceSize(
     const aclTensor *funcTensor,
-    const aclTensor *qBlockKvMin,
-    const aclTensor *qBlockKvMax,
     int64_t strideB,
     int64_t strideH,
     int64_t strideQ,
@@ -64,8 +76,6 @@ aclnnStatus aclnnCreateK2qBlockSparseFromFunc(
 | 参数名 | 输入/输出 | 描述 | 数据类型 | 数据格式 |
 | -------- | --------- | ------ | --------- | --------- |
 | funcTensor（aclTensor） | 输入 | 函数编码张量，shape [B, H, func_q_len, n_func]，n_func 为偶数 | INT32 | ND |
-| qBlockKvMin（aclTensor） | 输入 | 每个 q_block 的 kv 区间下界，shape [B, H, num_q_blocks]，由 ComputeQBlockKvRange 产生 | INT32 | ND |
-| qBlockKvMax（aclTensor） | 输入 | 每个 q_block 的 kv 区间上界，shape [B, H, num_q_blocks]，由 ComputeQBlockKvRange 产生 | INT32 | ND |
 | strideB（int64_t） | 输入 | func_tensor 第 0 维步长 | - | - |
 | strideH（int64_t） | 输入 | func_tensor 第 1 维步长 | - | - |
 | strideQ（int64_t） | 输入 | func_tensor 第 2 维步长 | - | - |
@@ -107,12 +117,11 @@ aclnnStatus：返回状态码，成功返回 `ACLNN_SUCCESS`。
 - 仅支持 INT32 数据类型
 - func_tensor 必须为 4D，n_func 必须为偶数（如 2、4、6、8、...）
 - qLen、kvLen、qBlockSize、kvBlockSize 必须大于 0
-- qBlockKvMin、qBlockKvMax 必须与 func_tensor 的 B、H 一致，shape 为 [B, H, num_q_blocks]
 - block_idx 每行尾端可能被过度分配（未初始化），只应读取前full_block_cnt个FULL块及后mask_block_cnt个MASK块的有效数据
 - 该算子需要在 NPU 设备上运行
 
 ## 调用示例
 
-完整调用示例参考 [test_aclnn_block_sparse_func_create_k2q_block_sparse_from_func.cpp](../examples/aclnn/test_aclnn_block_sparse_func_create_k2q_block_sparse_from_func.cpp)
-（含 `ComputeQBlockKvRange` 预计算阶段），或参考 [torch 接口文档](./torch_create_k2q_block_sparse_from_func.md)
+完整调用示例参考 [test_aclnn_block_sparse_func_create_k2q_block_sparse_from_func.cpp](../examples/aclnn/test_aclnn_block_sparse_func_create_k2q_block_sparse_from_func.cpp)，
+或参考 [torch 接口文档](./torch_create_k2q_block_sparse_from_func.md)
 与对应的 [torch 示例](../examples/torch/test_torch_block_sparse_func_create_k2q_block_sparse_from_func.py)。

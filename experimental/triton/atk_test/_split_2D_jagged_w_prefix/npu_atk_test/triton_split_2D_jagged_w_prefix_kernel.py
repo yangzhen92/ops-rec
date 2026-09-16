@@ -14,20 +14,30 @@
 # limitations under the License.
 # ==============================================================================
 # triton_split_2D_jagged_w_prefix_kernel.py
-# pylint: disable=chained-comparison
 
 import torch
 
-# torch 26.04 circular-import workaround for wrap_triton — do not remove
-import torch._inductor.dependencies  # noqa: F401
+try:
+    import torch._inductor.dependencies  # noqa: F401
+except (ImportError, ModuleNotFoundError):
+    pass
 
-# @manual=//triton:triton
 import triton
-
-# @manual=//triton:triton
 import triton.language as tl
 
 
+@triton.autotune(
+    configs=[
+        triton.Config({"BLOCK_D": 32}),
+        triton.Config({"BLOCK_D": 64}),
+        triton.Config({"BLOCK_D": 128}),
+        triton.Config({"BLOCK_D": 256}),
+        triton.Config({"BLOCK_D": 512}),
+        triton.Config({"BLOCK_D": 1024}),
+        triton.Config({"BLOCK_D": 2048}),
+    ],
+    key=["D"],
+)
 @triton.jit
 def split_2D_jagged_w_prefix(
     JaggedIn,
@@ -67,6 +77,7 @@ def split_2D_jagged_w_prefix(
         seq_start_b = tl.load(OffsetsB + off_z)
         seq_end_b = tl.load(OffsetsB + off_z + 1)
         seq_len_b = seq_end_b - seq_start_b
+
     if IS_REPLACE:
         seq_len = seq_len_a
     else:
@@ -81,21 +92,18 @@ def split_2D_jagged_w_prefix(
         seq_start = seq_start_a + seq_start_b
         out_seq_b_start = seq_len_a + n_prefix_to_B
 
-    offs_d = tl.arange(0, BLOCK_D)
-    in_ptrs = JaggedIn + (seq_start + off_n).to(tl.int64) * stride_id + offs_d
-    v = tl.load(in_ptrs, mask=offs_d < D)
+    if n_prefix_to_B <= off_n < out_seq_b_start:
+        off_a = off_n - n_prefix_to_B
+        out_base = OutA + (off_a + seq_start_a).to(tl.int64) * stride_ad
+    else:
+        off_b = off_n - out_seq_b_start + n_prefix_to_B
+        if off_n < n_prefix_to_B:
+            off_b += out_seq_b_start - n_prefix_to_B
+        out_base = OutB + (off_b + seq_start_b).to(tl.int64) * stride_bd
 
-    # ── 值级融合（store 侧）：选 OutA 还是 OutB 只进掩码，不产生指针分支 ──
-    use_a = (off_n < out_seq_b_start) & (off_n >= n_prefix_to_B)
-
-    # A 侧输出指针（use_a=False 时该 store 被整体 masked off，越界/负指针不触内存）
-    off_a = off_n - n_prefix_to_B
-    out_a_ptrs = OutA + (off_a + seq_start_a).to(tl.int64) * stride_ad + offs_d
-
-    # B 侧输出行号（前缀修正用纯整数 select，不涉及指针选择）
-    off_b = off_n - out_seq_b_start + n_prefix_to_B
-    off_b += tl.where(off_n < n_prefix_to_B, out_seq_b_start - n_prefix_to_B, 0)
-    out_b_ptrs = OutB + (off_b + seq_start_b).to(tl.int64) * stride_bd + offs_d
-
-    tl.store(out_a_ptrs, v, mask=use_a & (offs_d < D))
-    tl.store(out_b_ptrs, v, mask=(~use_a) & (offs_d < D))
+    input_base = JaggedIn + (seq_start + off_n).to(tl.int64) * stride_id
+    for chunk in tl.range(0, D, BLOCK_D):
+        cols = chunk + tl.arange(0, BLOCK_D)
+        mask = cols < D
+        value = tl.load(input_base + cols, mask=mask)
+        tl.store(out_base + cols, value, mask=mask)

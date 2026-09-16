@@ -13,19 +13,12 @@
 # limitations under the License.
 # ==============================================================================
 # triton_split_2D_jagged_w_prefix_api.py
-"""split_2D_jagged_w_prefix kernel 的 ATK 性能测试 API 封装。
-
-与精度测试 API 的区别：
-  - 使用原始 kernel（含 if/else 分支）的单次 launch
-  - 性能测试各自独立在 GPU/NPU 上运行，不跨设备比对输出值，
-    因此原始 kernel 中 if/else 分支选择 OutA/OutB 的问题不影响性能测试
-"""
+"""split_2D_jagged_w_prefix kernel 的 ATK 测试 API 封装。"""
 
 from __future__ import annotations
 
 
 import torch
-import triton
 
 from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
@@ -156,11 +149,9 @@ class TritonSplit2DJaggedWPrefixPerfApi(BaseApi):
         self._la = la
         self._lb = lb
         self._n_prefix_to_B = 0
-        self._block_d = triton.next_power_of_2(d) if d < 64 else 64
 
     def __call__(self, input_data: InputDataset, with_output: bool = False):
         _synchronize(self._device)
-        # 使用原始 kernel 单次 launch（含 if/else 分支选择 OutA/OutB）
         split_2D_jagged_w_prefix[self._grid](
             JaggedIn=self._jagged,
             DenseSize=0,
@@ -175,7 +166,6 @@ class TritonSplit2DJaggedWPrefixPerfApi(BaseApi):
             n_prefix_to_B=self._n_prefix_to_B,
             IS_DENSE_A=False,
             IS_DENSE_B=False,
-            BLOCK_D=self._block_d,
             IS_REPLACE=False,
         )
         _synchronize(self._device)

@@ -19,8 +19,9 @@ JaggedIn[OffsetsA[b] + OffsetsB[b] + i, :] ->
     OutB[OffsetsB[b] + i - len_a[b], :] otherwise
 ```
 
-NPU kernel 使用 store 侧的值级融合：输入只 load 一次，A/B 输出地址都计算出来，
-再通过互斥 mask 写入 `OutA` 或 `OutB`，避免在 NPU 编译器中生成问题指针分支。
+NPU 实现与 GPU 的分支选择方式保持一致：每个 program 先按当前 token 选择 `OutA` 或
+`OutB` 的输出行基址，再沿 `D` 维分块完成 load/store。`@triton.autotune` 以 `D` 为 key，
+在 `BLOCK_D=32/64/128/256/512/1024/2048` 中选择配置；API 不传入 `BLOCK_D`，由 autotune 注入。
 
 ### 输入
 
@@ -60,7 +61,6 @@ experimental/triton/atk_test/_split_2D_jagged_w_prefix/
 
 ```python
 import torch
-import triton
 
 from triton_split_2D_jagged_w_prefix_kernel import split_2D_jagged_w_prefix
 
@@ -72,12 +72,11 @@ jagged = torch.randn((14, d), device=device, dtype=torch.float16)
 out_a = torch.empty((8, d), device=device, dtype=jagged.dtype)
 out_b = torch.empty((6, d), device=device, dtype=jagged.dtype)
 max_seq_len = 5
-block_d = triton.next_power_of_2(d)
 
 split_2D_jagged_w_prefix[(max_seq_len, b)](
     jagged, 0, offsets_a, offsets_b, out_a, out_b, d,
     jagged.stride(0), out_a.stride(0), out_b.stride(0), 0,
-    IS_DENSE_A=False, IS_DENSE_B=False, BLOCK_D=block_d, IS_REPLACE=False,
+    IS_DENSE_A=False, IS_DENSE_B=False, IS_REPLACE=False,
 )
 ```
 

@@ -1,0 +1,117 @@
+﻿# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+# triton_concat_2D_jagged_w_prefix.yaml
+# concat_2D_jagged_w_prefix kernel 精度测试配置。
+# 该 kernel 是纯数据搬运算子（无 reduce / bmm / element-wise 运算），
+# 核心操作为 tl.load → tl.store，不存在精度累积问题。
+#
+# 输入说明：
+#   seq_offsets — [B+1] int64，由 API 按 shape 确定性重建，ATK 的初始值不直接使用
+#   ValuesA — [L_A, D] float，A 的 jagged 数据
+#   ValuesB — [L_B, D] float，B 的 jagged 数据
+# 输出：
+#   Out — [L_A + L_B, D] float，两 jagged 按 batch 拼接的结果
+name: triton_concat_2D_jagged_w_prefix
+api: pytorch
+version: v2.1
+api_type: triton_concat_2D_jagged_w_prefix
+triton_api_type: triton_concat_2D_jagged_w_prefix
+triton_name: triton_jagged.concat_2D_jagged_w_prefix
+generate: generate_concat_2D_jagged_w_prefix
+
+dtype_numbers: 3334
+outputs: 0
+standard:
+  # 纯数据搬运算子，预期全部通过；使用单标杆精度标准。
+  acc: single_bm
+  perf: not_key
+
+inputs:
+  - name: seq_offsets
+    type: tensor
+    required: true
+    dtypes:
+      # 固定 int64，由 API 按 shape 确定性重建合法值
+      values: [int64]
+    ranges:
+      valid:
+        values: [[0, 1]]
+    shapes:
+      dim_numbers:
+        values: [1]
+      # seq_offsets.shape[0] = B + 1，Generator 按 B 候选集确定最终值
+      dim_values:
+        values: [[4, 32]]
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: ValuesA
+    type: tensor
+    required: true
+    dtypes:
+      values: [fp32, fp16, bf16]
+    ranges:
+      # 数据值不影响搬运正确性，使用中等范围值
+      valid:
+        values: [[-4.0, 4.0]]
+        random_types:
+          - name: nd
+            mean: [0.0, 2.0]
+            std: [1.0, 1.0]
+    shapes:
+      dim_numbers:
+        values: [2]
+      # L_A 采样范围；Generator 会将 D 收缩到候选集，L_A 确保 >= B
+      dim_values:
+        values: [[2, 1024], [2049, 4096], [4097, 8192]]
+        weights: [0.30, 0.20, 0.50]
+      max_length: 67108864
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: ValuesB
+    type: tensor
+    required: true
+    dtypes:
+      values: [fp32, fp16, bf16]
+    ranges:
+      valid:
+        values: [[-4.0, 4.0]]
+        random_types:
+          - name: nd
+            mean: [0.0, 2.0]
+            std: [1.0, 1.0]
+    shapes:
+      dim_numbers:
+        values: [2]
+      # L_B 采样范围；Generator 会将 D 与 ValuesA 对齐
+      dim_values:
+        values: [[2, 1024], [2049, 4096], [4097, 8192]]
+        weights: [0.30, 0.20, 0.50]
+      max_length: 67108864
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false

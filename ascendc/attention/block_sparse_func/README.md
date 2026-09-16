@@ -132,7 +132,7 @@ kv 区间为 `[F_{2i}, F_{2i+1})` 的并集。该算子为 Q2K 正向路径，�
 ### create_k2q_block_sparse_from_func功能说明
 
 K2Q（反向/transpose）块稀疏张量生成：根据函数编码张量 `func_tensor`，为每个
-(b, h, kv_block) 并行计算其覆盖的 q_block 列表，输出 mask 块数、full 块数与块索引表，
+(b, h, kv_block) 计算其覆盖的 q_block 列表，输出 mask 块数、full 块数与块索引表，
 供 `LinearBlockSparseTensors` / FlexAttention block-mask 使用。
 
 - 每个 (q_block, kv_block) 块按 `func_tensor` 中的合法 kv 区间分类为 FULL / MASK / EMPTY
@@ -141,12 +141,26 @@ K2Q（反向/transpose）块稀疏张量生成：根据函数编码张量 `func_
 - K2Q 始终进行 q_boundary 检查：部分 q_block（不足 q_block_size）不能判为 FULL
 
 `func_tensor` 布局为 [B, H, func_q_len, n_func]，`n_func` 为偶数，每个 q token 的合法
-kv 区间为 `[F_{2i}, F_{2i+1})` 的并集。内部先调用 `ComputeQBlockKvRange` 预计算每个
-q_block 的 kv 区间（kv-range 优化），再调用 `CreateK2qBlockSparseFromFunc` 生成结果。
+kv 区间为 `[F_{2i}, F_{2i+1})` 的并集。
+
+内部实现按任务规模自适应选择路径：
+
+- 大 shape（两阶段）：第一阶段以 (b, h, q_block, kv 列 tile) 为任务粒度（寄存器缓存 func 值，
+  消除旧版按 kv_block 切分导致的 func_tensor 读放大；大 q_len、小 B*H 用例行任务不足时，
+  由 Host 按 2 倍核数目标把每行 kv 列切成多个 tile 倍增 warp 并行度，避免少量核激活、
+  每 warp 串行扫整行 kv 列），将块状态写入 workspace 状态矩阵；
+  跨核同步后第二阶段按列有序紧缩，保证 full 列表递增、mask 列表递减
+- 小 shape（单阶段）：当并行度不足且 func_tensor 列访问量不超过阈值（按 L2 流量
+  预算 128MB）时，以 (b, h, 连续 kv 列组) 为任务，block 内 8 个 warp 交错各领一列、
+  warp 级 ballot 归约（无块内栅栏）单遍有序写出结果，省去状态矩阵与跨核同步开销；
+  列组宽度 `kvColsPerTask` 由 Host 按 2 倍核数目标任务数动态设定（8 的倍数，[8, 64]），
+  兼顾"多 block 小规模"（q_len 小、kv_block_size 小、num_kv_blocks 100+）场景的
+  满核并行与任务调度开销
+- 每 q_block 的 kv 遍历范围由 kernel 内 warp/block 归约计算（kv-range 裁剪）
 
 对应接口：
 
-- aclnn 接口：`aclnnComputeQBlockKvRange`、`aclnnCreateK2qBlockSparseFromFunc`
+- aclnn 接口：`aclnnCreateK2qBlockSparseFromFunc`
 - torch 接口：`ops_rec.ascendc.attention.create_k2q_block_sparse_from_func`
 
 ### create_k2q_block_sparse_from_func参数说明
@@ -181,4 +195,3 @@ q_block 的 kv 区间（kv-range 优化），再调用 `CreateK2qBlockSparseFrom
 - [torch 调用示例](./examples/torch/test_torch_block_sparse_func_create_k2q_block_sparse_from_func.py)
 - [aclnn 接口文档](./docs/aclnn_create_k2q_block_sparse_from_func.md)
 - [torch 接口文档](./docs/torch_create_k2q_block_sparse_from_func.md)
-- [ComputeQBlockKvRange 接口文档](./docs/aclnn_compute_q_block_kv_range.md)

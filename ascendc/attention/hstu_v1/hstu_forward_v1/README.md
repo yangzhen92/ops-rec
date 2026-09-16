@@ -397,10 +397,10 @@ hstu_v1/                          # HSTU 子组（转发层，登记名：hstu_v
 └── hstu_forward_v1/              # HSTU 前向 vendor（VENDOR_NAME：hstu_forward_v1）
     ├── op_host/                  # Host 侧实现（HstuDenseForward / HstuJaggedForward / HstuPagedForward）
     │   ├── atlas950/             # Ascend 950PR&950DT 系列产品 特化 host 文件（c310 tiling key）
-    │   └── atlasA2/              # A2/A3 特化 host 文件（v220 tiling key）
+    │   └── atlasA2/              # Atlas A2/A3 系列产品 特化 host 文件（v220 tiling key）
     ├── op_kernel/
     │   ├── atlas950/             # Ascend 950PR&950DT 系列产品 kernel（c310 实现）
-    │   └── atlasA2/              # A2/A3 kernel（v220 实现）
+    │   └── atlasA2/              # Atlas A2/A3 系列产品 kernel（v220 实现）
     ├── examples/                 # aclnn (C++) 与 PyTorch (Python) 验证样例
     ├── docs/                     # 算子接口文档
     └── test/pytest/              # Pytest 自动化回归用例

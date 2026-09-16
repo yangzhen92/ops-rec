@@ -6,7 +6,7 @@
 
 | 产品 | 是否支持 |
 | :--- | :------: |
-| Atlas 950 系列产品 | √ |
+| Ascend 950PR&950DT系列产品 | √ |
 
 ### compact_no_sync功能说明
 
@@ -65,7 +65,7 @@ mask 块数与 full 块数，以及填充后的 `block_idx` 查找表，返回 C
 
 | 产品 | 是否支持 |
 | :--- | :------: |
-| Atlas 950 系列产品 | √ |
+| Ascend 950PR&950DT系列产品 | √ |
 
 ### create_q2k_block_sparse_from_func功能说明
 
@@ -127,7 +127,7 @@ kv 区间为 `[F_{2i}, F_{2i+1})` 的并集。该算子为 Q2K 正向路径，�
 
 | 产品 | 是否支持 |
 | :--- | :------: |
-| Atlas 950 系列产品 | √ |
+| Ascend 950PR&950DT系列产品 | √ |
 
 ### create_k2q_block_sparse_from_func功能说明
 

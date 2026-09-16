@@ -18,8 +18,9 @@ K2Q（反向/transpose）块稀疏张量生成：根据函数编码张量 `func_
 - K2Q 始终进行 q_boundary 检查：部分 q_block（不足 q_block_size）不能判为 FULL
 
 `func_tensor` 布局为 [B, H, func_q_len, n_func]，`n_func` 为偶数，每个 q token 的合法
-kv 区间为 `[F_{2i}, F_{2i+1})` 的并集。内部先调用 `ComputeQBlockKvRange` 预计算每个
-q_block 的 kv 区间（kv-range 优化），再调用 `CreateK2qBlockSparseFromFunc` 生成结果。
+kv 区间为 `[F_{2i}, F_{2i+1})` 的并集。算子内部为两阶段实现（状态矩阵填充 + 跨核同步 +
+有序紧缩），kv-range 由 kernel 内 warp 归约自行计算，单次调用 `CreateK2qBlockSparseFromFunc`
+即完成全部计算。
 
 ## 接口原型
 

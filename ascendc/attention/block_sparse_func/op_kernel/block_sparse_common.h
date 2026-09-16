@@ -23,13 +23,13 @@ See the License for the specific language governing permissions and
 // 编译宏（与原始 RecSDK 生产构建保持一致）：
 //   ENABLE_WARP_LEVEL_OPT : 启用 warp 级优化（每个 warp 独立处理一个 (b,h,block)）
 //   DISABLE_REG_CACHE     : 关闭寄存器缓存（未定义 → 启用，将 func 值缓存到寄存器）
-//   DISABLE_KV_RANGE_OPT  : 关闭 kv 范围遍历优化（未定义 → 启用，读取预计算的
-//                           q_block_kv_min/max 跳过无交叠的 q_block）
+//   DISABLE_KV_RANGE_OPT  : 关闭 kv 范围遍历优化（未定义 → 启用，从寄存器缓存的
+//                           func 值 warp/block 归约出 kv 遍历范围，跳过无交叠的块）
 // =============================================================================
 #define ENABLE_WARP_LEVEL_OPT
 
 // =============================================================================
-// 共享常量（create_q2k / create_k2q / compute_q_block_kv_range 通用）
+// 共享常量（create_q2k / create_k2q 通用）
 // =============================================================================
 constexpr uint32_t BLOCK_THREAD_NUM_256 = 256;
 constexpr int32_t WARP_LEVEL_NUM = 8;

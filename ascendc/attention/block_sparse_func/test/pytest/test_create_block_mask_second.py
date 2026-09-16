@@ -17,7 +17,8 @@
 """Invalid-argument tests for create_q2k/k2q_block_sparse_from_func.
 
 Split out of ``test_create_block_mask.py`` (which exceeded 1000 lines);
-positive cases live there, here we only cover argument validation.
+positive cases live there, here we cover argument validation plus the
+Q2K kv_split_mode (multi-warp KV split) correctness sweep (section 10).
 """
 
 import re
@@ -26,7 +27,7 @@ import torch
 
 import ops_rec
 
-from test_create_block_mask import _check_k2q, generate_special_func_tensor
+from test_create_block_mask import _check_k2q, _check_q2k, generate_func_tensor, generate_special_func_tensor
 
 CPU_DEVICE = "cpu"
 NPU_DEVICE = "npu:0"
@@ -254,6 +255,142 @@ def test_different_block_sizes_k2q(Q_BLOCK_SIZE, KV_BLOCK_SIZE):
         Q_BLOCK_SIZE,
         KV_BLOCK_SIZE,
         tag=f"block_sizes(Q_BS={Q_BLOCK_SIZE}, KV_BS={KV_BLOCK_SIZE})",
+    )
+
+
+# ---------------------------------------------------------------------------
+# 10. kv_split_mode (multi-warp KV split) correctness — Q2K only
+#
+# op_host/create_q2k_block_sparse_from_func.cpp (under ENABLE_WARP_LEVEL_OPT,
+# unconditionally defined in block_sparse_common.h) switches the Q2K kernel to
+# the multi-warp KV split when ALL of the following hold:
+#
+#     use_warp_level = (q_block_size <= 256) && (q_block_size % 32 == 0)
+#     split_waves    = DIVUP(totalBlocks, aivCoreCount) <= 2
+#     kv_split_mode  = use_warp_level && 16 <= numKvBlocks <= 2048
+#
+# where totalBlocks = numQBlocks * H * B and 2048 = SPLIT_MAX_KV_BLOCKS
+# (8 warps * 256 staged kv blocks per warp). In split mode one 256-thread
+# block owns a single q_block, its 8 warps scan disjoint 1/8 kv sub-ranges,
+# stage the full/mask ids in UB and write them back with warp-prefix offsets
+# (full ascending at the row front, mask descending at the row back — the
+# same ordering as the non-split path). K2Q has no kv_split_mode.
+#
+# The mode flag only lives in device-side tiling data and cannot be observed
+# from Python, so these tests pin the shape parameters to combinations that
+# activate the mode (or stay just outside its window) and verify the Q2K
+# outputs against the CPU reference. All mode-on cases keep totalBlocks <= 16
+# so split_waves == 1 on any current AIV part (>= 40 AIV cores).
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        "diagonal",  # 每 q_block 仅覆盖 1 个 kv_block：span=1，7 个 warp 空转（余数分支）
+        "anti_causal",  # span 从 numKvBlocks 递减到 1：满跨度 + 非整除余数
+    ],
+)
+def test_kv_split_mode_special_patterns(pattern):
+    """Q2K results stay correct in kv_split_mode for small-span and full-span masks."""
+    _require_npu()
+    q_len, kv_len = 512, 4096
+    Q_BLOCK_SIZE, KV_BLOCK_SIZE = 128, 128
+    # numQBlocks=4, B=H=1 -> totalBlocks=4（split_waves=1）；numKvBlocks=32 -> 模式开启
+    func_tensor_cpu = generate_special_func_tensor(q_len, kv_len, pattern, n_func=3, block_size=KV_BLOCK_SIZE)
+    _check_q2k(
+        func_tensor_cpu,
+        q_len,
+        kv_len,
+        Q_BLOCK_SIZE,
+        KV_BLOCK_SIZE,
+        check_q_boundary=True,
+        tag=f"kv_split_mode(pattern={pattern})",
+    )
+
+
+def test_kv_split_mode_random():
+    """Random masks scatter full/mask ids across all 8 warps (prefix write-out)."""
+    _require_npu()
+    q_len, kv_len = 1024, 8192
+    Q_BLOCK_SIZE, KV_BLOCK_SIZE = 128, 128
+    # numQBlocks=8 -> totalBlocks=8；numKvBlocks=64 -> 模式开启
+    func_tensor_cpu = generate_func_tensor(q_len, kv_len, 3, seed=q_len * 100 + Q_BLOCK_SIZE)
+    _check_q2k(
+        func_tensor_cpu,
+        q_len,
+        kv_len,
+        Q_BLOCK_SIZE,
+        KV_BLOCK_SIZE,
+        check_q_boundary=True,
+        tag="kv_split_mode_random(n_func=3)",
+    )
+
+
+@pytest.mark.parametrize("Q_BLOCK_SIZE", [32, 256])
+def test_kv_split_mode_q_block_size(Q_BLOCK_SIZE):
+    """Warp-level-eligible q block sizes (32 and 256) both run the split path."""
+    _require_npu()
+    q_len, kv_len = 512, 2048
+    KV_BLOCK_SIZE = 128
+    num_kv_blocks = (kv_len + KV_BLOCK_SIZE - 1) // KV_BLOCK_SIZE
+    assert num_kv_blocks == 16  # 恰在下界，模式开启
+    # q_block_size=32 时 numQBlocks=16 -> totalBlocks=16，split_waves 仍为 1
+    func_tensor_cpu = generate_special_func_tensor(q_len, kv_len, "anti_causal", n_func=3, block_size=KV_BLOCK_SIZE)
+    _check_q2k(
+        func_tensor_cpu,
+        q_len,
+        kv_len,
+        Q_BLOCK_SIZE,
+        KV_BLOCK_SIZE,
+        check_q_boundary=True,
+        tag=f"kv_split_mode_q_block_size(Q_BS={Q_BLOCK_SIZE})",
+    )
+
+
+@pytest.mark.parametrize(
+    "kv_len,mode_expected",
+    [
+        (1920, "off"),  # numKvBlocks = 15 < 16：下界之外，走普通 warp 级路径
+        (2048, "on"),  # numKvBlocks = 16：下界
+        (262144, "on"),  # numKvBlocks = 2048：上界，每 warp 恰暂存 256 个 kv_block
+    ],
+)
+def test_kv_split_mode_num_kv_blocks_boundary(kv_len, mode_expected):
+    """Correctness on both sides of the [16, 2048] numKvBlocks activation window."""
+    _require_npu()
+    q_len = 256
+    Q_BLOCK_SIZE, KV_BLOCK_SIZE = 128, 128
+    num_kv_blocks = (kv_len + KV_BLOCK_SIZE - 1) // KV_BLOCK_SIZE
+    if mode_expected == "on":
+        assert 16 <= num_kv_blocks <= 2048
+    else:
+        assert num_kv_blocks < 16 or num_kv_blocks > 2048
+    func_tensor_cpu = generate_special_func_tensor(q_len, kv_len, "anti_causal", n_func=3, block_size=KV_BLOCK_SIZE)
+    _check_q2k(
+        func_tensor_cpu,
+        q_len,
+        kv_len,
+        Q_BLOCK_SIZE,
+        KV_BLOCK_SIZE,
+        check_q_boundary=True,
+        tag=f"kv_split_mode_kv_boundary(kv_len={kv_len}, numKvBlocks={num_kv_blocks}, mode={mode_expected})",
+    )
+
+
+def test_kv_split_mode_partial_q_block():
+    """A partial last q_block (check_q_boundary=True) can never be FULL in split mode."""
+    _require_npu()
+    q_len, kv_len = 500, 4096
+    Q_BLOCK_SIZE, KV_BLOCK_SIZE = 128, 128
+    # q_len=500 -> numQBlocks=4，最后一个 q_block 仅 116/128 个 token
+    func_tensor_cpu = generate_special_func_tensor(q_len, kv_len, "sliding_window", n_func=3, block_size=KV_BLOCK_SIZE)
+    _check_q2k(
+        func_tensor_cpu,
+        q_len,
+        kv_len,
+        Q_BLOCK_SIZE,
+        KV_BLOCK_SIZE,
+        check_q_boundary=True,
+        tag=f"kv_split_mode_partial_q(q_len={q_len})",
     )
 
 

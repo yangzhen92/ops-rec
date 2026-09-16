@@ -55,6 +55,28 @@ __forceinline__ __simt_callee__ int32_t warp_reduce_state_only(uint32_t local_st
 }
 
 /**
+ * warp 级状态归约的高效替代：用 2 次 asc_ballot 取代 5 级 shfl_down 归约。
+ * 只需知道 32 个 lane 中是否有非 EMPTY / 是否有 FULL，两个谓词各 ball一次即可。
+ */
+__forceinline__ __simt_callee__ int32_t warp_reduce_state_ballot(uint32_t local_state_mask)
+{
+    // 必须与 bitmask_to_state 语义完全一致，否则会改变 FULL/MASK 判定：
+    // EMPTY(001)/MASK(010)/FULL(100) 编码，跨 lane OR 后 000->xxx, 001->EMPTY, 100->FULL, 其余->MASK。
+    // 即：EMPTY = 无双覆盖位(bit1|bit2)；FULL = 无 EMPTY/MASK 位(bit0|bit1) 且有 FULL 位。
+    // b_covered：有 lane 覆盖（MASK 或 FULL）；b_dev：有 lane 偏离 FULL（EMPTY 或 MASK）。
+    // 仅用 2 次 asc_ballot 等价还原 OR 归约结果。谓词传 0/1 布尔。
+    const uint32_t b_covered = asc_ballot(static_cast<int32_t>((local_state_mask & 6u) != 0u));
+    const uint32_t b_dev = asc_ballot(static_cast<int32_t>((local_state_mask & 3u) != 0u));
+    if (b_covered == 0u) {
+        return STATE_EMPTY;
+    }
+    if (b_dev == 0u) {
+        return STATE_FULL;
+    }
+    return STATE_MASK;
+}
+
+/**
  * 块级状态位掩码归约（warp 归约 + 跨 warp 归约，未启用 warp 级优化时使用）。
  */
 __forceinline__ __simt_callee__ int32_t block_reduce_state_bitmask(uint32_t local_state_mask,
@@ -196,6 +218,43 @@ __forceinline__ __simt_callee__ int32_t get_token_kv_block_state_from_regs(const
         return STATE_MASK;
     }
     return STATE_EMPTY;
+}
+
+/**
+ * 区间跳过版状态判断（仅适用于排序且不重叠的区间，func 分段函数布局天然满足）：
+ * 单调递增遍历 kv_block 时，每个 kv_block 至多与一个区间相交。用 c = "end <= kv_start 的区间个数"
+ * 定位唯一候选区间，再用无分支 select 取 (start, end)，把每 token 每 kv_block 的区间评估从
+ * N_INTERVALS 次降到 1 次。AIV 实证该算子纯计算受限(vec_ratio~0.99)，这是热循环 ALU 的关键削减。
+ * 候选下标 c 由全比较序列得出、按常量下标 select，无动态寄存器索引、无 warp 内发散。
+ * 前置：区间的 end 非降、start_{i+1} >= end_i（q2k func 布局区间 [F_{2i}, F_{2i+1}) 恒成立）。
+ * @tparam N_INTERVALS: 区间数（N_FUNC / 2）
+ */
+template <int32_t N_INTERVALS>
+__forceinline__ __simt_callee__ int32_t get_token_kv_block_state_from_regs_skip(const int32_t* func_regs,
+                                                                                int32_t kv_start, int32_t kv_end)
+{
+    if constexpr (N_INTERVALS <= 1) {
+        return get_token_kv_block_state_from_regs<N_INTERVALS>(func_regs, kv_start, kv_end);
+    } else {
+        int32_t c = 0;
+#pragma unroll
+        for (int32_t i = 0; i < N_INTERVALS - 1; i++) {
+            c += (kv_start >= func_regs[2 * i + 1]) ? 1 : 0;
+        }
+        int32_t s = func_regs[0];
+        int32_t e = func_regs[1];
+#pragma unroll
+        for (int32_t i = 1; i < N_INTERVALS; i++) {
+            s = (c >= i) ? func_regs[2 * i] : s;
+            e = (c >= i) ? func_regs[2 * i + 1] : e;
+        }
+        if (s <= kv_start && e >= kv_end) {
+            return STATE_FULL;
+        } else if (s < kv_end && e > kv_start) {
+            return STATE_MASK;
+        }
+        return STATE_EMPTY;
+    }
 }
 
 }  // namespace block_sparse_func

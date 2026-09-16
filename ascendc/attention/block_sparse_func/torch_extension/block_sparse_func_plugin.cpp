@@ -275,17 +275,10 @@ std::tuple<Tensor, Tensor, Tensor> create_k2q_block_sparse_from_func_impl_npu(co
     Tensor block_idx = debug ? at::full({B, H, num_kv_blocks, num_q_blocks}, -1, func_tensor.options())
                              : at::empty({B, H, num_kv_blocks, num_q_blocks}, func_tensor.options());
 
-    // K2Q 前置阶段：预计算每个 (b, h, q_block) 的 q_block_kv_min / q_block_kv_max，
-    // 供 create_k2q_block_sparse_from_func 跳过 kv 范围无交叠的 q_block（kv-range 优化）。
-    Tensor q_block_kv_min = at::empty({B, H, num_q_blocks}, func_tensor.options());
-    Tensor q_block_kv_max = at::empty({B, H, num_q_blocks}, func_tensor.options());
-    EXEC_NPU_CMD(aclnnComputeQBlockKvRange, func_tensor, stride_b, stride_h, stride_q, stride_f, q_len, q_block_size,
-                 q_block_kv_min, q_block_kv_max);
-
-    // 调用 create_k2q_block_sparse_from_func kernel
-    EXEC_NPU_CMD(aclnnCreateK2qBlockSparseFromFunc, func_tensor, q_block_kv_min, q_block_kv_max, stride_b, stride_h,
-                 stride_q, stride_f, q_len, kv_len, q_block_size, kv_block_size, mask_block_cnt, full_block_cnt,
-                 block_idx);
+    // 调用 create_k2q_block_sparse_from_func kernel（大 shape 两阶段：状态矩阵 + 有序紧缩；
+    // 小 shape 单阶段列式直写。kv-range 由 kernel 内 warp 归约自行计算）
+    EXEC_NPU_CMD(aclnnCreateK2qBlockSparseFromFunc, func_tensor, stride_b, stride_h, stride_q, stride_f, q_len,
+                 kv_len, q_block_size, kv_block_size, mask_block_cnt, full_block_cnt, block_idx);
 
     return std::make_tuple(mask_block_cnt, full_block_cnt, block_idx);
 }

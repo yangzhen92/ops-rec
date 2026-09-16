@@ -64,27 +64,15 @@ TILING_DATA_FIELD_DEF(int32_t, numKvBlocks);
 TILING_DATA_FIELD_DEF(int32_t, hNum);
 TILING_DATA_FIELD_DEF(int32_t, bNum);
 TILING_DATA_FIELD_DEF(int32_t, totalBlocks);
-END_TILING_DATA_DEF;
-
-BEGIN_TILING_DATA_DEF(ComputeQBlockKvRangeTilingData)
-TILING_DATA_FIELD_DEF(int32_t, strideB);
-TILING_DATA_FIELD_DEF(int32_t, strideH);
-TILING_DATA_FIELD_DEF(int32_t, strideQ);
-TILING_DATA_FIELD_DEF(int32_t, strideF);
-TILING_DATA_FIELD_DEF(int32_t, qLen);
-TILING_DATA_FIELD_DEF(int32_t, nFunc);
-TILING_DATA_FIELD_DEF(int32_t, qBlockSize);
-TILING_DATA_FIELD_DEF(int32_t, numQBlocks);
-TILING_DATA_FIELD_DEF(int32_t, hNum);
-TILING_DATA_FIELD_DEF(int32_t, bNum);
-TILING_DATA_FIELD_DEF(int32_t, totalBlocks);
+TILING_DATA_FIELD_DEF(int32_t, useSinglePhase);
+TILING_DATA_FIELD_DEF(int32_t, kvColsPerTask);
+TILING_DATA_FIELD_DEF(int32_t, kvColsPerFillTask);
 END_TILING_DATA_DEF;
 
 REGISTER_TILING_DATA_CLASS(DualExclusiveScan, DualExclusiveScanTilingData)
 REGISTER_TILING_DATA_CLASS(ExtractCompact, ExtractCompactTilingData)
 REGISTER_TILING_DATA_CLASS(CreateQ2kBlockSparseFromFunc, CreateQ2kBlockSparseFromFuncTilingData)
 REGISTER_TILING_DATA_CLASS(CreateK2qBlockSparseFromFunc, CreateK2qBlockSparseFromFuncTilingData)
-REGISTER_TILING_DATA_CLASS(ComputeQBlockKvRange, ComputeQBlockKvRangeTilingData)
 }  // namespace optiling
 
 #endif  // TILING_POLICY_BLOCK_SPARSE_FUNC_H

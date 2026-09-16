@@ -94,14 +94,10 @@ def concat_2D_jagged_w_prefix(
         out_seq_b_start = seq_len_a + n_prefix_from_B
 
     out_base = Out + out_seq_start.to(tl.int64) * stride_od
-    if off_n < out_seq_b_start and off_n >= n_prefix_from_B:
+    if n_prefix_from_B <= off_n < out_seq_b_start:
         off_a = off_n - n_prefix_from_B
         if IS_DENSE_A:
-            in_base = (
-                ValuesA
-                + off_a.to(tl.int64) * stride_ad
-                + off_z.to(tl.int64) * stride_dense_batch
-            )
+            in_base = ValuesA + off_a.to(tl.int64) * stride_ad + off_z.to(tl.int64) * stride_dense_batch
         else:
             in_base = ValuesA + (off_a + seq_start_a).to(tl.int64) * stride_ad
     else:
@@ -109,11 +105,7 @@ def concat_2D_jagged_w_prefix(
         if off_n < n_prefix_from_B:
             off_b += out_seq_b_start - n_prefix_from_B
         if IS_DENSE_B:
-            in_base = (
-                ValuesB
-                + off_b.to(tl.int64) * stride_bd
-                + off_z.to(tl.int64) * stride_dense_batch
-            )
+            in_base = ValuesB + off_b.to(tl.int64) * stride_bd + off_z.to(tl.int64) * stride_dense_batch
         else:
             in_base = ValuesB + (off_b + seq_start_b).to(tl.int64) * stride_bd
 

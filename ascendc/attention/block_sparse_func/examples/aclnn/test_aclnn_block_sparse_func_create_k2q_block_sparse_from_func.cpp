@@ -18,25 +18,23 @@ See the License for the specific language governing permissions and
  * @brief 演示如何通过 aclnnCreateK2qBlockSparseFromFunc 接口调用
  *        CreateK2qBlockSparseFromFunc 算子（K2Q 反向路径）
  *
- * 为每个 (b, h, kv_block) 并行计算其覆盖的 q_block 列表，输出 mask/full 块数与
- * block_idx 表。调用前先用 aclnnComputeQBlockKvRange 预计算每个 q_block 的 kv 区间
- * （kv-range 优化），再调用本算子。
+ * 算子内部为两阶段实现：第一阶段以 (b, h, q_block) 为任务粒度填充状态矩阵
+ * （每个 q_block 仅读一次 func_tensor），跨核硬同步后第二阶段按列有序紧缩，
+ * 输出 mask/full 块数与 block_idx 表。full 列表按 q_block 升序写入，
+ * mask 列表按 q_block 升序自右写入（位置递减），保证输出顺序确定。
  *
- * 示例输入：func_tensor [1, 1, 4, 2]（n_func=2），q_len=8，kv_len=8，
- *           q_block_size=4，kv_block_size=4。
- *   token 区间（[F0, F1)）：
- *     token0: [0, 6]   token1: [0, 6]   token2: [2, 6]   token3: [2, 6]
+ * 示例输入：func_tensor [1, 1, 32, 2]（n_func=2），q_len=32，kv_len=32，
+ *           q_block_size=32，kv_block_size=32。
+ *   每个 token 的合法 kv 区间均为 [0, 32)，覆盖整个 kv_block。
  *   期望输出：
- *     q_block_kv_min = [0, 2]  q_block_kv_max = [6, 6]
- *     mask_block_cnt = [1, 2]  full_block_cnt = [1, 0]
+ *     mask_block_cnt = [0]  full_block_cnt = [1]
  *     block_idx（每行 FULL 从左、MASK 从右写入）:
- *       kv_block0 -> [0, 1]   kv_block1 -> [1, 0]
+ *       kv_block0 -> [0]
  */
 
 #include <iostream>
 #include <vector>
 #include "acl/acl.h"
-#include "aclnn_compute_q_block_kv_range.h"
 #include "aclnn_create_k2q_block_sparse_from_func.h"
 
 #define CHECK_RET(cond, return_expr) \
@@ -111,24 +109,21 @@ int main()
     constexpr int64_t NUM_KV_BLOCKS = (KV_LEN + KV_BLOCK_SIZE - 1) / KV_BLOCK_SIZE;
 
     // 每个 q token 的合法 kv 区间 [F0, F1)，布局为连续行主序
-    std::vector<int32_t> funcTensorHostData(64);
-    for (size_t i = 0; i < 64; ++i) {
+    std::vector<int32_t> funcTensorHostData(FUNC_Q_LEN * N_FUNC);
+    for (size_t i = 0; i < funcTensorHostData.size(); ++i) {
         funcTensorHostData[i] = i % 2 ? 32 : 0;
     }
-    std::vector<int32_t> kvMinHostData(NUM_Q_BLOCKS, 0);
-    std::vector<int32_t> kvMaxHostData(NUM_Q_BLOCKS, 0);
     std::vector<int32_t> maskCntHostData(B * H * NUM_KV_BLOCKS, 0);
     std::vector<int32_t> fullCntHostData(B * H * NUM_KV_BLOCKS, 0);
     std::vector<int32_t> blockIdxHostData(B * H * NUM_KV_BLOCKS * NUM_Q_BLOCKS, 0);
 
     std::vector<int64_t> funcShape = {B, H, FUNC_Q_LEN, N_FUNC};
-    std::vector<int64_t> kvRangeShape = {B, H, NUM_Q_BLOCKS};
     std::vector<int64_t> cntShape = {B, H, NUM_KV_BLOCKS};
     std::vector<int64_t> blockIdxShape = {B, H, NUM_KV_BLOCKS, NUM_Q_BLOCKS};
 
-    void *funcTensorDeviceAddr = nullptr, *kvMinDeviceAddr = nullptr, *kvMaxDeviceAddr = nullptr;
+    void* funcTensorDeviceAddr = nullptr;
     void *maskCntDeviceAddr = nullptr, *fullCntDeviceAddr = nullptr, *blockIdxDeviceAddr = nullptr;
-    aclTensor *funcTensor = nullptr, *qBlockKvMin = nullptr, *qBlockKvMax = nullptr;
+    aclTensor* funcTensor = nullptr;
     aclTensor *maskBlockCnt = nullptr, *fullBlockCnt = nullptr, *blockIdx = nullptr;
 
     // 连续张量的 strides
@@ -138,9 +133,6 @@ int main()
     const int64_t strideF = 1;
 
     // 后续 goto EXIT 会越过这些声明，因此全部提前到第一个 goto 之前定义
-    uint64_t kvRangeWorkspaceSize = 0;
-    aclOpExecutor* kvRangeExecutor = nullptr;
-    void* kvRangeWorkspaceAddr = nullptr;
     uint64_t workspaceSize = 0;
     aclOpExecutor* executor = nullptr;
     void* workspaceAddr = nullptr;
@@ -149,10 +141,6 @@ int main()
 
     ret = CreateAclTensor(funcTensorHostData, funcShape, &funcTensorDeviceAddr, aclDataType::ACL_INT32, &funcTensor);
     CHECK_RET(ret == ACL_SUCCESS, goto EXIT);
-    ret = CreateAclTensor(kvMinHostData, kvRangeShape, &kvMinDeviceAddr, aclDataType::ACL_INT32, &qBlockKvMin);
-    CHECK_RET(ret == ACL_SUCCESS, goto EXIT);
-    ret = CreateAclTensor(kvMaxHostData, kvRangeShape, &kvMaxDeviceAddr, aclDataType::ACL_INT32, &qBlockKvMax);
-    CHECK_RET(ret == ACL_SUCCESS, goto EXIT);
     ret = CreateAclTensor(maskCntHostData, cntShape, &maskCntDeviceAddr, aclDataType::ACL_INT32, &maskBlockCnt);
     CHECK_RET(ret == ACL_SUCCESS, goto EXIT);
     ret = CreateAclTensor(fullCntHostData, cntShape, &fullCntDeviceAddr, aclDataType::ACL_INT32, &fullBlockCnt);
@@ -160,27 +148,9 @@ int main()
     ret = CreateAclTensor(blockIdxHostData, blockIdxShape, &blockIdxDeviceAddr, aclDataType::ACL_INT32, &blockIdx);
     CHECK_RET(ret == ACL_SUCCESS, goto EXIT);
 
-    // =========================================================================
-    // 阶段一：ComputeQBlockKvRange 预计算每个 q_block 的 kv 区间
-    // =========================================================================
-    ret = aclnnComputeQBlockKvRangeGetWorkspaceSize(funcTensor, strideB, strideH, strideQ, strideF, Q_LEN, Q_BLOCK_SIZE,
-                                                    qBlockKvMin, qBlockKvMax, &kvRangeWorkspaceSize, &kvRangeExecutor);
-    CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("aclnnComputeQBlockKvRangeGetWorkspaceSize failed. ERROR: %d\n", ret);
-              goto EXIT);
-
-    if (kvRangeWorkspaceSize != 0) {
-        ret = aclrtMalloc(&kvRangeWorkspaceAddr, kvRangeWorkspaceSize, ACL_MEM_MALLOC_HUGE_FIRST);
-        CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("aclrtMalloc kv_range workspace failed. ERROR: %d\n", ret); goto EXIT);
-    }
-    ret = aclnnComputeQBlockKvRange(kvRangeWorkspaceAddr, kvRangeWorkspaceSize, kvRangeExecutor, stream);
-    CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("aclnnComputeQBlockKvRange failed. ERROR: %d\n", ret); goto EXIT);
-
-    // =========================================================================
-    // 阶段二：CreateK2qBlockSparseFromFunc
-    // =========================================================================
-    ret = aclnnCreateK2qBlockSparseFromFuncGetWorkspaceSize(
-        funcTensor, qBlockKvMin, qBlockKvMax, strideB, strideH, strideQ, strideF, Q_LEN, KV_LEN, Q_BLOCK_SIZE,
-        KV_BLOCK_SIZE, maskBlockCnt, fullBlockCnt, blockIdx, &workspaceSize, &executor);
+    ret = aclnnCreateK2qBlockSparseFromFuncGetWorkspaceSize(funcTensor, strideB, strideH, strideQ, strideF, Q_LEN,
+                                                            KV_LEN, Q_BLOCK_SIZE, KV_BLOCK_SIZE, maskBlockCnt,
+                                                            fullBlockCnt, blockIdx, &workspaceSize, &executor);
     CHECK_RET(ret == ACL_SUCCESS,
               LOG_PRINT("aclnnCreateK2qBlockSparseFromFuncGetWorkspaceSize failed. ERROR: %d\n", ret);
               goto EXIT);
@@ -223,12 +193,6 @@ EXIT:
     if (funcTensor != nullptr) {
         aclDestroyTensor(funcTensor);
     }
-    if (qBlockKvMin != nullptr) {
-        aclDestroyTensor(qBlockKvMin);
-    }
-    if (qBlockKvMax != nullptr) {
-        aclDestroyTensor(qBlockKvMax);
-    }
     if (maskBlockCnt != nullptr) {
         aclDestroyTensor(maskBlockCnt);
     }
@@ -241,12 +205,6 @@ EXIT:
     if (funcTensorDeviceAddr != nullptr) {
         aclrtFree(funcTensorDeviceAddr);
     }
-    if (kvMinDeviceAddr != nullptr) {
-        aclrtFree(kvMinDeviceAddr);
-    }
-    if (kvMaxDeviceAddr != nullptr) {
-        aclrtFree(kvMaxDeviceAddr);
-    }
     if (maskCntDeviceAddr != nullptr) {
         aclrtFree(maskCntDeviceAddr);
     }
@@ -255,9 +213,6 @@ EXIT:
     }
     if (blockIdxDeviceAddr != nullptr) {
         aclrtFree(blockIdxDeviceAddr);
-    }
-    if (kvRangeWorkspaceAddr != nullptr) {
-        aclrtFree(kvRangeWorkspaceAddr);
     }
     if (workspaceAddr != nullptr) {
         aclrtFree(workspaceAddr);

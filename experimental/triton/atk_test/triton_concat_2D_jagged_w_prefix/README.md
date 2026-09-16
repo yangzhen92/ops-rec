@@ -18,9 +18,10 @@ Out[OffsetsA[b] + OffsetsB[b] + i, :] =
     ValuesB[OffsetsB[b] + i - len_a[b], :] otherwise
 ```
 
-该 kernel 是纯数据搬运算子，不做数值规约。NPU 版本采用值级融合写法：A/B 两侧指针
-无条件计算，通过 load mask 和 `tl.where` 选择已加载的值，规避 NPU 编译器对指针分支
-和指针 `tl.where` 的兼容问题。
+该 kernel 是纯数据搬运算子，不做数值规约。NPU 实现与 GPU 的分支选择方式保持一致：
+每个 program 先按当前 token 选择 A 或 B 的输入行基址，再沿 `D` 维分块完成 load/store。
+`@triton.autotune` 以 `D` 为 key，在 `BLOCK_D=32/64/128/256/512/1024/2048` 中选择配置；
+API 不传入 `BLOCK_D`，由 autotune 注入。
 
 ### 输入
 
@@ -60,7 +61,6 @@ experimental/triton/atk_test/triton_concat_2D_jagged_w_prefix/
 
 ```python
 import torch
-import triton
 
 from triton_concat_2D_jagged_w_prefix_kernel import concat_2D_jagged_w_prefix
 
@@ -72,12 +72,11 @@ values_a = torch.randn((8, d), device=device, dtype=torch.float16)
 values_b = torch.randn((6, d), device=device, dtype=torch.float16)
 out = torch.empty((14, d), device=device, dtype=values_a.dtype)
 max_seq_len = 5
-block_d = triton.next_power_of_2(d)
 
 concat_2D_jagged_w_prefix[(max_seq_len, b)](
     offsets_a, values_a, offsets_b, values_b, 0, out, d,
     values_a.stride(0), values_b.stride(0), 0, out.stride(0), 0,
-    IS_DENSE_A=False, IS_DENSE_B=False, BLOCK_D=block_d, IS_REPLACE=False,
+    IS_DENSE_A=False, IS_DENSE_B=False, IS_REPLACE=False,
 )
 ```
 

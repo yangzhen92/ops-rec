@@ -14,24 +14,11 @@
 # ==============================================================================
 # triton_concat_2D_jagged_w_prefix_api.py
 
-"""concat_2D_jagged_w_prefix 的 ATK API 封装（autotune 版本）。
-
-直接调用 concat_2D_jagged_w_prefix，按 batch 将 ValuesA、ValuesB 拼接：
-  grid = (max_seq_len, B)，其中 max_seq_len = max_a + max_b
-  输出 Out [L_A + L_B, D]
-
-使用要点：
-  1. triton_jagged.py 中的 concat_2D_jagged_w_prefix 带 @triton.autotune
-     （BLOCK_D 16/32/64 候选），D 维由 BLOCK_D 循环分块、各 chunk 有
-     offs_d < D 掩码保护；BLOCK_D 由 autotune 自动注入，无需手动指定。
-  2. 本 API 覆盖 IS_DENSE_A=False、IS_DENSE_B=False、IS_REPLACE=False、
-     n_prefix_from_B=0 的 jagged+jagged 拼接路径。
-"""
+"""ATK API wrapper for concat_2D_jagged_w_prefix."""
 
 from __future__ import annotations
 
 import torch
-import triton
 
 from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
@@ -189,7 +176,6 @@ class TritonConcat2DJaggedWPrefixApi(BaseApi):
             n_prefix_from_B=0,
             IS_DENSE_A=False,
             IS_DENSE_B=False,
-            BLOCK_D=triton.next_power_of_2(self._d),
             IS_REPLACE=False,
         )
 

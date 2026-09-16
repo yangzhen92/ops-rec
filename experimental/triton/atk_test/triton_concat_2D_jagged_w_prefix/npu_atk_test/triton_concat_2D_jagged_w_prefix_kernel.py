@@ -14,41 +14,30 @@
 # limitations under the License.
 # ==============================================================================
 # triton_concat_2D_jagged_w_prefix_kernel.py
-# pylint: disable=chained-comparison
 
 import torch
 
-# torch 26.04 circular-import workaround for wrap_triton — do not remove
 try:
     import torch._inductor.dependencies  # noqa: F401
 except (ImportError, ModuleNotFoundError):
-    # 独立 ATK 目录不一定包含 Inductor 的可选依赖；目标 kernel 不依赖该模块。
     pass
 
-# @manual=//triton:triton
 import triton
-
-# @manual=//triton:triton
 import triton.language as tl
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# concat_2D_jagged_w_prefix：值级融合版本（方案 1）
-#
-# 背景：NPU Ascend Triton 编译器不兼容"一个 program 内两个不同张量指针被选择/
-# 合并"的结构——
-#   * if/else 分支分别取 ValuesA/ValuesB 指针 → 分支汇合处 SSA phi 被误优化，
-#     B 段 token 被静默读成错误源（case 1239：177 行 B 段全错）；
-#   * tl.where 直接选指针 → OffsetAnalysis.cpp 断言失败，编译报错。
-#
-# 方案 1（本文件）：把"选哪个源"从指针层下沉到值层——
-#   1. A/B 两条路径的指针都【无条件】计算，不产生任何分支；
-#   2. 用掩码把不需要的那条 load 整体 predicate 掉（OOB 指针不触内存）；
-#   3. 最后对【加载出的值】做 tl.where 选择（不选指针）。
-# 结果：kernel 内无指针分支、无指针 tl.where，理论上绕过上述两个已证实缺陷。
-#
-# 函数签名与原版完全一致，API（triton_concat_2D_jagged_w_prefix_api.py）零改动。
-# ─────────────────────────────────────────────────────────────────────────────
+@triton.autotune(
+    configs=[
+        triton.Config({"BLOCK_D": 32}),
+        triton.Config({"BLOCK_D": 64}),
+        triton.Config({"BLOCK_D": 128}),
+        triton.Config({"BLOCK_D": 256}),
+        triton.Config({"BLOCK_D": 512}),
+        triton.Config({"BLOCK_D": 1024}),
+        triton.Config({"BLOCK_D": 2048}),
+    ],
+    key=["D"],
+)
 @triton.jit
 def concat_2D_jagged_w_prefix(
     OffsetsA,
@@ -62,7 +51,7 @@ def concat_2D_jagged_w_prefix(
     stride_bd,
     stride_dense_batch,
     stride_od,
-    n_prefix_from_B,  # nonzero is not supported when IS_REPLACE=True
+    n_prefix_from_B,
     IS_DENSE_A: tl.constexpr,
     IS_DENSE_B: tl.constexpr,
     BLOCK_D: tl.constexpr,
@@ -97,7 +86,6 @@ def concat_2D_jagged_w_prefix(
     if off_n >= seq_len:
         return
 
-    offs_d = tl.arange(0, BLOCK_D)
     if IS_REPLACE:
         out_seq_start = seq_start_a + off_n
         out_seq_b_start = seq_len_a - seq_len_b
@@ -105,27 +93,32 @@ def concat_2D_jagged_w_prefix(
         out_seq_start = seq_start_a + seq_start_b + off_n
         out_seq_b_start = seq_len_a + n_prefix_from_B
 
-    out_ptrs = Out + out_seq_start.to(tl.int64) * stride_od + offs_d
-
-    # ── 值级融合：选源条件只用于掩码 + 对【值】做 tl.where，不用于指针分支 ──
-    use_a = (off_n < out_seq_b_start) & (off_n >= n_prefix_from_B)
-
-    # A 侧行号（use_a=False 时该 load 被整体 masked off，越界/负指针不触内存）
-    off_a = off_n - n_prefix_from_B
-    if IS_DENSE_A:
-        a_ptrs = ValuesA + off_a.to(tl.int64) * stride_ad + off_z.to(tl.int64) * stride_dense_batch + offs_d
+    out_base = Out + out_seq_start.to(tl.int64) * stride_od
+    if off_n < out_seq_b_start and off_n >= n_prefix_from_B:
+        off_a = off_n - n_prefix_from_B
+        if IS_DENSE_A:
+            in_base = (
+                ValuesA
+                + off_a.to(tl.int64) * stride_ad
+                + off_z.to(tl.int64) * stride_dense_batch
+            )
+        else:
+            in_base = ValuesA + (off_a + seq_start_a).to(tl.int64) * stride_ad
     else:
-        a_ptrs = ValuesA + (off_a + seq_start_a).to(tl.int64) * stride_ad + offs_d
+        off_b = off_n - out_seq_b_start + n_prefix_from_B
+        if off_n < n_prefix_from_B:
+            off_b += out_seq_b_start - n_prefix_from_B
+        if IS_DENSE_B:
+            in_base = (
+                ValuesB
+                + off_b.to(tl.int64) * stride_bd
+                + off_z.to(tl.int64) * stride_dense_batch
+            )
+        else:
+            in_base = ValuesB + (off_b + seq_start_b).to(tl.int64) * stride_bd
 
-    # B 侧行号（前缀修正用纯整数 select，不涉及指针选择）
-    off_b = off_n - out_seq_b_start + n_prefix_from_B
-    off_b += tl.where(off_n < n_prefix_from_B, out_seq_b_start - n_prefix_from_B, 0)
-    if IS_DENSE_B:
-        b_ptrs = ValuesB + off_b.to(tl.int64) * stride_bd + off_z.to(tl.int64) * stride_dense_batch + offs_d
-    else:
-        b_ptrs = ValuesB + (off_b + seq_start_b).to(tl.int64) * stride_bd + offs_d
-
-    av = tl.load(a_ptrs, mask=use_a & (offs_d < D), other=0.0)
-    bv = tl.load(b_ptrs, mask=(~use_a) & (offs_d < D), other=0.0)
-    v = tl.where(use_a, av, bv)
-    tl.store(out_ptrs, v, mask=offs_d < D)
+    for chunk in tl.range(0, D, BLOCK_D):
+        cols = chunk + tl.arange(0, BLOCK_D)
+        mask = cols < D
+        value = tl.load(in_base + cols, mask=mask)
+        tl.store(out_base + cols, value, mask=mask)

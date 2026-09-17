@@ -1,4 +1,4 @@
-# triton_layer_norm_bwd_dx
+# _layer_norm_bwd_dx
 
 ## 来源
 

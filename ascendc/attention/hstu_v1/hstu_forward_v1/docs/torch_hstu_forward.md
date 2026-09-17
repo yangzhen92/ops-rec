@@ -65,7 +65,7 @@ ops_rec.ascendc.attention.hstu_paged(
 
 | 参数名 | 输入/输出 | 参数类型 | 数据类型 | 数据格式 | shape | 说明 |
 |--------|---------|---------|---------|---------|-------|------|
-| q | 输入 | Tensor | FLOAT32/FLOAT16/BFLOAT16（Ascend 950PR&950DT系列产品 另支持 FP8_E4M3FN） | ND | [B, S, N_q, D_q] 或 [s_b, N_q, D_q] | Query 张量 |
+| q | 输入 | Tensor | FLOAT32/FLOAT16/BFLOAT16（Ascend 950PR&950DT系列产品另支持 FP8_E4M3FN） | ND | [B, S, N_q, D_q] 或 [s_b, N_q, D_q] | Query 张量 |
 | k | 输入 | Tensor | 同 q | ND | [B, S, N_k, D_q] 或 [s_b, N_k, D_q] | Key 张量（GQA 时 N_k < N_q） |
 | v | 输入 | Tensor | 同 q | ND | [B, S, N_k, D_v] 或 [s_b, N_k, D_v] | Value 张量 |
 | mask | 输入 | Tensor（可选） | 同 q | ND | [B, N, S, S] | mask_type=3 时必传 |

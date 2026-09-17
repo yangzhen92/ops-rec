@@ -1,4 +1,4 @@
-# triton_jagged_dense_bmm_broadcast_add
+# _jagged_dense_bmm_broadcast_add
 
 ## 来源
 

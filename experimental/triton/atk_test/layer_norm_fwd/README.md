@@ -1,4 +1,4 @@
-# triton_layer_norm_fwd
+# _layer_norm_fwd
 
 ## 来源
 

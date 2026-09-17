@@ -139,9 +139,7 @@ class WeightedRmsNormBwdDxApi(BaseApi):
         dw = torch.empty((group_n, d), dtype=torch.float32, device=device)
         locks = torch.zeros(2 * group_n, dtype=torch.int32, device=device)
 
-        # grid = (N,)
         grid = (n,)
-
         self._x = x
         self._dy = dy
         self._w = w

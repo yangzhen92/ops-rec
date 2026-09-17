@@ -113,11 +113,5 @@ def _weighted_rms_norm_bwd_dx(
     lock_id = row % GROUP_N
     DW = DW + lock_id * D + cols
     # Accumulate partial sums for dw/db
-    # NPU 兼容写法：直接 atomic_add 到 DW（需 DW 初始化为 0）。
-    # 原 CUDA 版本用 Lock 自旋锁 + Count 判断首个 program 直接存、后续累加；
-    # 数学上等价于每个 program 都把 partial_dw 累加到初始为 0 的 DW，
-    # 因此 DX 之外的后处理（_rms_norm_bwd_dwdb 对 DW 逐组求和）仍能拿到正确权重梯度。
-    # NPU BiSheng 编译器不支持 while(tl.atomic_cas()) 自旋锁，会报
-    # 'hivm.hir.load' op using value defined outside the regio
     partial_dw = (dy * xhat).to(tl.float32)
     tl.atomic_add(DW, partial_dw, mask=mask)

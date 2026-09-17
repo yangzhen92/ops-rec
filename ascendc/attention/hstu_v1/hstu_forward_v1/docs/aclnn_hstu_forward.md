@@ -85,7 +85,7 @@ aclnnStatus aclnnHstuPagedForward(
 
 | 参数名 | 输入/输出 | 描述 | 数据类型 | 数据格式 |
 |--------|---------|------|---------|---------|
-| q（aclTensor） | 输入 | Query 张量，[B, S, N_q, D_q] 或 [s_b, N_q, D_q] | FLOAT32/FLOAT16/BFLOAT16（Ascend 950PR&950DT系列产品另支持 FP8_E4M3FN） | ND |
+| q（aclTensor） | 输入 | Query 张量，[B, S, N_q, D_q] 或 [s_b, N_q, D_q] | FLOAT32/FLOAT16/BFLOAT16（Ascend 950PR&950DT系列产品另支持FP8_E4M3FN，后文简称FP8） | ND |
 | k（aclTensor） | 输入 | Key 张量，头数 N_k ≤ N_q | 同 q | ND |
 | v（aclTensor） | 输入 | Value 张量，head_dim 可与 qk 不等 | 同 q | ND |
 | mask（aclTensor） | 输入 | 注意力 mask，[B, N, S, S]（可选） | 同 q | ND |
@@ -100,7 +100,7 @@ aclnnStatus aclnnHstuPagedForward(
 | targetGroupSize（int64_t） | 输入 | 内置 target mask 分组大小（jagged/paged） | - | - |
 | alpha（double） | 输入 | Alpha 缩放参数 | - | - |
 | deterministic（bool） | 输入 | 确定性计算开关 | - | - |
-| attnOutput（aclTensor） | 输出 | 输出张量，[B, S, N_q, D_v] 或 [s_b, N_q, D_v] | 同 q（Ascend 950PR&950DT系列产品时输入q类型为FP8时输出类型为fp16） | ND |
+| attnOutput（aclTensor） | 输出 | 输出张量，[B, S, N_q, D_v] 或 [s_b, N_q, D_v] | 同 q（Ascend 950PR&950DT系列产品输入类型FP8时输出类型为fp16） | ND |
 | workspaceSize（uint64_t*） | 输出 | 需要在 Device 侧申请的 workspace 大小 | - | - |
 | executor（aclOpExecutor**） | 输出 | 算子执行器 | - | - |
 

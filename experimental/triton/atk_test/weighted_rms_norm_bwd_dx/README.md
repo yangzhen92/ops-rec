@@ -1,4 +1,4 @@
-﻿# triton_weighted_rms_norm_bwd_dx
+# _weighted_rms_norm_bwd_dx
 
 ## 来源
 
@@ -47,7 +47,7 @@ GPU 版本使用原始自旋锁规约 partial `DW`；NPU 版本使用初始化�
 ## 目录结构
 
 ```text
-experimental/triton/atk_test/triton_weighted_rms_norm_bwd_dx/
+experimental/triton/atk_test/weighted_rms_norm_bwd_dx/
 ├── README.md
 ├── gpu_atk_test/
 │   ├── triton_weighted_rms_norm_bwd_dx_kernel.py

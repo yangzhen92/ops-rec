@@ -1,4 +1,4 @@
-# triton_jagged_reduce_sum
+# _jagged_reduce_sum
 
 ## 来源
 
@@ -56,7 +56,7 @@ GPU 版本按 `D` 计算固定 `BLOCK_D`：当 `D < 64` 时取不小于 `D` 的�
 ## 目录结构
 
 ```text
-experimental/triton/atk_test/triton_jagged_reduce_sum/
+experimental/triton/atk_test/jagged_reduce_sum/
 ├── README.md
 ├── gpu_atk_test/
 │   ├── triton_jagged_reduce_sum_kernel.py

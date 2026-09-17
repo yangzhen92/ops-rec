@@ -1,4 +1,4 @@
-# triton_ln_mul_dropout_bwd_dwdb
+# ln_mul_dropout_bwd_dwdb
 
 ## 来源
 

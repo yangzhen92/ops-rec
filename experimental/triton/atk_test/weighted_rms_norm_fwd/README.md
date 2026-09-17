@@ -1,4 +1,4 @@
-# triton_weighted_rms_norm_fwd
+# _weighted_rms_norm_fwd
 
 ## 来源
 
@@ -41,7 +41,7 @@ grid 为 `(N,)`，每个 Triton program 负责一行。`BLOCK_D` 覆盖完整特
 ## 目录结构
 
 ```text
-experimental/triton/atk_test/triton_weighted_rms_norm_fwd/
+experimental/triton/atk_test/weighted_rms_norm_fwd/
 ├── README.md
 ├── gpu_atk_test/
 │   ├── triton_weighted_rms_norm_fwd_kernel.py

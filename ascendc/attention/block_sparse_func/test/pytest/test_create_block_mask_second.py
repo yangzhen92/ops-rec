@@ -394,5 +394,30 @@ def test_kv_split_mode_partial_q_block():
     )
 
 
+# ---------------------------------------------------------------------------
+# 3b. K2Q "many small kv blocks": q_len small, kv_len large, kv_block_size small
+#     (num_kv_blocks >= 100+) — exercises the single-phase warp-per-column path
+#     with dynamic kvColsPerTask.
+# ---------------------------------------------------------------------------
+@pytest.mark.ci
+@pytest.mark.parametrize(
+    "seqlen_q,seqlen_k",
+    [
+        (2048, 32768),  # nq=16, nk=1024
+        (1024, 16384),  # nq=8, nk=512
+        (4999, 33333),  # non-aligned: nq=40, nk=1042
+    ],
+)
+@pytest.mark.parametrize("n_func", [3, 5])
+def test_k2q_many_small_kv_blocks(seqlen_q, seqlen_k, n_func):
+    """K2Q with tiny kv_block_size (32) producing many kv blocks."""
+    _require_npu()
+    Q_BLOCK_SIZE, KV_BLOCK_SIZE = 128, 32
+    seed = seqlen_q * 100 + n_func * 10 + KV_BLOCK_SIZE
+    func_tensor_cpu = generate_func_tensor(seqlen_q, seqlen_k, n_func, seed=seed)
+    tag = f"k2q_many_small_kv(seqlen_q={seqlen_q}, seqlen_k={seqlen_k}, n_func={n_func}, KV_BS={KV_BLOCK_SIZE})"
+    _check_k2q(func_tensor_cpu, seqlen_q, seqlen_k, Q_BLOCK_SIZE, KV_BLOCK_SIZE, tag=tag)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-sv"])

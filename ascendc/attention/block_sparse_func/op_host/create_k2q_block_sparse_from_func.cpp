@@ -67,9 +67,14 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
                  "func_q_len must be greater than or equal to qLen");
     OPS_LOG_E_IF(nFunc % 2 != 0, context, return ge::GRAPH_FAILED, "nFunc must be divisible by 2");
 
+    auto ascendPlatform = platform_ascendc::PlatformAscendC(context->GetPlatformInfo());
+    uint32_t coreNum = ascendPlatform.GetCoreNumAiv();
+    OPS_LOG_E_IF(coreNum == 0, context, return ge::GRAPH_FAILED, "GetCoreNumAiv return 0");
+
     int32_t numQBlocks = DIVUP(*qLen, *qBlockSize);
     int32_t numKvBlocks = DIVUP(*kvLen, *kvBlockSize);
     int32_t totalBlocks = numKvBlocks * hNum * bNum;
+    int32_t totalQTasks = numQBlocks * hNum * bNum;
 
     // 设置 tiling 数据
     CreateK2qBlockSparseFromFuncTilingData tiling;
@@ -89,12 +94,77 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
     tiling.set_totalBlocks(totalBlocks);
 
 #ifdef ENABLE_WARP_LEVEL_OPT
-    int32_t grid = DIVUP(totalBlocks, WARP_LEVEL_NUM);
+    // 与 kernel 端 warp 分发保持一致：qBlockSize ∈ {32,64,128,256} 时走 warp 级路径
+    // （每个 256 线程 block = 8 warps 处理 8 个 (b,h,q_block) 任务），否则 block 级每核一个任务。
+    const bool use_warp_level =
+        (*qBlockSize == 32) || (*qBlockSize == 64) || (*qBlockSize == 128) || (*qBlockSize == 256);
+    const int32_t fillBlocks = use_warp_level ? DIVUP(totalQTasks, WARP_LEVEL_NUM) : totalQTasks;
 #else
-    int32_t grid = totalBlocks;
+    const int32_t fillBlocks = totalQTasks;
 #endif
-    grid = totalBlocks >= 65535 ? 65535 : totalBlocks;
-    context->SetBlockDim(grid);
+    // 第二阶段（compact）：每个 warp 负责一个 (b*h, kv_group) 列组，每组 32 个 kv_block
+    const int32_t compactGroups = DIVUP(numKvBlocks, WARP_SIZE_CONST) * hNum * bNum;
+    const int32_t compactBlocks = DIVUP(compactGroups, WARP_LEVEL_NUM);
+
+    // 小 shape 单阶段 warp-per-column 路径：行式 fill 并行度不足（fillBlocks*2 < AIV
+    // 核数）且列式读放大量可控时，改走无 SyncAll、无状态矩阵的单阶段 kernel。
+    // "多 block 小规模"场景（q_len 小、kv_block_size 小 → numKvBlocks 多）func 总量
+    // 小、重复读几乎全命中 L2/DCache，故预算按 L2 流量放宽到 128MB；单阶段以
+    // (b, h, 连续列组) 为任务，按 2 倍核数的目标任务数动态设置每组列数 kvColsPerTask
+    // （8 的倍数，[8, 64]），既避免海量超小列任务的调度开销，又保证满核并行。
+    const uint64_t funcBytesPerBH = static_cast<uint64_t>(*qLen) * nFunc * sizeof(int32_t);
+    const uint64_t columnTraffic = static_cast<uint64_t>(bNum) * hNum * numKvBlocks * funcBytesPerBH;
+    const bool useSinglePhase = (fillBlocks * 2 < static_cast<int32_t>(coreNum)) && (columnTraffic <= (128ULL << 20));
+    int32_t kvColsPerTask = 8;  // 最小列组宽 = 每 block 的 warp 数
+    if (useSinglePhase) {
+        const int32_t targetTasks = 2 * static_cast<int32_t>(coreNum);
+        if (totalBlocks > targetTasks) {
+            kvColsPerTask = DIVUP(totalBlocks, targetTasks);
+            kvColsPerTask = ((kvColsPerTask + 7) / 8) * 8;  // 向上取 8 的倍数（warp 数对齐）
+            kvColsPerTask = kvColsPerTask > 64 ? 64 : kvColsPerTask;
+        }
+    }
+    tiling.set_useSinglePhase(useSinglePhase ? 1 : 0);
+    tiling.set_kvColsPerTask(kvColsPerTask);
+
+    // 两阶段 fill 的 kv 列切分：大 q_len、小 B*H 的中大型用例行任务（nq*B*H）不足，
+    // 无法吃满 AIV 核且每 warp 串行扫整行 kv 列。按"目标 warp 任务数 = 2×核数×8"
+    // 把每行 kv 列切成多个 tile 倍增并行度；代价是每个 tile 任务重读一遍该行 func
+    // （func 行远小于状态矩阵，且相邻 tile 的 warp 同 block 调度、DCache 命中）。
+    int32_t kvColsPerFillTask = 0;  // 0 = 不切分
+    if (!useSinglePhase) {
+        const int32_t targetFillTasks = 2 * static_cast<int32_t>(coreNum) * WARP_LEVEL_NUM;
+        if (totalQTasks < targetFillTasks && numKvBlocks > 1) {
+            int32_t numTiles = DIVUP(targetFillTasks, totalQTasks);
+            numTiles = numTiles > numKvBlocks ? numKvBlocks : numTiles;
+            kvColsPerFillTask = DIVUP(numKvBlocks, numTiles);
+        }
+    }
+    tiling.set_kvColsPerFillTask(kvColsPerFillTask);
+    const int32_t fillTiles = (kvColsPerFillTask > 0) ? DIVUP(numKvBlocks, kvColsPerFillTask) : 1;
+    const int32_t fillTasks = totalQTasks * fillTiles;
+#ifdef ENABLE_WARP_LEVEL_OPT
+    const int32_t fillBlocksTiled = use_warp_level ? DIVUP(fillTasks, WARP_LEVEL_NUM) : fillTasks;
+#else
+    const int32_t fillBlocksTiled = fillTasks;
+#endif
+
+    // SyncAll 硬同步要求 blockDim 不超过实际 AIV 核数；多余任务由 grid-stride 循环补齐。
+    const int32_t singleBlocks = DIVUP(totalBlocks, kvColsPerTask);
+    int32_t grid = useSinglePhase ? singleBlocks : (fillBlocksTiled > compactBlocks ? fillBlocksTiled : compactBlocks);
+    grid = static_cast<int32_t>(coreNum) < grid ? static_cast<int32_t>(coreNum) : grid;
+    grid = grid >= 65535 ? 65535 : grid;
+    context->SetBlockDim(static_cast<uint32_t>(grid));
+    if (!useSinglePhase) {
+        // 使能核间同步（两阶段之间依赖 SyncAll 硬同步）
+        context->SetScheduleMode(1);
+    }
+
+    // 用户 workspace：状态矩阵 [B, H, numQBlocks, numKvBlocks]（uint8 状态，仅两阶段路径使用）
+    size_t* workspaceSizes = context->GetWorkspaceSizes(1);
+    OPS_LOG_E_IF_NULL("workspaceSizes", workspaceSizes, return ge::GRAPH_FAILED);
+    const uint64_t stateMatrixSize = static_cast<uint64_t>(bNum) * hNum * numQBlocks * numKvBlocks;
+    workspaceSizes[0] = ascendPlatform.GetLibApiWorkSpaceSize() + (useSinglePhase ? 0 : stateMatrixSize);
 
     OPS_LOG_E_IF_NULL("raw tilingData", context->GetRawTilingData(), return ge::GRAPH_FAILED);
     tiling.SaveToBuffer(context->GetRawTilingData()->GetData(), context->GetRawTilingData()->GetCapacity());
@@ -182,16 +252,6 @@ public:
     explicit CreateK2qBlockSparseFromFunc(const char* name) : OpDef(name)
     {
         this->Input("func_tensor")
-            .ParamType(REQUIRED)
-            .DataType({ge::DT_INT32})
-            .FormatList({ge::FORMAT_ND})
-            .UnknownShapeFormat({ge::FORMAT_ND});
-        this->Input("q_block_kv_min")
-            .ParamType(REQUIRED)
-            .DataType({ge::DT_INT32})
-            .FormatList({ge::FORMAT_ND})
-            .UnknownShapeFormat({ge::FORMAT_ND});
-        this->Input("q_block_kv_max")
             .ParamType(REQUIRED)
             .DataType({ge::DT_INT32})
             .FormatList({ge::FORMAT_ND})

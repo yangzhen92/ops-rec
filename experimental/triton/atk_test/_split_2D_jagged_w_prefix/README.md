@@ -2,9 +2,9 @@
 
 ## 来源
 
-`split_2D_jagged_w_prefix` 算子源自 Meta generative-recommenders：
+`split_2D_jagged_w_prefix` 算子源自 NVIDIA recsys-examples：
 
-<https://github.com/meta-recsys/generative-recommenders/blob/4a33ba4405ebf85599acae40527e6ffb964292f7/generative_recommenders/ops/triton/triton_jagged.py>
+<https://github.com/NVIDIA/recsys-examples/blob/97062d97eef53115105063801e35184e36186df5/examples/commons/ops/triton_ops/triton_jagged.py>
 
 ## 功能说明
 
@@ -90,7 +90,7 @@ split_2D_jagged_w_prefix[(max_seq_len, b)](
 atk case -f triton_split_2D_jagged_w_prefix.yaml -p generate_triton_split_2D_jagged_w_prefix.py
 ```
 
-生成的精度用例文件名为 `all_triton_split_2D_jagged_w_prefix.json`。
+精度对比使用固定用例文件 `triton_split_2D_jagged_w_prefix_performance.json`。
 
 ### 2. GPU 端启动 ATK 服务
 
@@ -105,7 +105,7 @@ atk server --devices 0 --plugin_path /path/to/api文件所在文件夹
 该命令从 NPU 端连接 GPU 服务，比较两端拆分输出：
 
 ```bash
-atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c all_triton_split_2D_jagged_w_prefix.json --task accuracy -p triton_split_2D_jagged_w_prefix_api.py
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c triton_split_2D_jagged_w_prefix_performance.json --task accuracy -p triton_split_2D_jagged_w_prefix_api.py
 ```
 
 ### 4. NPU 端执行性能对比

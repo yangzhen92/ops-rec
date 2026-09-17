@@ -29,7 +29,6 @@ from triton_split_2D_jagged_w_prefix_kernel import split_2D_jagged_w_prefix
 
 
 _SUPPORTED_DTYPES = {torch.float32, torch.float16, torch.bfloat16}
-_MAX_TOTAL_ELEMENTS = 1 << 27
 _MAX_CORE_DIM = 65535
 
 

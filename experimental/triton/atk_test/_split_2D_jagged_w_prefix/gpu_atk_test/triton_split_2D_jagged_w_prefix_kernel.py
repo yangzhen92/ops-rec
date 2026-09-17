@@ -82,14 +82,17 @@ def split_2D_jagged_w_prefix(
         out_seq_b_start = seq_len_a + n_prefix_to_B
 
     offs_d = tl.arange(0, BLOCK_D)
-    in_ptrs = JaggedIn + (seq_start + off_n).to(tl.int64) * stride_id + offs_d
+    in_base = JaggedIn + (seq_start + off_n).to(tl.int64) * stride_id
     if off_n < out_seq_b_start and off_n >= n_prefix_to_B:
         off_a = off_n - n_prefix_to_B
-        out_ptrs = OutA + (off_a + seq_start_a).to(tl.int64) * stride_ad + offs_d
+        out_base = OutA + (off_a + seq_start_a).to(tl.int64) * stride_ad
     else:
         off_b = off_n - out_seq_b_start + n_prefix_to_B
         if off_n < n_prefix_to_B:
             off_b += out_seq_b_start - n_prefix_to_B
-        out_ptrs = OutB + (off_b + seq_start_b).to(tl.int64) * stride_bd + offs_d
-    v = tl.load(in_ptrs, mask=offs_d < D)
-    tl.store(out_ptrs, v, mask=offs_d < D)
+        out_base = OutB + (off_b + seq_start_b).to(tl.int64) * stride_bd
+    for chunk in tl.range(0, D, BLOCK_D):
+        cols = chunk + offs_d
+        mask = cols < D
+        v = tl.load(in_base + cols, mask=mask)
+        tl.store(out_base + cols, v, mask=mask)

@@ -1,4 +1,4 @@
-﻿# triton_concat_2D_jagged_w_prefix
+# _concat_2D_jagged_w_prefix
 
 ## 来源
 
@@ -44,7 +44,7 @@ API 不传入 `BLOCK_D`，由 autotune 注入。
 ## 目录结构
 
 ```text
-experimental/triton/atk_test/triton_concat_2D_jagged_w_prefix/
+experimental/triton/atk_test/concat_2D_jagged_w_prefix/
 ├── README.md
 ├── gpu_atk_test/
 │   ├── triton_concat_2D_jagged_w_prefix_kernel.py
@@ -90,7 +90,7 @@ concat_2D_jagged_w_prefix[(max_seq_len, b)](
 atk case -f triton_concat_2D_jagged_w_prefix.yaml -p generate_triton_concat_2D_jagged_w_prefix.py
 ```
 
-生成的精度用例文件名为 `all_triton_concat_2D_jagged_w_prefix.json`。
+精度对比使用固定用例文件 `triton_concat_2D_jagged_w_prefix_performance.json`。
 
 ### 2. GPU 端启动 ATK 服务
 
@@ -105,7 +105,7 @@ atk server --devices 0 --plugin_path /path/to/api文件所在文件夹
 该命令从 NPU 端连接 GPU 服务，比较两端拼接输出：
 
 ```bash
-atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c all_triton_concat_2D_jagged_w_prefix.json --task accuracy -p triton_concat_2D_jagged_w_prefix_api.py
+atk node --backend npu --devices 0 node --backend gpu -h {gpu端ip} -p {gpu端端口} --devices 0 task -c triton_concat_2D_jagged_w_prefix_performance.json --task accuracy -p triton_concat_2D_jagged_w_prefix_api.py
 ```
 
 ### 4. NPU 端执行性能对比

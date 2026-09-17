@@ -69,15 +69,16 @@ aclnnStatus aclnnFaInferWithArbitraryFunc(
 | arbitraryFunc（aclTensor） | 输入 | 函数编码张量，shape [1, 1, s_q, 4]，每个 query 用 4 个 INT32 表示两个合法 KV 区间 | INT32 | ND |
 | maskBlockCnt（aclTensor） | 输入 | 每个 (b, h, q_block) 的 MASK 块个数，shape [1, 1, num_rows] | INT32 | ND |
 | maskBlockOffset（aclTensor） | 输入 | mask 块索引的 exclusive scan 偏移，shape [num_rows + 1] | INT32 | ND |
-| maskBlockIdx（aclTensor） | 输入 | 压缩后的 MASK 块编号（-1 已剔除），shape [num_mask_block] | INT32 | ND |
+| maskBlockIdx（aclTensor） | 输入 | 压缩后的 MASK 块编号，shape [num_mask_block] | INT32 | ND |
 | fullBlockCnt（aclTensor） | 输入 | 每个 (b, h, q_block) 的 FULL 块个数，shape [1, 1, num_rows] | INT32 | ND |
 | fullBlockOffset（aclTensor） | 输入 | full 块索引的 exclusive scan 偏移，shape [num_rows + 1] | INT32 | ND |
-| fullBlockIdx（aclTensor） | 输入 | 压缩后的 FULL 块编号（-1 已剔除），shape [num_full_block] | INT32 | ND |
+| fullBlockIdx（aclTensor） | 输入 | 压缩后的 FULL 块编号，shape [num_full_block] | INT32 | ND |
 | out（aclTensor） | 输出 | 输出，shape [s_q, H_q, D]，数据类型与 q 保持一致 | FLOAT16 / BFLOAT16 | ND |
 | workspaceSize（uint64_t*） | 输出 | 返回需要在 Device 侧申请的 workspace 大小 | - | - |
 | executor（aclOpExecutor**） | 输出 | 返回算子执行器 | - | - |
 
 > num_rows = ceil(s_q / 128)，每个 H_q 共用一个 mask_block_cnt / mask_block_offset / mask_block_idx。
+> mask_block_idx 及 full_block_idx 由 compact_no_sync 算子生成，长度一致，实际有效长度分别为 mask_block_offset[-1] 及 full_block_offset[-1]
 
 ### aclnnFaInferWithArbitraryFuncGetWorkspaceSize 返回值
 

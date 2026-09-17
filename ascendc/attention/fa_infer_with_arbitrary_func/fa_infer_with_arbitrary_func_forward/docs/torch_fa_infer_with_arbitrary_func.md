@@ -52,14 +52,15 @@ ops_rec.ascendc.attention.fa_infer_with_arbitrary_func(
 | arbitrary_func | 输入 | Tensor | INT32 | ND | [1, 1, s_q, 4] | 函数编码张量，每个 query 用 4 个 INT32 表示两个合法 KV 区间 [af1, af2) 与 [af3, af4) |
 | mask_block_cnt | 输入 | Tensor | INT32 | ND | [1, 1, num_rows] | 每个 (b, h, q_block) 的 MASK 块个数 |
 | mask_block_offset | 输入 | Tensor | INT32 | ND | [num_rows + 1] | mask 块索引的 exclusive scan 偏移 |
-| mask_block_idx | 输入 | Tensor | INT32 | ND | [num_mask_block] | 压缩后的 MASK 块编号（-1 已剔除） |
+| mask_block_idx | 输入 | Tensor | INT32 | ND | [num_mask_block] | 压缩后的 MASK 块编号 |
 | full_block_cnt | 输入 | Tensor | INT32 | ND | [1, 1, num_rows] | 每个 (b, h, q_block) 的 FULL 块个数 |
 | full_block_offset | 输入 | Tensor | INT32 | ND | [num_rows + 1] | full 块索引的 exclusive scan 偏移 |
-| full_block_idx | 输入 | Tensor | INT32 | ND | [num_full_block] | 压缩后的 FULL 块编号（-1 已剔除） |
+| full_block_idx | 输入 | Tensor | INT32 | ND | [num_full_block] | 压缩后的 FULL 块编号 |
 | out | 输出 | Tensor | FLOAT16 / BFLOAT16 | ND | [s_q, H_q, D] | 输出，shape 与数据类型均与 q 保持一致 |
 
 > num_rows = ceil(s_q / 128)，每个 H_q 共用一个 mask_block_cnt / mask_block_offset / mask_block_idx。
 > 只支持等长序列，不支持变长序列。
+> mask_block_idx 及 full_block_idx 由 compact_no_sync 算子生成，长度一致，实际有效长度分别为 mask_block_offset[-1] 及 full_block_offset[-1]
 
 ## 约束说明
 

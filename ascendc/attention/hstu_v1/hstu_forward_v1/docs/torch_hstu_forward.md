@@ -93,7 +93,7 @@ ops_rec.ascendc.attention.hstu_paged(
 - v_dim 需为 16 的倍数，范围 [16, 512]
 - mask_type=1（上三角）暂不支持
 - max_seq_len 范围 [1, 20480]
-- FP8（fp8_e4m3fn）仅在 Ascend 950PR&950DT系列产品 上支持
+- FP8（fp8_e4m3fn）仅在Ascend 950PR&950DT系列产品上支持
 
 ### torch 扩展层额外校验
 

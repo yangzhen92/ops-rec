@@ -1,4 +1,4 @@
-# triton_jagged_jagged_bmm_reduce_sum
+# _jagged_jagged_bmm_reduce_sum
 
 ## 来源
 

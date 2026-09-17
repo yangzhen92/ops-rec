@@ -2,9 +2,9 @@
 
 ## 来源
 
-`concat_2D_jagged_w_prefix` 算子源自 Meta generative-recommenders：
+`concat_2D_jagged_w_prefix` 算子源自 NVIDIA recsys-examples：
 
-<https://github.com/meta-recsys/generative-recommenders/blob/4a33ba4405ebf85599acae40527e6ffb964292f7/generative_recommenders/ops/triton/triton_jagged.py>
+<https://github.com/NVIDIA/recsys-examples/blob/97062d97eef53115105063801e35184e36186df5/examples/commons/ops/triton_ops/triton_jagged.py>
 
 ## 功能说明
 

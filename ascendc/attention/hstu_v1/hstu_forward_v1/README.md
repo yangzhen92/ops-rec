@@ -80,7 +80,7 @@ def hstu_dense_forward(q_np, k_np, v_np, rel_attn_bias_np, invalid_attn_mask_np)
 
 | 名称            | 输入/输出 | 数据类型 | 说明 |
 |-----------------|-------|---------|------|
-| q               | 输入  | Tensor[float32/float16/bfloat16]，Ascend 950PR&950DT系列产品时支持 fp8_e4m3fn | `[B, S, N_q, D_q]`（normal）或 `[s_b, N_q, D_q]`（jagged/paged） |
+| q               | 输入  | Tensor[float32/float16/bfloat16]，Ascend 950PR&950DT系列产品时支持FP8_E4M3FN（后文简称FP8） | `[B, S, N_q, D_q]`（normal）或 `[s_b, N_q, D_q]`（jagged/paged） |
 | k               | 输入  | 同 q（仅 jagged 时头数可小于 Q（GQA）；dense 布局不支持 GQA，头数必须与 Q 一致） | `[B, S, N_k, D_q]` 或 `[s_b, N_k, D_q]` |
 | v               | 输入  | 同 q（dim 可与 qk 不等） | `[B, S, N_k, D_v]` 或 `[s_b, N_k, D_v]` |
 | mask            | 输入  | 同 q（可选） | `[B, N, S, S]`，mask_type=3 时必传 |
@@ -90,7 +90,7 @@ def hstu_dense_forward(q_np, k_np, v_np, rel_attn_bias_np, invalid_attn_mask_np)
 | max_seq_len_k   | 输入  | int | K 序列最大长度，`[1, 20480]` |
 | silu_scale      | 输入  | float | 默认 `1/max_seq_len` |
 | deterministic   | 输入  | bool | 确定性计算开关，默认 false |
-| attn_output     | 输出  | Tensor | `[B, S, N_q, D_v]` 或 `[s_b, N_q, D_v]`，Ascend 950PR&950DT系列产品时输入q类型为FP8时输出类型为fp16 |
+| attn_output     | 输出  | Tensor | `[B, S, N_q, D_v]` 或 `[s_b, N_q, D_v]`，Ascend 950PR&950DT系列产品输入类型FP8时输出类型为fp16 |
 
 ### layout 专属参数
 

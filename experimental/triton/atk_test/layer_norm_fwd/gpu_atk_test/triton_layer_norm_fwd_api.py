@@ -49,8 +49,6 @@ from triton_layer_norm_fwd_kernel import _layer_norm_fwd
 _SUPPORTED_DTYPES = {torch.float32, torch.float16, torch.bfloat16}
 """kernel 支持并参与精度对比的输入 dtype（X）。"""
 
-# double_benchmark 模式：关闭 dump
-
 
 def _get_device() -> str:
     if hasattr(torch, "npu") and torch.npu.is_available():

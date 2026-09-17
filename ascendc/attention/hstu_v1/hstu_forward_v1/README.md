@@ -25,7 +25,7 @@
 
 **复合 Mask 支持**：jagged（equal/delta）与 paged 布局可通过 `num_context` / `num_target` / `target_group_size` 构造 HSTU 复合掩码，将序列划分为 Context / Causal / Target 三个区域（详见下节「复合 Mask 接口参数」）；dense 布局不支持。
 
-**FP8 支持**：本算子仅在 Ascend 950PR&950DT系列产品 上支持 data_type 为 fp8_e4m3fn 的 qkv 输入，算子输出为 float16。
+**FP8 支持**：本算子仅在Ascend 950PR&950DT系列产品上支持 data_type 为 fp8_e4m3fn 的 qkv 输入，算子输出为 float16。
 
 ## 接口说明
 
@@ -80,7 +80,7 @@ def hstu_dense_forward(q_np, k_np, v_np, rel_attn_bias_np, invalid_attn_mask_np)
 
 | 名称            | 输入/输出 | 数据类型 | 说明 |
 |-----------------|-------|---------|------|
-| q               | 输入  | Tensor[float32/float16/bfloat16]，Ascend 950PR&950DT系列产品 另支持 fp8_e4m3fn | `[B, S, N_q, D_q]`（normal）或 `[s_b, N_q, D_q]`（jagged/paged） |
+| q               | 输入  | Tensor[float32/float16/bfloat16]，Ascend 950PR&950DT系列产品时支持 fp8_e4m3fn | `[B, S, N_q, D_q]`（normal）或 `[s_b, N_q, D_q]`（jagged/paged） |
 | k               | 输入  | 同 q（仅 jagged 时头数可小于 Q（GQA）；dense 布局不支持 GQA，头数必须与 Q 一致） | `[B, S, N_k, D_q]` 或 `[s_b, N_k, D_q]` |
 | v               | 输入  | 同 q（dim 可与 qk 不等） | `[B, S, N_k, D_v]` 或 `[s_b, N_k, D_v]` |
 | mask            | 输入  | 同 q（可选） | `[B, N, S, S]`，mask_type=3 时必传 |
@@ -90,7 +90,7 @@ def hstu_dense_forward(q_np, k_np, v_np, rel_attn_bias_np, invalid_attn_mask_np)
 | max_seq_len_k   | 输入  | int | K 序列最大长度，`[1, 20480]` |
 | silu_scale      | 输入  | float | 默认 `1/max_seq_len` |
 | deterministic   | 输入  | bool | 确定性计算开关，默认 false |
-| attn_output     | 输出  | Tensor | `[B, S, N_q, D_v]` 或 `[s_b, N_q, D_v]`，Ascend 950PR&950DT系列产品 的 FP8 输入输出为 fp16 |
+| attn_output     | 输出  | Tensor | `[B, S, N_q, D_v]` 或 `[s_b, N_q, D_v]`，Ascend 950PR&950DT系列产品时输入q类型为FP8时输出类型为fp16 |
 
 ### layout 专属参数
 
@@ -298,12 +298,12 @@ y = ops_rec.ascendc.attention.hstu_jagged(
     deterministic=deterministic)
 ```
 
-### 示例 6: FP8（仅 Ascend 950PR&950DT系列产品）
+### 示例 6: FP8（仅Ascend 950PR&950DT系列产品）
 
-相比示例 1 的改动：q/k/v 为 `fp8_e4m3fn`，输出为 `float16`；仅 Ascend 950PR&950DT系列产品支持。
+相比示例 1 的改动：q/k/v 为 `fp8_e4m3fn`，输出为 `float16`；仅Ascend 950PR&950DT系列产品支持。
 
 ```python
-# ===================== 示例 6: FP8（仅 Ascend 950PR&950DT系列产品） =====================
+# ===================== 示例 6: FP8（仅Ascend 950PR&950DT系列产品） =====================
 # 相比示例 1 的改动：q/k/v 为 fp8_e4m3fn，输出为 float16
 data_type = torch.float8_e4m3fn
 q = torch.empty(total_len, head_num_q, head_dim_qk, dtype=data_type).uniform_(-1, 1).npu()
@@ -396,8 +396,8 @@ python3 -m pytest test_hstu_dense.py test_hstu_jagged.py test_hstu_paged.py -x -
 hstu_v1/                          # HSTU 子组（转发层，登记名：hstu_v1）
 └── hstu_forward_v1/              # HSTU 前向 vendor（VENDOR_NAME：hstu_forward_v1）
     ├── op_host/                  # Host 侧实现（HstuDenseForward / HstuJaggedForward / HstuPagedForward）
-    │   ├── atlas950/             # Ascend 950PR&950DT系列产品 特化 host 文件（c310 tiling key）
-    │   └── atlasA2/              # Atlas A2/A3 系列产品 特化 host 文件（v220 tiling key）
+    │   ├── atlas950/             # Ascend 950PR&950DT系列产品特化 host 文件（c310 tiling key）
+    │   └── atlasA2/              # Atlas A2/A3 系列产品特化 host 文件（v220 tiling key）
     ├── op_kernel/
     │   ├── atlas950/             # Ascend 950PR&950DT系列产品 kernel（c310 实现）
     │   └── atlasA2/              # Atlas A2/A3 系列产品 kernel（v220 实现）

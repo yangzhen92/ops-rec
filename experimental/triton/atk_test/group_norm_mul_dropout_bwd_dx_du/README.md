@@ -1,4 +1,4 @@
-# triton_group_norm_mul_dropout_bwd_dx_du
+# _group_norm_mul_dropout_bwd_dx_du
 
 ## 来源
 
@@ -51,7 +51,7 @@ kernel 同时生成供后续权重梯度规约使用的 partial `DW` 和 `DB`，
 ## 目录结构
 
 ```text
-experimental/triton/atk_test/triton_group_norm_mul_dropout_bwd_dx_du/
+experimental/triton/atk_test/group_norm_mul_dropout_bwd_dx_du/
 ├── README.md
 ├── gpu_atk_test/
 │   ├── triton_group_norm_mul_dropout_bwd_dx_du_kernel.py

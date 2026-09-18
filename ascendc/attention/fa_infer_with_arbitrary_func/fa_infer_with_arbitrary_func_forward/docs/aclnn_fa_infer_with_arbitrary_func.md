@@ -104,7 +104,6 @@ aclnnStatus aclnnFaInferWithArbitraryFunc(
 
 ## aclnnFaInferWithArbitraryFunc 约束说明
 
-- 仅支持 Ascend 950PR&950DT系列产品
 - q、k、v 及输出仅支持 FLOAT16 / BFLOAT16，数据类型需保持一致
 - q、k、v 必须为 3D（TND 格式），最后一维（headDim）必须为 128
 - batch 固定为 1，多序列需拼接为单个序列后传入；H_q 须为 H_kv 的整数倍（支持 GQA）

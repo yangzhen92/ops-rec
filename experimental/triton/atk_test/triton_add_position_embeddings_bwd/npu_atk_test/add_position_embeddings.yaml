@@ -1,0 +1,136 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
+# add_position_embeddings_bwd kernel 测试设计yaml
+# 计算 jagged 梯度对 high_inds 的 reduce sum，输出 DenseOut
+# 输入：Jagged [N, D], seq_offsets [B+1], high_inds [B], scale scalar
+# 输出：DenseOut [B, D]
+name: add_position_embeddings_bwd
+api: pytorch
+version: v2.1
+api_type: add_position_embeddings_bwd
+triton_api_type: add_position_embeddings_bwd
+triton_name: triton_position._add_position_embeddings_bwd_kernel
+generate: generate_add_position_embeddings_bwd
+dtype_numbers: 50
+outputs: 0
+standard:
+  acc: single_bm
+  perf: not_key
+inputs:
+  - name: Jagged
+    type: tensor
+    required: true
+    dtypes:
+      values: [ fp32, fp16, bf16 ]
+    ranges:
+      valid:
+        values: [ [-10000, 10000] ]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+    shapes:
+      dim_numbers:
+        values: [ 2 ]
+      dim_values:
+        values: [ [257, 1024], [1025, 4096], [4096, 8192] ]
+        weights: [ 0.2, 0.3, 0.5]
+      max_length: 67108864
+    align_32B: true
+    boundary:
+      has_empty: false
+      has_infnan: true
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: seq_offsets
+    type: tensor
+    required: true
+    dtypes:
+      values: [ int32 ]
+    shapes:
+      dim_numbers:
+        values: [ 1 ]
+      dim_values:
+        # B+1（B: batch大小，2-32之间）
+        values: [ [8, 15], [16, 31], [32, 63], [64, 128] ]
+        weights: [ 0.1, 0.2, 0.3, 0.4 ]
+    ranges:
+      valid:
+        values: [ [0, 4096] ]
+    align_32B: true
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: high_inds
+    type: tensor
+    required: true
+    dtypes:
+      values: [ int32 ]
+    shapes:
+      dim_numbers:
+        values: [ 1 ]
+      dim_values:
+        # B，与seq_offsets的B对应
+        values: [ [2, 10], [11, 32], [33, 64] ]
+        weights: [ 0.3, 0.4, 0.3 ]
+    ranges:
+      valid:
+        values: [ [16, 31], [32, 64] ]
+    align_32B: true
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: DenseOut
+    type: tensor
+    required: true
+    dtypes:
+      values: [ fp32, fp16, bf16 ]
+    shapes:
+      dim_numbers:
+        values: [ 2 ]
+      dim_values:
+        values: [ [257, 1024], [1025, 4096], [4096, 8192] ]
+        weights: [ 0.2, 0.3, 0.5]
+      max_length: 67108864
+    ranges:
+      valid:
+        values: [ [-10000, 10000] ]
+    align_32B: true
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: scale
+    type: scalar
+    required: false
+    dtypes:
+      values: [ fp32 ]
+    ranges:
+      valid:
+        values: [ 1.0, 0.5 ]

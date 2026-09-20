@@ -1,0 +1,134 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+name: jagged_flash_attention_basic_kernel
+api: pytorch
+version: v2.1
+api_type: jagged_flash_attention_basic_kernel
+dtype_numbers: 3334
+outputs: 0
+standard:
+  acc: double_benchmark
+  perf: not_key
+triton_api_type: jagged_flash_attention_basic_kernel
+triton_name: triton_jagged_flash_attention_basic.jagged_flash_attention_basic_kernel
+generate: generate_jagged_flash_attention_basic_kernel
+inputs:
+  - name: q
+    type: tensor
+    required: true
+    dtypes:
+      values: [bf16, fp16, fp32]
+    shapes:
+      dim_numbers:
+        values: [2]
+      dim_values:
+        values: [[64, 128], [16, 64]]
+        weights: [0.6, 0.4]
+    ranges:
+      valid:
+        values: [[-1, 1]]  # 有界小值域，避免 QK^T 溢出致双标杆发散
+  - name: k
+    type: tensor
+    required: true
+    dtypes:
+      values: [bf16, fp16, fp32]
+    shapes:
+      dim_numbers:
+        values: [2]
+      dim_values:
+        values: [[16, 64], [64, 256]]
+        weights: [0.4, 0.6]
+    ranges:
+      valid:
+        values: [[-1, 1]]
+  - name: v
+    type: tensor
+    required: true
+    dtypes:
+      values: [bf16, fp16, fp32]
+    shapes:
+      dim_numbers:
+        values: [2]
+      dim_values:
+        values: [[64, 128], [16, 64]]
+        weights: [0.6, 0.4]
+    ranges:
+      valid:
+        values: [[-1, 1]]
+  - name: offset
+    type: tensor
+    required: true
+    dtypes:
+      values: [int64]
+    shapes:
+      dim_numbers:
+        values: [1]
+      dim_values:
+        values: [[5, 9]]
+        weights: [1.0]
+  - name: max_seq_len
+    type: attr
+    required: true
+    dtypes:
+      values: [int]
+    ranges:
+      valid:
+        values: [[16, 32]]
+        weights: [1.0]
+  - name: use_mask
+    type: attr
+    required: false
+    dtypes:
+      values: [bool]
+    ranges:
+      valid:
+        values: ["false", "true"]
+        weights: [0.7, 0.3]
+  - name: allow_tf32
+    type: attr
+    required: false
+    dtypes:
+      values: [bool]
+    ranges:
+      valid:
+        values: ["false", "true"]
+        weights: [0.8, 0.2]
+  - name: BLOCK_SIZE_M
+    type: attr
+    required: false
+    dtypes:
+      values: [int]
+    ranges:
+      valid:
+        values: [[16, 16], [32, 32]]
+        weights: [0.4, 0.6]
+  - name: BLOCK_SIZE_N
+    type: attr
+    required: false
+    dtypes:
+      values: [int]
+    ranges:
+      valid:
+        values: [[16, 16], [32, 32]]
+        weights: [0.4, 0.6]
+  - name: BLOCK_SIZE_D
+    type: attr
+    required: false
+    dtypes:
+      values: [int]
+    ranges:
+      valid:
+        values: [[16, 16], [32, 32]]
+        weights: [0.4, 0.6]

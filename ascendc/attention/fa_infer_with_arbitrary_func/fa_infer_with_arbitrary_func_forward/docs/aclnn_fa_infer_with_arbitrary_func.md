@@ -61,23 +61,23 @@ aclnnStatus aclnnFaInferWithArbitraryFunc(
 
 | 参数名 | 输入/输出 | 描述 | 数据类型 | 数据格式 |
 | -------- | --------- | ------ | --------- | --------- |
-| q（aclTensor） | 输入 | Query，shape [s_q, H_q, D]，TND 格式，D 固定为 128 | FLOAT16 / BFLOAT16 | ND |
-| k（aclTensor） | 输入 | Key，shape [s_kv, H_kv, D]，数据类型与 q 保持一致 | FLOAT16 / BFLOAT16 | ND |
-| v（aclTensor） | 输入 | Value，shape [s_kv, H_kv, D]，数据类型与 q 保持一致 | FLOAT16 / BFLOAT16 | ND |
+| q（aclTensor） | 输入 | Query，shape [total_seqlen, H, D]，TND 格式，D 固定为 128 | BFLOAT16 | ND |
+| k（aclTensor） | 输入 | Key，shape [total_seqlen, H, D]，数据类型与 q 保持一致 | BFLOAT16 | ND |
+| v（aclTensor） | 输入 | Value，shape [total_seqlen, H, D]，数据类型与 q 保持一致 | BFLOAT16 | ND |
 | mask（aclTensor） | 输入 | 保留输入，本算子不使用，传 nullptr | - | - |
 | blockTable（aclTensor） | 输入 | 保留输入，本算子不使用，传 nullptr | - | - |
-| arbitraryFunc（aclTensor） | 输入 | 函数编码张量，shape [1, 1, s_q, 4]，每个 query 用 4 个 INT32 表示两个合法 KV 区间 | INT32 | ND |
+| arbitraryFunc（aclTensor） | 输入 | 函数编码张量，shape [1, 1, total_seqlen, 4]，每个 query 用 4 个 INT32 表示两个合法 KV 区间 | INT32 | ND |
 | maskBlockCnt（aclTensor） | 输入 | 每个 (b, h, q_block) 的 MASK 块个数，shape [1, 1, num_rows] | INT32 | ND |
 | maskBlockOffset（aclTensor） | 输入 | mask 块索引的 exclusive scan 偏移，shape [num_rows + 1] | INT32 | ND |
 | maskBlockIdx（aclTensor） | 输入 | 压缩后的 MASK 块编号，shape [num_mask_block] | INT32 | ND |
 | fullBlockCnt（aclTensor） | 输入 | 每个 (b, h, q_block) 的 FULL 块个数，shape [1, 1, num_rows] | INT32 | ND |
 | fullBlockOffset（aclTensor） | 输入 | full 块索引的 exclusive scan 偏移，shape [num_rows + 1] | INT32 | ND |
 | fullBlockIdx（aclTensor） | 输入 | 压缩后的 FULL 块编号，shape [num_full_block] | INT32 | ND |
-| out（aclTensor） | 输出 | 输出，shape [s_q, H_q, D]，数据类型与 q 保持一致 | FLOAT16 / BFLOAT16 | ND |
+| out（aclTensor） | 输出 | 输出，shape [total_seqlen, H, D]，数据类型与 q 保持一致 | BFLOAT16 | ND |
 | workspaceSize（uint64_t*） | 输出 | 返回需要在 Device 侧申请的 workspace 大小 | - | - |
 | executor（aclOpExecutor**） | 输出 | 返回算子执行器 | - | - |
 
-> num_rows = ceil(s_q / 128)，每个 H_q 共用一个 mask_block_cnt / mask_block_offset / mask_block_idx。
+> num_rows = ceil(total_seqlen / 128)，每个 H 共用一个 mask_block_cnt / mask_block_offset / mask_block_idx。
 > mask_block_idx 及 full_block_idx 由 compact_no_sync 算子生成，长度一致，实际有效长度分别为 mask_block_offset[-1] 及 full_block_offset[-1]
 
 ### aclnnFaInferWithArbitraryFuncGetWorkspaceSize 返回值
@@ -104,10 +104,10 @@ aclnnStatus aclnnFaInferWithArbitraryFunc(
 
 ## aclnnFaInferWithArbitraryFunc 约束说明
 
-- q、k、v 及输出仅支持 FLOAT16 / BFLOAT16，数据类型需保持一致
+- q、k、v 及输出仅支持 BFLOAT16，数据类型需保持一致
 - q、k、v 必须为 3D（TND 格式），最后一维（headDim）必须为 128
 - batch 固定为 1，多序列需拼接为单个序列后传入；H_q 须为 H_kv 的整数倍（支持 GQA）
-- arbitraryFunc 必须为 INT32、4D，每 query 固定 4 列（两个区间），行数须与 s_q 对应
+- arbitraryFunc 必须为 INT32、4D，每 query 固定 4 列（两个区间），行数须与 total_seqlen 对应
 - mask 与 blockTable 为保留输入，本算子不使用，传 nullptr 即可
 - 块稀疏索引（mask/full 的 cnt/offset/idx）需在算子外由预处理算子或脚本生成，并保证与
   arbitraryFunc 语义一致（FULL / MASK / EMPTY 分类正确）

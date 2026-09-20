@@ -45,9 +45,13 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
     int64_t kvSeqlen = context->GetInputShape(INPUT_INDEX_K)->GetStorageShape().GetDim(0);
     int64_t kvHeads = context->GetInputShape(INPUT_INDEX_K)->GetStorageShape().GetDim(1);
     int64_t kEmbed = context->GetInputShape(INPUT_INDEX_K)->GetStorageShape().GetDim(2);
+    int64_t vSeqlen = context->GetInputShape(INPUT_INDEX_V)->GetStorageShape().GetDim(0);
     int64_t vEmbed = context->GetInputShape(INPUT_INDEX_V)->GetStorageShape().GetDim(2);
     float scaleValue = static_cast<float>(1.0 / std::sqrt(1.0 * embed));
 
+    OPS_LOG_E_IF(qSeqlen != kvSeqlen || qSeqlen != vSeqlen, context, return ge::GRAPH_FAILED,
+                 "[ERROR]qSeqlen, kvSeqlen, vSeqlen must be the same, qSeqlen: %lld, kvSeqlen: %lld, vSeqlen: %lld.",
+                 qSeqlen, kvSeqlen, vSeqlen);
     OPS_LOG_E_IF(kvHeads <= 0, context, return ge::GRAPH_FAILED, "[ERROR]kvHeads must be greater than 0.");
     OPS_LOG_E_IF(qHeads % kvHeads != 0, context, return ge::GRAPH_FAILED,
                  "[ERROR]qHeads must be a multiple of kvHeads, qHeads: %lld, kvHeads: %lld.", qHeads, kvHeads);

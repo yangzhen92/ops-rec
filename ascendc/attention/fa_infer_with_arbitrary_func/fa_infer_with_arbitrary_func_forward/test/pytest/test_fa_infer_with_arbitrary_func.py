@@ -269,6 +269,49 @@ def create_init_inputs(N, D, ctx_num, his_num, tgt_num, batch_size, dtype):
     return q_b, k_b, v_b, arbitrary_func, q2k_block_sparse, atol, rtol
 
 
+def create_unequal_seqlen_inputs(N, D, ctx_num, his_num, tgt_num, batch_size, dtype):
+    """构造 q 与 k/v 第一维不一致的输入：q 仅包含每个 batch 的 tgt 段，k/v 为全量序列。"""
+    q_b, k_b, v_b, arbitrary_func, _, _, _, _, _, _ = create_inputs(
+        N, D, ctx_num, his_num, tgt_num, batch_size, dtype
+    )
+    step = ctx_num + his_num + tgt_num
+    total_seqlen = batch_size * step
+    seqlen_q = batch_size * tgt_num
+
+    # 按段抽取每个 batch 的 tgt 部分重新拼接 q 与 arbitrary_func，
+    # 区间值引用的是全量 k/v 的绝对位置，切片后语义保持不变
+    q_parts = []
+    af_parts = []
+    for b in range(batch_size):
+        start = b * step + ctx_num + his_num
+        end = (b + 1) * step
+        q_parts.append(q_b[start:end])
+        af_parts.append(arbitrary_func[:, :, :, start:end])
+    q_new = torch.cat(q_parts, dim=0)
+    af_new = torch.cat(af_parts, dim=-1)
+
+    # q block 数随 seqlen_q 变化，块稀疏索引需按 (seqlen_q, total_seqlen) 重建
+    mask_cnt, mask_idx, full_cnt, full_idx = create_reference_block_mask(af_new, seqlen_q, total_seqlen, 128, 128)
+    mask_offset = torch.cumsum(mask_cnt, dim=2).reshape(-1).to(mask_cnt.dtype)
+    mask_offset = torch.cat([mask_offset.new_zeros(1), mask_offset])
+    full_offset = torch.cumsum(full_cnt, dim=2).reshape(-1).to(full_cnt.dtype)
+    full_offset = torch.cat([full_offset.new_zeros(1), full_offset])
+    mask_idx = mask_idx.flatten()
+    mask_idx = mask_idx[mask_idx != -1]
+    full_idx = full_idx.flatten()
+    full_idx = full_idx[full_idx != -1]
+
+    q2k_block_sparse = [
+        mask_cnt.to(DEVICE),
+        mask_offset.to(DEVICE),
+        mask_idx.to(DEVICE),
+        full_cnt.to(DEVICE),
+        full_offset.to(DEVICE),
+        full_idx.to(DEVICE),
+    ]
+    return q_new, k_b, v_b, af_new, q2k_block_sparse
+
+
 def fa_infer_with_arbitrary_func_fused(query, key, value, arbitrary_func, q2k_block_sparse):
     # [batch, seqlen, headSize, headDim] -> [-1, headSize, headDim]
     torch.npu.set_device(DEVICE)
@@ -311,7 +354,7 @@ def compute_reference_arbitrary_cpu(q, k, v, arbitrary_func, up_cast=False):
 
     total_seqlen, nheads, headdim = q.shape
     seqlen_q = total_seqlen
-    seqlen_k = total_seqlen
+    seqlen_k = k.shape[0]  # q 与 k/v 第一维允许不一致，kv 侧长度以 k 为准
     nheads_kv = k.shape[1]
     scale = 1.0 / math.sqrt(headdim)
 
@@ -346,6 +389,26 @@ def test_fa_infer_with_arbitrary_func_normal(N, D, ctx_num, his_num, tgt_num, ba
     npu_out_cpu = npu_out.to("cpu")
     # float16 CPU执行耗时较长, 转fp32后计算再验证
     cpu_out = compute_reference_arbitrary_cpu(q_b, k_b, v_b, arbitrary_func, dtype == torch.float16)
+    assert torch.allclose(cpu_out.to(dtype), npu_out_cpu, atol=atol, rtol=rtol)
+
+
+@pytest.mark.parametrize("N", [4])
+@pytest.mark.parametrize("D", [128])
+@pytest.mark.parametrize("ctx_num", [0, 128])
+@pytest.mark.parametrize("his_num", [500])
+@pytest.mark.parametrize("tgt_num", [1024])
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
+@pytest.mark.parametrize("batch_size", [1, 4])
+def test_fa_infer_with_arbitrary_func_unequal_seqlen(N, D, ctx_num, his_num, tgt_num, batch_size, dtype):
+    """q 与 k/v 第一维不一致：q 仅含每个 batch 的 tgt 段，k/v 为全量序列。"""
+    q_b, k_b, v_b, arbitrary_func, q2k_block_sparse = create_unequal_seqlen_inputs(
+        N, D, ctx_num, his_num, tgt_num, batch_size, dtype
+    )
+    assert q_b.shape[0] != k_b.shape[0] and k_b.shape[0] == v_b.shape[0]
+    npu_out = fa_infer_with_arbitrary_func_fused(q_b, k_b, v_b, arbitrary_func, q2k_block_sparse)
+    npu_out_cpu = npu_out.to("cpu")
+    cpu_out = compute_reference_arbitrary_cpu(q_b, k_b, v_b, arbitrary_func, dtype == torch.float16)
+    atol, rtol = (1e-3, 1e-3) if dtype == torch.float16 else (5e-3, 5e-3)
     assert torch.allclose(cpu_out.to(dtype), npu_out_cpu, atol=atol, rtol=rtol)
 
 

@@ -1,0 +1,186 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
+name: _multi_head_jagged_flash_attention_fwd_kernel
+api: pytorch
+version: v2.1
+api_type: _multi_head_jagged_flash_attention_fwd_kernel
+dtype_numbers: 50
+outputs: 0
+standard:
+  acc: double_benchmark
+  perf: not_key
+triton_api_type: _multi_head_jagged_flash_attention_fwd_kernel
+triton_name: triton_multi_head_jagged_flash_attention._multi_head_jagged_flash_attention_fwd_kernel
+generate: generate__multi_head_jagged_flash_attention_fwd_kernel
+
+# 最保守安全版 YAML - 完全避免 UB 溢出
+# 核心策略：
+#   1. D 严格限制 ≤64（绝不溢出）
+#   2. BLOCK 参数保守（最大 64）
+#   3. 仍然覆盖长序列测试（v1 优化目标）
+
+inputs:
+  # q: [num_heads, total_seq, D]
+  - name: q
+    type: tensor
+    required: true
+    dtypes:
+      values: [bf16, fp16, fp32]
+    shapes:
+      dim_numbers:
+        values: [3]
+      dim_values:
+        - # 维度 0: num_heads
+          values: [[4, 8]]
+          weights: [1.0]
+        - # 维度 1: total_seq（覆盖短到超长序列）
+          values: [
+            [64, 128],      # 短序列（baseline）
+            [128, 256],     # 中序列
+            [256, 512],     # 长序列（v1 优化开始显著）
+            [512, 1024],    # 超长序列（v1 优化收益大）
+            [1024, 2048]    # 极长序列（v1 优化收益最大）
+          ]
+          weights: [0.25, 0.25, 0.2, 0.2, 0.1]
+        - # 维度 2: D（严格 ≤64，绝不溢出）
+          values: [[32, 64]]
+          weights: [1.0]
+
+  # k: [num_heads, total_seq, D]
+  - name: k
+    type: tensor
+    required: true
+    dtypes:
+      values: [bf16, fp16, fp32]
+    shapes:
+      dim_numbers:
+        values: [3]
+      dim_values:
+        - values: [[4, 8]]
+          weights: [1.0]
+        - values: [[64, 128], [128, 256], [256, 512], [512, 1024], [1024, 2048]]
+          weights: [0.25, 0.25, 0.2, 0.2, 0.1]
+        - values: [[32, 64]]
+          weights: [1.0]
+
+  # v: [num_heads, total_seq, D]
+  - name: v
+    type: tensor
+    required: true
+    dtypes:
+      values: [bf16, fp16, fp32]
+    shapes:
+      dim_numbers:
+        values: [3]
+      dim_values:
+        - values: [[4, 8]]
+          weights: [1.0]
+        - values: [[64, 128], [128, 256], [256, 512], [512, 1024], [1024, 2048]]
+          weights: [0.25, 0.25, 0.2, 0.2, 0.1]
+        - values: [[32, 64]]
+          weights: [1.0]
+
+  # offset: [B+1]
+  - name: offset
+    type: tensor
+    required: true
+    dtypes:
+      values: [int64]
+    shapes:
+      dim_numbers:
+        values: [1]
+      dim_values:
+        values: [
+          [2, 2],          # B=1（边界）
+          [3, 9],          # B=2-8（小 batch）
+          [9, 17],         # B=8-16
+          [17, 33]         # B=16-32（中 batch）
+        ]
+        weights: [0.15, 0.35, 0.35, 0.15]
+
+  # max_seq_len（覆盖 v1 优化核心区间）
+  - name: max_seq_len
+    type: attr
+    required: true
+    dtypes:
+      values: [int]
+    ranges:
+      valid:
+        values: [
+          [16, 64],        # 超短序列（快速测试）
+          [64, 128],       # 短序列
+          [128, 256],      # 中序列
+          [256, 512],      # 长序列
+          [512, 1024],     # 超长序列（v1 优化收益显著）⭐
+          [1024, 2048]     # 极长序列（v1 优化收益最大）⭐
+        ]
+        weights: [0.1, 0.2, 0.2, 0.2, 0.2, 0.1]
+
+  # allow_tf32
+  - name: allow_tf32
+    type: attr
+    required: false
+    dtypes:
+      values: [bool]
+    ranges:
+      valid:
+        values: ["false", "true"]
+        weights: [0.5, 0.5]
+
+  # BLOCK_M（保守）
+  - name: BLOCK_M
+    type: attr
+    required: false
+    dtypes:
+      values: [int]
+    ranges:
+      valid:
+        values: [
+          [16, 16],
+          [32, 32],        # 最常用（GPU 默认值）
+          [64, 64]         # 探索 NPU 大 tile
+        ]
+        weights: [0.25, 0.5, 0.25]
+
+  # BLOCK_N（保守）
+  - name: BLOCK_N
+    type: attr
+    required: false
+    dtypes:
+      values: [int]
+    ranges:
+      valid:
+        values: [
+          [16, 16],
+          [32, 32],
+          [64, 64]
+        ]
+        weights: [0.25, 0.5, 0.25]
+
+  # BLOCK_D（保守：最大 64）
+  - name: BLOCK_D
+    type: attr
+    required: false
+    dtypes:
+      values: [int]
+    ranges:
+      valid:
+        values: [
+          [16, 16],
+          [32, 32],
+          [64, 64]         # D≤64 时可以用 BLOCK_D=64
+        ]
+        weights: [0.25, 0.5, 0.25]

@@ -59,17 +59,17 @@
   <g transform="translate(50,210)">
     <!-- 表头 -->
     <rect x="0" y="0" width="70" height="30" fill="#34495e"/>
-    <text x="35" y="20" text-anchor="middle" fill="white" font-weight="bold" class="label">pos</text>
+    <text x="35" y="20" text-anchor="middle" style="fill: white; font-weight: bold;" class="label">pos</text>
     <rect x="70" y="0" width="70" height="30" fill="#34495e"/>
-    <text x="105" y="20" text-anchor="middle" fill="white" font-weight="bold" class="label">col0</text>
+    <text x="105" y="20" text-anchor="middle" style="fill: white; font-weight: bold;" class="label">col0</text>
     <rect x="140" y="0" width="70" height="30" fill="#34495e"/>
-    <text x="175" y="20" text-anchor="middle" fill="white" font-weight="bold" class="label">col1</text>
+    <text x="175" y="20" text-anchor="middle" style="fill: white; font-weight: bold;" class="label">col1</text>
     <rect x="210" y="0" width="70" height="30" fill="#34495e"/>
-    <text x="245" y="20" text-anchor="middle" fill="white" font-weight="bold" class="label">col2</text>
+    <text x="245" y="20" text-anchor="middle" style="fill: white; font-weight: bold;" class="label">col2</text>
     <rect x="280" y="0" width="70" height="30" fill="#34495e"/>
-    <text x="315" y="20" text-anchor="middle" fill="white" font-weight="bold" class="label">col3</text>
+    <text x="315" y="20" text-anchor="middle" style="fill: white; font-weight: bold;" class="label">col3</text>
     <rect x="350" y="0" width="550" height="30" fill="#34495e"/>
-    <text x="625" y="20" text-anchor="middle" fill="white" font-weight="bold" class="label">可见区间说明</text>
+    <text x="625" y="20" text-anchor="middle" style="fill: white; font-weight: bold;" class="label">可见区间说明</text>
 
     <!-- 行0: History pos0 -->
     <rect x="0" y="30" width="70" height="30" class="hist" opacity="0.3"/>

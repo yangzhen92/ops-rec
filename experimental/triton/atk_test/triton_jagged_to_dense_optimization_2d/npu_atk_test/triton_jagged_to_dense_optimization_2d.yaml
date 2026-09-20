@@ -1,0 +1,116 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+# 输入：jagged_values [outer, inner], jagged_offsets [outer+1], jagged_max_lengths [max_len]
+# 输出：output_dense [outer, max_len, inner]
+name: triton_jagged_to_dense_optimization_2d
+api: pytorch
+version: v2.1
+api_type: triton_jagged_to_dense_optimization_2d
+triton_api_type: triton_jagged_to_dense_optimization_2d
+triton_name: triton_jagged_tensor_ops.triton_jagged_to_dense_optimization_2d
+generate: generate_triton_jagged_to_dense_optimization_2d
+dtype_numbers: 3334
+outputs: 0
+standard:
+  acc: single_bm
+  perf: not_key
+
+inputs:
+  - name: jagged_values
+    type: tensor
+    required: true
+    dtypes:
+      values: [ fp32, fp16, bf16 ]
+    shapes:
+      dim_numbers:
+        values: [ 2 ]
+      dim_values:
+        values: [ [64, 1024], [1025, 4096], [4097, 8192], [8193, 16384], [16385, 32768] ]  # 标量池
+        weights: [ 0.2, 0.2, 0.25, 0.2, 0.15 ]  # 小→中大→极大
+    ranges:
+      valid:
+        values: [ [-10000, 10000] ]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+    boundary:
+      has_empty: false
+      has_infnan: true
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: jagged_offsets
+    type: tensor
+    required: true
+    dtypes:
+      values: [ int32, int64 ]
+    shapes:
+      dim_numbers:
+        values: [ 1 ]
+      dim_values:
+        values: [ [5, 65], [65, 257], [257, 513], [513, 1025], [1025, 2049] ]
+        weights: [ 0.2, 0.2, 0.25, 0.2, 0.15 ]
+    ranges:
+      valid:
+        values: [ [0, 256] ]
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: jagged_max_lengths
+    type: attr
+    required: true
+    tuple_numbers:
+      values: [ 1 ]
+    dtypes:
+      values: [ int ]
+    ranges:
+      valid:
+        values: [ [4, 16], [16, 64], [64, 128], [128, 256] ]
+        weights: [ 0.3, 0.3, 0.25, 0.15 ]
+
+  - name: padding_value
+    type: attr
+    required: true
+    dtypes:
+      values: [ float ]
+    ranges:
+      valid:
+        values: [ [0.0, 0.0], [-1.0, -1.0] ]
+        weights: [ 0.8, 0.2 ]
+
+  - name: operation_function
+    type: attr
+    required: false
+    dtypes:
+      values: [ string ]
+    ranges:
+      valid:
+        values: [ ["null"], ["add"], ["mul"] ]
+        weights: [ 0.6, 0.2, 0.2 ]
+
+  - name: operation_value
+    type: attr
+    required: false
+    dtypes:
+      values: [ float ]
+    ranges:
+      valid:
+        values: [ [0.0, 0.0], [1.0, 1.0], [2.0, 2.0] ]
+        weights: [ 0.4, 0.3, 0.3 ]

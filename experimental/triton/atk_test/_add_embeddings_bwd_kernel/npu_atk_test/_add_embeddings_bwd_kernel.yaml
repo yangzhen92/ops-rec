@@ -1,0 +1,70 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
+# _add_embeddings_bwd_kernel 测试设计yaml。
+
+name: _add_embeddings_bwd_kernel
+api: pytorch
+version: v2.1
+api_type: _add_embeddings_bwd_kernel
+triton_api_type: _add_embeddings_bwd_kernel
+triton_name: triton_position._add_embeddings_bwd_kernel
+generate: generate_add_embeddings_bwd_kernel
+
+dtype_numbers: 3334
+outputs: 0
+standard:
+  acc: double_benchmark
+  perf: not_key
+
+inputs:
+  # In: [jagged_size, D] 上游梯度。dim_values 同池为两维提供候选，
+  # 生成器收敛：第一维为 jagged_size（>= num_keys），第二维为 D。
+  - name: In
+    type: tensor
+    required: true
+    dtypes:
+      values: [fp32, fp16, bf16]
+    ranges:
+      # scatter-add 只做累加与类型转换，值域适中以免 fp16/bf16 溢出。
+      valid:
+        values: [[-100.0, 100.0]]
+      invalid:
+        values: [[-100.0, 100.0]]
+    shapes:
+      dim_numbers:
+        values: [2]
+      # 小(30%)：16~1024；大(70%)：1025~8192；第二维收敛后为 D。
+      dim_values:
+        values: [[16, 1024], [1025, 4096], [4097, 8192]]
+        weights: [0.3, 0.35, 0.35]
+      max_length: 67108864
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  # num_keys: 输出的 key 数（Out 行数）。生成器强制 jagged_size >= num_keys，
+  # 确保每个 key 至少被一个 token 寻址。
+  - name: num_keys
+    type: attr
+    required: true
+    dtypes:
+      values: [int]
+    ranges:
+      valid:
+        values: [16, 32, 64]

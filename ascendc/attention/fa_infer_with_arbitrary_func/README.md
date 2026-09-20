@@ -60,19 +60,19 @@ Kernel 使用混合 AIC 1:2 架构（`KERNEL_TYPE_MIX_AIC_1_2`），多核并行
 
 | 参数名 | 输入/输出 | 参数类型 | 数据类型 | 数据格式 | shape | 说明 |
 | -------- | --------- | --------- | --------- | --------- | ------- | ------ |
-| q | 输入 | Tensor | FLOAT16 / BFLOAT16 | ND | [s_q, H_q, D] | Query，TND 格式，D 固定为 128 |
-| k | 输入 | Tensor | FLOAT16 / BFLOAT16 | ND | [s_kv, H_kv, D] | Key，数据类型与 q 保持一致 |
-| v | 输入 | Tensor | FLOAT16 / BFLOAT16 | ND | [s_kv, H_kv, D] | Value，数据类型与 q 保持一致 |
-| arbitrary_func | 输入 | Tensor | INT32 | ND | [1, 1, s_q, 4] | 函数编码张量，每个 query 用 4 个 INT32 表示两个合法 KV 区间 [af1, af2) 与 [af3, af4) |
+| q | 输入 | Tensor | BFLOAT16 | ND | [total_seqlen, H_q, D] | Query，TND 格式，D 固定为 128 |
+| k | 输入 | Tensor | BFLOAT16 | ND | [total_seqlen, H_kv, D] | Key，数据类型与 q 保持一致 |
+| v | 输入 | Tensor | BFLOAT16 | ND | [total_seqlen, H_kv, D] | Value，数据类型与 q 保持一致 |
+| arbitrary_func | 输入 | Tensor | INT32 | ND | [1, 1, total_seqlen, 4] | 函数编码张量，每个 query 用 4 个 INT32 表示两个合法 KV 区间 [af1, af2) 与 [af3, af4) |
 | mask_block_cnt | 输入 | Tensor | INT32 | ND | [1, 1, num_rows] | 每个 (b, h, q_block) 的 MASK 块个数 |
 | mask_block_offset | 输入 | Tensor | INT32 | ND | [num_rows + 1] | mask 块索引的 exclusive scan 偏移 |
 | mask_block_idx | 输入 | Tensor | INT32 | ND | [num_mask_block] | 压缩后的 MASK 块编号 |
 | full_block_cnt | 输入 | Tensor | INT32 | ND | [1, 1, num_rows] | 每个 (b, h, q_block) 的 FULL 块个数 |
 | full_block_offset | 输入 | Tensor | INT32 | ND | [num_rows + 1] | full 块索引的 exclusive scan 偏移 |
 | full_block_idx | 输入 | Tensor | INT32 | ND | [num_full_block] | 压缩后的 FULL 块编号 |
-| out | 输出 | Tensor | FLOAT16 / BFLOAT16 | ND | [s_q, H_q, D] | 输出，shape 与数据类型均与 q 保持一致 |
+| out | 输出 | Tensor | BFLOAT16 | ND | [total_seqlen, H_q, D] | 输出，shape 与数据类型均与 q 保持一致 |
 
-> num_rows = ceil(s_q / block_size)，每个 H_q 共用一个 mask_block_cnt / mask_block_offset / mask_block_idx，
+> num_rows = ceil(total_seqlen / block_size)，每个 H_q 共用一个 mask_block_cnt / mask_block_offset / mask_block_idx，
 > 其中块大小 block_size=128。
 > 通过 torch 接口调用时，q2k_block_sparse 以长度为 6 的 Tensor 列表传入，依次为
 > [mask_block_cnt, mask_block_offset, mask_block_idx, full_block_cnt, full_block_offset, full_block_idx]。
@@ -81,10 +81,10 @@ Kernel 使用混合 AIC 1:2 架构（`KERNEL_TYPE_MIX_AIC_1_2`），多核并行
 
 ## 约束说明
 
-- q、k、v 及输出仅支持 FLOAT16 / BFLOAT16，数据类型需保持一致
+- q、k、v 及输出仅支持 BFLOAT16，数据类型需保持一致
 - q、k、v 必须为 3D（TND 格式），最后一维（headDim）必须为 128
 - batch 固定为 1，多序列需拼接为单个序列后传入；H_q 须为 H_kv 的整数倍（支持 GQA）
-- arbitrary_func 必须为 INT32、4D，每 query 固定 4 列（两个区间），行数须与 s_q 对应
+- arbitrary_func 必须为 INT32、4D，每 query 固定 4 列（两个区间），行数须与 total_seqlen 对应
 - mask 与 block_table 为保留输入，本算子不使用（torch 接口调用时无需传入）
 - 块稀疏索引（mask/full 的 cnt/offset/idx）需在算子外由预处理算子或脚本生成，并保证与
   arbitrary_func 语义一致（FULL / MASK / EMPTY 分类正确）

@@ -39,6 +39,7 @@ See the License for the specific language governing permissions and
 #include <iostream>
 #include <vector>
 #include "acl/acl.h"
+#include "aclnn/opdev/bfloat16.h"
 #include "aclnn_fa_infer_with_arbitrary_func.h"
 
 #define CHECK_RET(cond, return_expr) \
@@ -168,7 +169,7 @@ int main()
     constexpr int64_t NUM_KV_BLOCKS = NUM_Q_BLOCKS;
     constexpr int64_t NUM_ROWS = B * HEADS * NUM_Q_BLOCKS;
 
-    // q/k/v 均为 FLOAT16，TND 格式
+    // q/k/v 均为 BFLOAT16，TND 格式
     const std::vector<int64_t> qShape = {SEQ_LEN, HEADS, HEAD_DIM};
     const std::vector<int64_t> kShape = {SEQ_LEN, HEADS, HEAD_DIM};
     const std::vector<int64_t> vShape = {SEQ_LEN, HEADS, HEAD_DIM};
@@ -177,18 +178,18 @@ int main()
     const std::vector<int64_t> cntShape = {NUM_ROWS};
     const std::vector<int64_t> offsetShape = {NUM_ROWS + 1};
 
-    std::vector<aclFloat16> qHostData(SEQ_LEN * HEADS * HEAD_DIM);
-    std::vector<aclFloat16> kHostData(SEQ_LEN * HEADS * HEAD_DIM);
-    std::vector<aclFloat16> vHostData(SEQ_LEN * HEADS * HEAD_DIM);
-    std::vector<aclFloat16> outHostData(SEQ_LEN * HEADS * HEAD_DIM, 0);
+    std::vector<op::bfloat16> qHostData(SEQ_LEN * HEADS * HEAD_DIM);
+    std::vector<op::bfloat16> kHostData(SEQ_LEN * HEADS * HEAD_DIM);
+    std::vector<op::bfloat16> vHostData(SEQ_LEN * HEADS * HEAD_DIM);
+    std::vector<op::bfloat16> outHostData(SEQ_LEN * HEADS * HEAD_DIM, 0);
     for (size_t i = 0; i < qHostData.size(); ++i) {
-        qHostData[i] = aclFloatToFloat16(static_cast<float>(i % 16 - 8) / 8.0f);
+        qHostData[i] = static_cast<op::bfloat16>(static_cast<float>(i % 16 - 8) / 8.0f);
     }
     for (size_t i = 0; i < kHostData.size(); ++i) {
-        kHostData[i] = aclFloatToFloat16(static_cast<float>(i % 32 - 16) / 16.0f);
+        kHostData[i] = static_cast<op::bfloat16>(static_cast<float>(i % 32 - 16) / 16.0f);
     }
     for (size_t i = 0; i < vHostData.size(); ++i) {
-        vHostData[i] = aclFloatToFloat16(static_cast<float>(i % 64 - 32) / 32.0f);
+        vHostData[i] = static_cast<op::bfloat16>(static_cast<float>(i % 64 - 32) / 32.0f);
     }
 
     // arbitrary_func: [B, H, s_q, 4]，因果掩码 [0, i+1) ∪ [0, 0)
@@ -235,13 +236,13 @@ int main()
     aclOpExecutor* executor = nullptr;
     void* workspaceAddr = nullptr;
 
-    ret = CreateAclTensor(qHostData, qShape, &qDeviceAddr, aclDataType::ACL_FLOAT16, &q);
+    ret = CreateAclTensor(qHostData, qShape, &qDeviceAddr, aclDataType::ACL_BF16, &q);
     CHECK_RET(ret == ACL_SUCCESS, return ret);
-    ret = CreateAclTensor(kHostData, kShape, &kDeviceAddr, aclDataType::ACL_FLOAT16, &k);
+    ret = CreateAclTensor(kHostData, kShape, &kDeviceAddr, aclDataType::ACL_BF16, &k);
     CHECK_RET(ret == ACL_SUCCESS, return ret);
-    ret = CreateAclTensor(vHostData, vShape, &vDeviceAddr, aclDataType::ACL_FLOAT16, &v);
+    ret = CreateAclTensor(vHostData, vShape, &vDeviceAddr, aclDataType::ACL_BF16, &v);
     CHECK_RET(ret == ACL_SUCCESS, return ret);
-    ret = CreateAclTensor(outHostData, outShape, &outDeviceAddr, aclDataType::ACL_FLOAT16, &out);
+    ret = CreateAclTensor(outHostData, outShape, &outDeviceAddr, aclDataType::ACL_BF16, &out);
     CHECK_RET(ret == ACL_SUCCESS, return ret);
     ret = CreateAclTensor(afHostData, afShape, &afDeviceAddr, aclDataType::ACL_INT32, &arbitraryFunc);
     CHECK_RET(ret == ACL_SUCCESS, return ret);
@@ -277,7 +278,7 @@ int main()
     ret = aclrtSynchronizeDevice();
     CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("aclrtSynchronizeDevice failed. ERROR: %d\n", ret); return ret);
 
-    auto outSize = SEQ_LEN * HEADS * HEAD_DIM * sizeof(aclFloat16);
+    auto outSize = SEQ_LEN * HEADS * HEAD_DIM * sizeof(op::bfloat16);
     ret = aclrtMemcpy(outHostData.data(), outSize, outDeviceAddr, outSize, ACL_MEMCPY_DEVICE_TO_HOST);
     CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("aclrtMemcpy out failed. ERROR: %d\n", ret); return ret);
 
@@ -291,8 +292,9 @@ int main()
         LOG_PRINT("%d ", fullCntHost[i]);
     }
     LOG_PRINT("\n");
-    LOG_PRINT("fa_infer_with_arbitrary_func out[0,0,0..3]: %.4f %.4f %.4f %.4f\n", aclFloat16ToFloat(outHostData[0]),
-              aclFloat16ToFloat(outHostData[1]), aclFloat16ToFloat(outHostData[2]), aclFloat16ToFloat(outHostData[3]));
+    LOG_PRINT("fa_infer_with_arbitrary_func out[0,0,0..3]: %.4f %.4f %.4f %.4f\n", static_cast<float>(outHostData[0]),
+              static_cast<float>(outHostData[1]), static_cast<float>(outHostData[2]),
+              static_cast<float>(outHostData[3]));
 
     aclDestroyTensor(q);
     aclDestroyTensor(k);

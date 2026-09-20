@@ -1,0 +1,116 @@
+﻿# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+# triton_split_2D_jagged_w_prefix.yaml
+# split_2D_jagged_w_prefix kernel 精度测试配置。
+# 该 kernel 是纯数据搬运算子（无 reduce/bmm/element-wise 运算），
+# 核心操作为 tl.load → tl.store，从 JaggedIn 按 prefix 规则拆分至 OutA/OutB。
+#
+# 输入说明:
+#   JaggedIn  — [L, D] float，L = L_A + L_B，A 和 B 物理连续存储的 jagged 数据
+#   OffsetsA  — [B+1] int64，A 部分的 offsets，由 API 按 shape 确定性重建
+#   OffsetsB  — [B+1] int64，B 部分的 offsets，由 API 按 shape 确定性重建
+# 输出:
+#   OutA — [L_A, D] float，拆分后的 A 部分
+#   OutB — [L_B, D] float，拆分后的 B 部分
+#
+# 测试范围:
+#   - 仅测试 jagged+jagged 模式 (IS_DENSE_A=False, IS_DENSE_B=False, IS_REPLACE=False)
+#   - n_prefix_to_B=0（默认 split 模式）
+name: triton_split_2D_jagged_w_prefix
+api: pytorch
+version: v2.1
+api_type: triton_split_2D_jagged_w_prefix
+triton_api_type: triton_split_2D_jagged_w_prefix
+triton_name: triton_jagged.split_2D_jagged_w_prefix
+generate: generate_triton_split_2D_jagged_w_prefix
+
+dtype_numbers: 3334
+outputs: 0
+standard:
+  # 纯数据搬运算子，预期全部通过；使用单标杆精度标准。
+  acc: single_bm
+  perf: not_key
+
+inputs:
+  - name: JaggedIn
+    type: tensor
+    required: true
+    dtypes:
+      values: [fp32, fp16, bf16]
+    ranges:
+      # 数据值不影响搬运正确性，使用中等范围值
+      valid:
+        values: [[-4.0, 4.0]]
+        random_types:
+          - name: nd
+            mean: [0.0, 2.0]
+            std: [1.0, 1.0]
+    shapes:
+      dim_numbers:
+        values: [2]
+      # L = L_A + L_B 采样范围；Generator 会将 D 收敛到候选集
+      dim_values:
+        values: [[2, 1024], [2049, 4096], [4097, 8192]]
+        weights: [0.30, 0.20, 0.50]
+      max_length: 67108864
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: OffsetsA
+    type: tensor
+    required: true
+    dtypes:
+      values: [int64]
+    ranges:
+      # 实际 offset 值由 API 按 shape 确定性重建；此处的随机值不会传给 kernel
+      valid:
+        values: [[0, 1]]
+    shapes:
+      dim_numbers:
+        values: [1]
+      # OffsetsA.shape[0] = B + 1，覆盖 B=1 到 1024
+      dim_values:
+        values: [[4, 32]]
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: OffsetsB
+    type: tensor
+    required: true
+    dtypes:
+      values: [int64]
+    ranges:
+      valid:
+        values: [[0, 1]]
+    shapes:
+      dim_numbers:
+        values: [1]
+      # OffsetsB.shape[0] = B + 1，与 OffsetsA 保持一致（Generator 会同步）
+      dim_values:
+        values: [[4, 32]]
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false

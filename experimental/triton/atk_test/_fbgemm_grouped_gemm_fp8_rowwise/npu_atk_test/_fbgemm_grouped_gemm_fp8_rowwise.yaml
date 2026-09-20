@@ -1,0 +1,91 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+name: _fbgemm_grouped_gemm_fp8_rowwise
+api: pytorch
+version: v2.1
+api_type: _fbgemm_grouped_gemm_fp8_rowwise
+triton_api_type: _fbgemm_grouped_gemm_fp8_rowwise
+triton_name: kernel.grouped_gemm_fp8_rowwise
+generate: generate__fbgemm_grouped_gemm_fp8_rowwise
+dtype_numbers: 50
+outputs: 0
+standard: { acc: double_benchmark, perf: not_key }
+inputs:
+  - name: x
+    type: tensor
+    required: true
+    dtypes: { values: [ bf16, fp16, fp32 ] }
+    shapes:
+      dim_numbers: { values: [ 2 ] }
+      dim_values:
+        - values: [ 1024, 2048, 8192, 16384, 32768, 65536 ]   # M
+          weights: [ 0.01, 0.01, 0.02, 0.16, 0.50, 0.30 ]     # 71.5%在大shape(>10us)
+        - values: [ 64, 128, 256 ]        # K，原生全部候选都是 8 的倍数
+          weights: [ 0.3, 0.4, 0.3 ]
+    ranges:
+      valid:
+        values: [ [-1, 1] ]
+        random_types:
+          - name: nd
+            mean: [0]
+            std: [0.1, 1]
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+  - name: w
+    type: tensor
+    required: true
+    dtypes: { values: [ bf16 ] }
+    shapes:
+      dim_numbers: { values: [ 2 ] }
+      dim_values:
+        - values: [ 256 ]                 # N，原生固定 256
+          weights: [ 1.0 ]
+        - values: [ 64, 128, 256 ]        # K
+          weights: [ 0.3, 0.4, 0.3 ]
+    ranges:
+      valid:
+        values: [ [-1, 1] ]
+        random_types:
+          - name: nd
+            mean: [0]
+            std: [0.1, 1]
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+  - name: m_sizes
+    type: tensor
+    required: true
+    dtypes: { values: [ int32 ] }
+    shapes:
+      dim_numbers: { values: [ 1 ] }
+      dim_values:
+        values: [ 1, 4, 16 ]
+        weights: [ 0.2, 0.4, 0.4 ]
+    ranges:
+      valid:
+        values: [ [1, 1] ]
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false

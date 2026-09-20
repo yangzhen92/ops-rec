@@ -1,0 +1,300 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
+name: _multi_head_jagged_flash_attention_bwd_kernel
+api: pytorch
+version: v2.1
+api_type: _multi_head_jagged_flash_attention_bwd_kernel
+dtype_numbers: 50
+outputs: 0
+standard:
+  acc: double_benchmark
+  perf: not_key
+triton_api_type: _multi_head_jagged_flash_attention_bwd_kernel
+triton_name: triton_multi_head_jagged_flash_attention._multi_head_jagged_flash_attention_bwd_kernel
+generate: generate__multi_head_jagged_flash_attention_bwd_kernel
+
+inputs:
+  # q: [num_heads, total_seq, D]
+  # 对齐前向：num_heads∈[4,8], total_seq 覆盖短到超长序列, D∈[32,64]
+  - name: q
+    type: tensor
+    required: true
+    dtypes:
+      values: [bf16, fp16, fp32]
+    ranges:
+      valid:
+        values: [[-1, 1], [-7, 7]]
+        weights: [0.5, 0.5]
+    shapes:
+      dim_numbers:
+        values: [3]
+      dim_values:
+        - # 维度 0: num_heads（对齐前向）
+          values: [[4, 8]]
+          weights: [1.0]
+        - # 维度 1: total_seq（对齐前向：覆盖短到超长序列）
+          values: [
+            [64, 128],      # 短序列（baseline）
+            [128, 256],     # 中序列
+            [256, 512],     # 长序列（v1 优化开始显著）
+            [512, 1024],    # 超长序列（v1 优化收益大）
+            [1024, 2048]    # 极长序列（v1 优化收益最大）
+          ]
+          weights: [0.25, 0.25, 0.2, 0.2, 0.1]
+        - # 维度 2: D（对齐前向：严格 32-64）
+          values: [[32, 64]]
+          weights: [1.0]
+
+  # k: [num_heads, total_seq, D]
+  - name: k
+    type: tensor
+    required: true
+    dtypes:
+      values: [bf16, fp16, fp32]
+    ranges:
+      valid:
+        values: [[-1, 1], [-7, 7]]
+        weights: [0.5, 0.5]
+    shapes:
+      dim_numbers:
+        values: [3]
+      dim_values:
+        - values: [[4, 8]]
+          weights: [1.0]
+        - values: [
+            [64, 128],
+            [128, 256],
+            [256, 512],
+            [512, 1024],
+            [1024, 2048]
+          ]
+          weights: [0.25, 0.25, 0.2, 0.2, 0.1]
+        - values: [[32, 64]]
+          weights: [1.0]
+
+  # v: [num_heads, total_seq, D]
+  - name: v
+    type: tensor
+    required: true
+    dtypes:
+      values: [bf16, fp16, fp32]
+    ranges:
+      valid:
+        values: [[-1, 1], [-7, 7]]
+        weights: [0.5, 0.5]
+    shapes:
+      dim_numbers:
+        values: [3]
+      dim_values:
+        - values: [[4, 8]]
+          weights: [1.0]
+        - values: [
+            [64, 128],
+            [128, 256],
+            [256, 512],
+            [512, 1024],
+            [1024, 2048]
+          ]
+          weights: [0.25, 0.25, 0.2, 0.2, 0.1]
+        - values: [[32, 64]]
+          weights: [1.0]
+
+  # o: [num_heads, total_seq, D]
+  - name: o
+    type: tensor
+    required: true
+    dtypes:
+      values: [bf16, fp16, fp32]
+    ranges:
+      valid:
+        values: [[-1, 1], [-7, 7]]
+        weights: [0.5, 0.5]
+    shapes:
+      dim_numbers:
+        values: [3]
+      dim_values:
+        - values: [[4, 8]]
+          weights: [1.0]
+        - values: [
+            [64, 128],
+            [128, 256],
+            [256, 512],
+            [512, 1024],
+            [1024, 2048]
+          ]
+          weights: [0.25, 0.25, 0.2, 0.2, 0.1]
+        - values: [[32, 64]]
+          weights: [1.0]
+
+  # do: [num_heads, total_seq, D]
+  - name: do
+    type: tensor
+    required: true
+    dtypes:
+      values: [bf16, fp16, fp32]
+    ranges:
+      valid:
+        values: [[-1, 1], [-7, 7]]
+        weights: [0.5, 0.5]
+    shapes:
+      dim_numbers:
+        values: [3]
+      dim_values:
+        - values: [[4, 8]]
+          weights: [1.0]
+        - values: [
+            [64, 128],
+            [128, 256],
+            [256, 512],
+            [512, 1024],
+            [1024, 2048]
+          ]
+          weights: [0.25, 0.25, 0.2, 0.2, 0.1]
+        - values: [[32, 64]]
+          weights: [1.0]
+
+  # delta: [num_heads, total_seq]（generator 会用 q 的 num_heads/total_seq 覆盖）
+  - name: delta
+    type: tensor
+    required: true
+    dtypes:
+      values: [bf16, fp16, fp32]
+    ranges:
+      valid:
+        values: [[-1, 1], [-7, 7]]
+        weights: [0.5, 0.5]
+    shapes:
+      dim_numbers:
+        values: [2]
+      dim_values:
+        - values: [[4, 8]]
+          weights: [1.0]
+        - values: [
+            [64, 128],
+            [128, 256],
+            [256, 512],
+            [512, 1024],
+            [1024, 2048]
+          ]
+          weights: [0.25, 0.25, 0.2, 0.2, 0.1]
+
+  # lse: [num_heads, total_seq]
+  - name: lse
+    type: tensor
+    required: true
+    dtypes:
+      values: [bf16, fp16, fp32]
+    ranges:
+      valid:
+        values: [[-1, 1], [-7, 7]]
+        weights: [0.5, 0.5]
+    shapes:
+      dim_numbers:
+        values: [2]
+      dim_values:
+        - values: [[4, 8]]
+          weights: [1.0]
+        - values: [
+            [64, 128],
+            [128, 256],
+            [256, 512],
+            [512, 1024],
+            [1024, 2048]
+          ]
+          weights: [0.25, 0.25, 0.2, 0.2, 0.1]
+
+  # offset: [B+1]
+  - name: offset
+    type: tensor
+    required: true
+    dtypes:
+      values: [int64]
+    shapes:
+      dim_numbers:
+        values: [1]
+      dim_values:
+        values: [[3, 17], [17, 33], [33, 65]]
+        weights: [0.4, 0.4, 0.2]
+
+  # max_seq_len（对齐前向：覆盖 v1 优化核心区间）
+  - name: max_seq_len
+    type: attr
+    required: true
+    dtypes:
+      values: [int]
+    ranges:
+      valid:
+        values: [
+          [16, 64],        # 超短序列（快速测试）
+          [64, 128],       # 短序列
+          [128, 256],      # 中序列
+          [256, 512],      # 长序列
+          [512, 1024],     # 超长序列
+          [1024, 2048]     # 极长序列
+        ]
+        weights: [0.1, 0.2, 0.2, 0.2, 0.2, 0.1]
+
+  # allow_tf32
+  - name: allow_tf32
+    type: attr
+    required: false
+    dtypes:
+      values: [bool]
+    ranges:
+      valid:
+        # bool attr 必须用字符串候选值，避免 ATK 把 [false,false] 误判为 randint 数值区间
+        values: ["false", "true"]
+        weights: [0.5, 0.5]
+
+  - name: BLOCK_M
+    type: attr
+    required: false
+    dtypes:
+      values: [int]
+    ranges:
+      valid:
+        values: [
+          [32, 32]
+        ]
+        weights: [1.0]
+
+  # BLOCK_N（对齐前向）
+  - name: BLOCK_N
+    type: attr
+    required: false
+    dtypes:
+      values: [int]
+    ranges:
+      valid:
+        values: [
+          [32, 32]
+        ]
+        weights: [1.0]
+
+  # BLOCK_D（对齐前向：保守最大 64）
+  - name: BLOCK_D
+    type: attr
+    required: false
+    dtypes:
+      values: [int]
+    ranges:
+      valid:
+        values: [
+          [16, 16],
+          [32, 32],
+          [64, 64]         # D≤64 时可以用 BLOCK_D=64
+        ]
+        weights: [0.25, 0.5, 0.25]

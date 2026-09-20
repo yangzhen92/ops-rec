@@ -1,0 +1,134 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
+# triton_jagged_jagged_bmm_reduce_sum.yaml
+# _jagged_jagged_bmm_reduce_sum 精度测试配置。
+# Out[B, M, N] = sum_k JaggedA[offset+k, :M] * JaggedB[offset+k, :N] (outer product)
+# 输入顺序与 kernel 的数据参数一致：seq_offsets, JaggedA, JaggedB, ReduceOut
+name: triton_jagged_jagged_bmm_reduce_sum
+api: pytorch
+version: v2.1
+api_type: triton_jagged_jagged_bmm_reduce_sum
+triton_api_type: triton_jagged_jagged_bmm_reduce_sum
+triton_name: triton_jagged_jagged_bmm_reduce_sum_kernel._jagged_jagged_bmm_reduce_sum
+generate: generate_jagged_jagged_bmm_reduce_sum
+
+dtype_numbers: 3334
+outputs: 0
+standard:
+  acc: single_bm
+  perf: not_key
+
+inputs:
+  - name: seq_offsets
+    type: tensor
+    required: true
+    dtypes:
+      values: [int64]
+    ranges:
+      valid:
+        values: [[0, 1]]
+    shapes:
+      dim_numbers:
+        values: [1]
+      dim_values:
+        values: [[4, 32]]
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: JaggedA
+    type: tensor
+    required: true
+    dtypes:
+      values: [fp32, fp16, bf16]
+    ranges:
+      valid:
+        values: [[-10000, 10000]]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+    shapes:
+      dim_numbers:
+        values: [2]
+      # 第 0 维 L（共享总长）的权重分布；第 1 维 M 的候选分布。
+      dim_values:
+        values: [[2, 1024], [2049, 4096], [4097, 8192]]
+        weights: [0.30, 0.20, 0.50]
+      max_length: 67108864
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: JaggedB
+    type: tensor
+    required: true
+    dtypes:
+      values: [fp32, fp16, bf16]
+    ranges:
+      valid:
+        values: [[-10000, 10000]]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+    shapes:
+      dim_numbers:
+        values: [2]
+      # 第 0 维 L 与 JaggedA 共享（Generator 会将其对齐），
+      # 第 1 维 N 的候选分布：覆盖 64 尾块边界和中等规模。
+      dim_values:
+        values: [[2, 1024], [2049, 4096], [4097, 8192]]
+        weights: [0.30, 0.20, 0.50]
+      max_length: 67108864
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: ReduceOut
+    type: tensor
+    required: true
+    dtypes:
+      values: [fp32, fp16, bf16]
+    ranges:
+      valid:
+        values: [[-10000, 10000]]
+        random_types:
+          - name: nd
+            mean: [0, 5000]
+            std: [1, 500]
+    shapes:
+      dim_numbers:
+        values: [2]
+      # 第 0 维 B 由 offsets 决定，第 1 维 N 与 JaggedB 的第 1 维一致（Generator 对齐）。
+      dim_values:
+        values: [[2, 1024], [2049, 4096], [4097, 8192]]
+        weights: [0.30, 0.20, 0.50]
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false

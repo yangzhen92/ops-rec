@@ -1,0 +1,145 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
+# triton_layer_norm_fwd.yaml
+# _layer_norm_fwd 精度/性能测试配置。
+# 该 kernel 对输入 X 做 layer normalization，输出归一化结果 Y，
+# 并（在 COMPUTE_MEAN_AND_RSTD=True 时）产出均值 Mean 与 rstd Rstd。
+#
+# kernel 签名见 triton_layer_norm_fwd_kernel.py。
+#   _layer_norm_fwd(X, Y, Mean, Rstd, D, eps, stride_x, stride_y,
+#                   TRAINING, BLOCK_D, COMPUTE_MEAN_AND_RSTD)
+#   grid = (N,)   # 每行一个 program
+#   D = x.shape[1]
+#   BLOCK_D = min(65536 // x.element_size(), next_pow2(D))
+#   num_warps = min(max(BLOCK_D // 256, 1), 8)
+name: triton_layer_norm_fwd
+api: pytorch
+version: v2.1
+api_type: triton_layer_norm_fwd
+triton_api_type: triton_layer_norm_fwd
+triton_name: triton_layer_norm_fwd_kernel._layer_norm_fwd
+generate: generate_triton_layer_norm_fwd
+dtype_numbers: 3334
+outputs: 0
+standard:
+  acc: double_benchmark
+  perf: not_key
+
+inputs:
+  # 主输入：X [N, D]，按行做 layer norm
+  - name: X
+    type: tensor
+    required: true
+    dtypes:
+      values: [fp32, fp16, bf16]
+    ranges:
+      valid:
+        values: [[-100.0, 100.0]]
+    shapes:
+      dim_numbers:
+        values: [2]
+      dim_values:
+        values: [[2, 1024], [1025, 4096], [4097, 8192]]
+        weights: [0.3, 0.4, 0.3]
+      max_length: 67108864
+    boundary:
+      has_empty: false
+      has_infnan: true
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  # 输出 buffer：Y 与 X 同 shape（归一化结果），用 X 的 dtype
+  - name: Y
+    type: tensor
+    required: true
+    dtypes:
+      values: [fp32, fp16, bf16]
+    ranges:
+      valid:
+        values: [[-100.0, 100.0]]
+    shapes:
+      dim_numbers:
+        values: [2]
+      dim_values:
+        values: [[2, 1024], [1025, 4096], [4097, 8192]]
+        weights: [0.3, 0.4, 0.3]
+      max_length: 67108864
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  # 输出 buffer：Mean [N]，恒为 fp32 累加结果
+  - name: Mean
+    type: tensor
+    required: true
+    dtypes:
+      values: [fp32]
+    ranges:
+      valid:
+        values: [[-100.0, 100.0]]
+    shapes:
+      dim_numbers:
+        values: [1]
+      dim_values:
+        values: [[2, 1024], [1025, 4096], [4097, 8192]]
+        weights: [0.3, 0.4, 0.3]
+      max_length: 67108864
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  # 输出 buffer：Rstd [N]，恒为 fp32 累加结果
+  - name: Rstd
+    type: tensor
+    required: true
+    dtypes:
+      values: [fp32]
+    ranges:
+      valid:
+        values: [[-100.0, 100.0]]
+    shapes:
+      dim_numbers:
+        values: [1]
+      dim_values:
+        values: [[2, 1024], [1025, 4096], [4097, 8192]]
+        weights: [0.3, 0.4, 0.3]
+      max_length: 67108864
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  # 归一化 epsilon（区间形式；注意 1e-6 这类"整数尾数科学计数法"会被
+  # PyYAML 解析成字符串，必须用带小数点的 float 字面量如 1.0e-6）
+  - name: eps
+    type: scalar
+    required: true
+    dtypes:
+      values: [float]
+    ranges:
+      valid:
+        values: [[1.0e-6, 1.0e-4]]
+      invalid:
+        values: [0.0]

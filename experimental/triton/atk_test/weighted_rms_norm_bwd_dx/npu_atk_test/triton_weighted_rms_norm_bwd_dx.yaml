@@ -1,0 +1,148 @@
+﻿# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+# triton_weighted_rms_norm_bwd_dx.yaml
+# _weighted_rms_norm_bwd_dx 测试配置。
+#
+# 该 kernel 对 RMSNorm 反向传播的输入梯度 DY [N, D] 求 DX [N, D]：
+#   xhat = x * rstd
+#   wdy = w * dy
+#   c1 = sum(xhat * wdy) / D
+#   dx = (wdy - xhat * c1) * rstd
+# 同时用 atomic_add 把 partial weight grad (dy * xhat) 累加到 DW [GROUP_N, D]（DW 初始化为 0）。
+#
+# 输入参数：
+#   X: [N, D]          正向输入
+#   DY: [N, D]         loss 对归一化输出的梯度
+#   W: [D]             weight（每列一个标量）
+#   Rstd: [N]          每行 rstd（由 fwd 产生，fp32）
+#   D: int             特征维
+#   eps: float         归一化 epsilon（本 kernel 内未直接使用，仅传递）
+# 中间/输出 buffer（由 api 分配）：
+#   DX:  [N, D]        反向输入梯度（输出）
+#   DW:  [GROUP_N, D]  partial weight 梯度累加缓冲（读写，fp32）
+#   Lock: [2*GROUP_N]  原子锁（int32，NPU 版本 kernel 内不再使用，保留仅对齐签名）
+name: triton_weighted_rms_norm_bwd_dx
+api: pytorch
+version: v2.1
+api_type: triton_weighted_rms_norm_bwd_dx
+triton_api_type: triton_weighted_rms_norm_bwd_dx
+triton_name: triton_layer_norm._weighted_rms_norm_bwd_dx
+generate: generate_weighted_rms_norm_bwd_dx
+
+dtype_numbers: 3334
+outputs: 0
+standard:
+  acc: double_benchmark
+  perf: not_key
+
+inputs:
+  - name: X
+    type: tensor
+    required: true
+    dtypes:
+      values: [fp32, fp16, bf16]
+    ranges:
+      valid:
+        values: [[-100.0, 100.0]]
+    shapes:
+      dim_numbers:
+        values: [2]
+      dim_values:
+        values: [[512, 1024], [1025, 4096], [4097, 8192]]
+        weights: [0.15, 0.35, 0.5]
+      max_length: 67108864
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: DY
+    type: tensor
+    required: true
+    dtypes:
+      values: [fp32, fp16, bf16]
+    ranges:
+      valid:
+        values: [[-100.0, 100.0]]
+    shapes:
+      dim_numbers:
+        values: [2]
+      dim_values:
+        values: [[512, 1024], [1025, 4096], [4097, 8192]]
+        weights: [0.15, 0.35, 0.5]
+      max_length: 67108864
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: W
+    type: tensor
+    required: true
+    dtypes:
+      values: [fp32, fp16, bf16]
+    ranges:
+      valid:
+        values: [[-1.0, 1.0]]
+    shapes:
+      dim_numbers:
+        values: [1]
+      dim_values:
+        values: [[512, 1024], [1025, 4096], [4097, 8192]]
+        weights: [0.15, 0.35, 0.5]
+      max_length: 67108864
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: Rstd
+    type: tensor
+    required: true
+    dtypes:
+      values: [fp32]
+    ranges:
+      valid:
+        values: [[0.0, 10.0]]
+    shapes:
+      dim_numbers:
+        values: [1]
+      dim_values:
+        values: [[512, 1024], [1025, 4096], [4097, 8192]]
+        weights: [0.15, 0.35, 0.5]
+      max_length: 67108864
+    boundary:
+      has_empty: false
+      has_infnan: false
+      has_scalar: false
+      has_upper_border: false
+      has_lower_border: false
+
+  - name: eps
+    type: scalar
+    required: true
+    dtypes:
+      values: [float]
+    ranges:
+      valid:
+        values: [[1.0e-6, 1.0e-4]]
+      invalid:
+        values: [0.0]

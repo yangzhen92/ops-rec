@@ -67,7 +67,6 @@ def _synchronize(device: str) -> None:
 
 
 @register("triton_layer_norm_fwd")
-@register("_layer_norm_fwd")
 class LayerNormFwdApi(BaseApi):
     """_layer_norm_fwd kernel 的 API 封装。"""
 

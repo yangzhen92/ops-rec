@@ -71,6 +71,8 @@ class JaggedFlashAttentionBwdPreprocessBasicKernelGenerator(CaseGenerator):
 
         # 更新 o_offset shape
         self._set_shape(o_offset, [B + 1])
+        if hasattr(o_offset, "range_values"):
+            o_offset.range_values = [0, total_seq]
 
         # 约束3: D 通常是 2 的幂次方
         D = self._round_to_power_of_2(D)

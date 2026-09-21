@@ -39,8 +39,10 @@ inputs:
       dim_numbers:
         values: [2]
       dim_values:
-        - values: [[128, 512]]   # dim0: total_seq
-        - values: [[32, 128]]    # dim1: D
+        - values: [[4096, 8192], [8192, 16384], [16384, 65536]]   # dim0: total_seq
+          weights: [0.3, 0.3, 0.4]
+        - values: [[64, 256], [256, 512], [512, 1024]]    # dim1: D
+          weights: [0.3, 0.3, 0.4]
 
   # do_ptr: 输出梯度 [total_seq, D]
   - name: do
@@ -52,8 +54,10 @@ inputs:
       dim_numbers:
         values: [2]
       dim_values:
-        - values: [[128, 512]]   # dim0: total_seq
-        - values: [[32, 128]]    # dim1: D
+        - values: [[4096, 8192], [8192, 16384], [16384, 65536]]   # dim0: total_seq
+          weights: [0.3, 0.3, 0.4]
+        - values: [[64, 256], [256, 512], [512, 1024]]    # dim1: D
+          weights: [0.3, 0.3, 0.4]
 
   # o_offset_ptr: jagged offset [B+1]
   - name: o_offset

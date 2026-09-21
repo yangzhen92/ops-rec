@@ -27,11 +27,12 @@ import warnings
 from typing import Optional
 
 import torch
-import triton
 import triton.language as tl
 
 # pylint: disable=no-member,too-many-nested-blocks,chained-comparison
 from triton.runtime import driver  # @manual
+
+import triton
 
 try:
     import torch_npu  # noqa: F401

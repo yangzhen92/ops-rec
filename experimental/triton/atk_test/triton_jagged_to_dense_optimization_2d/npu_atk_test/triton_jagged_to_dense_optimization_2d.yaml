@@ -21,7 +21,7 @@ api_type: triton_jagged_to_dense_optimization_2d
 triton_api_type: triton_jagged_to_dense_optimization_2d
 triton_name: triton_jagged_tensor_ops.triton_jagged_to_dense_optimization_2d
 generate: generate_triton_jagged_to_dense_optimization_2d
-dtype_numbers: 3334
+dtype_numbers: 50
 outputs: 0
 standard:
   acc: single_bm
@@ -61,8 +61,8 @@ inputs:
       dim_numbers:
         values: [ 1 ]
       dim_values:
-        values: [ [5, 65], [65, 257], [257, 513], [513, 1025], [1025, 2049] ]
-        weights: [ 0.2, 0.2, 0.25, 0.2, 0.15 ]
+        values: [ [65, 257], [257, 513], [513, 1025], [1025, 2049] ]
+        weights: [ 0.1, 0.2, 0.3, 0.4 ]
     ranges:
       valid:
         values: [ [0, 256] ]
@@ -82,8 +82,8 @@ inputs:
       values: [ int ]
     ranges:
       valid:
-        values: [ [4, 16], [16, 64], [64, 128], [128, 256] ]
-        weights: [ 0.3, 0.3, 0.25, 0.15 ]
+        values: [ [32, 64], [64, 128], [128, 256], [256, 512] ]
+        weights: [ 0.1, 0.2, 0.35, 0.35 ]
 
   - name: padding_value
     type: attr

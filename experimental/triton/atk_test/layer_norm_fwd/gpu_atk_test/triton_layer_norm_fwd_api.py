@@ -45,6 +45,7 @@ from atk.tasks.api_execute import register
 from atk.tasks.api_execute.base_api import BaseApi
 from triton_layer_norm_fwd_kernel import _layer_norm_fwd
 
+# pylint: disable=attribute-defined-outside-init
 
 _SUPPORTED_DTYPES = {torch.float32, torch.float16, torch.bfloat16}
 """kernel 支持并参与精度对比的输入 dtype（X）。"""
@@ -65,25 +66,10 @@ def _synchronize(device: str) -> None:
         torch.cuda.synchronize()
 
 
-@register("triton_layer_norm._layer_norm_fwd")
 @register("triton_layer_norm_fwd")
 @register("_layer_norm_fwd")
 class LayerNormFwdApi(BaseApi):
     """_layer_norm_fwd kernel 的 API 封装。"""
-
-    def __init__(self):
-        self._device = None
-        self._x = None
-        self._y = None
-        self._mean = None
-        self._rstd = None
-        self._d = None
-        self._eps = None
-        self._stride_x = None
-        self._stride_y = None
-        self._block_d = None
-        self._num_warps = None
-        self._grid = None
 
     def init_by_input_data(self, input_data: InputDataset):
         """根据 ATK InputDataset 组装 kernel 入参（不计时）。"""

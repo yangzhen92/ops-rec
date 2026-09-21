@@ -92,7 +92,7 @@ def split_2D_jagged_w_prefix(
         seq_start = seq_start_a + seq_start_b
         out_seq_b_start = seq_len_a + n_prefix_to_B
 
-    if n_prefix_to_B <= off_n < out_seq_b_start:
+    if (n_prefix_to_B <= off_n) & (off_n < out_seq_b_start):
         off_a = off_n - n_prefix_to_B
         out_base = OutA + (off_a + seq_start_a).to(tl.int64) * stride_ad
     else:

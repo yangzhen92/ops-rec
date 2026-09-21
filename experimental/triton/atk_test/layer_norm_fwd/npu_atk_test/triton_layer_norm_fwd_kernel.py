@@ -31,52 +31,6 @@ import triton
 import triton.language as tl
 
 
-# ────────────────────────────────────────────────────────────────────────────
-# _layer_norm_fwd 的 autotune 配置
-# BLOCK_D 决定每个 program（一行）覆盖的特征维 width。必须 >= next_pow2(D)，
-# 否则 kernel 只处理每行的前 BLOCK_D 列（结果错误）；同时受 64KB/元素 限制。
-# ────────────────────────────────────────────────────────────────────────────
-def _layer_norm_fwd_prune_configs(configs, named_args, **kwargs):
-    """按 D 与 dtype 剪枝无效配置。
-
-    - BLOCK_D 必须覆盖整行：BLOCK_D >= next_pow2(D)，否则结果错误；
-    - BLOCK_D 受 64KB/元素 限制：BLOCK_D <= 65536 // element_size()。
-    """
-    d = kwargs.get("D", 0)
-    x = named_args.get("X")
-    element_size = 1
-    if x is not None:
-        try:
-            element_size = x.element_size()
-        except Exception:
-            element_size = 1
-    max_fused = 65536 // element_size
-    min_block = triton.next_power_of_2(d)
-    kept = []
-    for config in configs:
-        block_d = config.kwargs["BLOCK_D"]
-        if min_block <= block_d <= max_fused:
-            kept.append(config)
-    return kept
-
-
-@triton.autotune(
-    configs=[
-        triton.Config({"BLOCK_D": 64}),
-        triton.Config({"BLOCK_D": 128}),
-        triton.Config({"BLOCK_D": 256}),
-        triton.Config({"BLOCK_D": 512}),
-        triton.Config({"BLOCK_D": 1024}),
-        triton.Config({"BLOCK_D": 2048}),
-        triton.Config({"BLOCK_D": 4096}),
-        triton.Config({"BLOCK_D": 8192}),
-        triton.Config({"BLOCK_D": 16384}),
-        triton.Config({"BLOCK_D": 32768}),
-        triton.Config({"BLOCK_D": 65536}),
-    ],
-    key=["D"],
-    prune_configs_by={"early_config_prune": _layer_norm_fwd_prune_configs},
-)
 @triton.jit
 def _layer_norm_fwd(
     X,

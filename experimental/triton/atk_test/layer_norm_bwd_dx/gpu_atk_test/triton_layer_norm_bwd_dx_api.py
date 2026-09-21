@@ -45,6 +45,8 @@ from atk.tasks.api_execute import register
 from atk.tasks.api_execute.base_api import BaseApi
 from triton_layer_norm_bwd_dx_kernel import _layer_norm_bwd_dx
 
+# pylint: disable=attribute-defined-outside-init
+
 _SUPPORTED_DTYPES = {torch.float32, torch.float16, torch.bfloat16}
 """kernel 支持的 dtype。"""
 
@@ -78,22 +80,6 @@ class TritonLayerNormBwdDxApi(BaseApi):
 
     只测非 learnable 分支：X/DY 2D 同形，Mean/Rstd 由 API 从 X 推导。
     """
-
-    def __init__(self):
-        self._device = None
-        self._n = 0
-        self._d = 0
-        self._eps = 0.0
-        self._block_d = 0
-        self._num_warps = 0
-        self._x = None
-        self._dy = None
-        self._mean = None
-        self._rstd = None
-        self._dx = None
-        self._stride_dx = 0
-        self._stride_dy = 0
-        self._stride_x = 0
 
     def init_by_input_data(self, input_data: InputDataset):
         # ── 1. 读取输入 ──

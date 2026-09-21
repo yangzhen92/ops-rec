@@ -35,8 +35,10 @@ import torch
 from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
 from atk.tasks.api_execute.base_api import BaseApi
+
 from triton_layer_norm_fwd_kernel import _layer_norm_fwd
 
+# pylint: disable=attribute-defined-outside-init
 
 _SUPPORTED_DTYPES = {torch.float32, torch.float16, torch.bfloat16}
 
@@ -56,22 +58,9 @@ def _synchronize(device: str) -> None:
         torch.cuda.synchronize()
 
 
-@register("triton_layer_norm._layer_norm_fwd")
 @register("triton_layer_norm_fwd")
 class LayerNormFwdAutotuneApi(BaseApi):
     """_layer_norm_fwd kernel 的 Autotune API 封装。"""
-
-    def __init__(self):
-        self._device = None
-        self._x = None
-        self._y = None
-        self._mean = None
-        self._rstd = None
-        self._d = None
-        self._eps = None
-        self._stride_x = None
-        self._stride_y = None
-        self._grid = None
 
     def init_by_input_data(self, input_data: InputDataset):
         """根据 ATK InputDataset 组装 kernel 入参（不计时）。"""
@@ -135,6 +124,7 @@ class LayerNormFwdAutotuneApi(BaseApi):
             self._stride_x,
             self._stride_y,
             TRAINING=True,
+            BLOCK_D=((self._d + 15) // 16) * 16,
             COMPUTE_MEAN_AND_RSTD=True,
         )
 

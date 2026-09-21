@@ -28,15 +28,6 @@ import triton
 import triton.language as tl
 
 
-@triton.autotune(
-    configs=[
-        triton.Config({"BLOCK_N": 32}),
-        triton.Config({"BLOCK_N": 64}),
-        triton.Config({"BLOCK_N": 128}),
-        triton.Config({"BLOCK_N": 256}),
-    ],
-    key=["D"],
-)
 @triton.jit
 def _ln_mul_dropout_bwd_dwdb(
     DW,

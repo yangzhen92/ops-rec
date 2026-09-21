@@ -155,7 +155,6 @@ class WeightedRmsNormBwdDxApi(BaseApi):
         dw = torch.zeros((group_n, d), dtype=torch.float32, device=device)
         locks = torch.zeros(2 * group_n, dtype=torch.int32, device=device)
 
-        # grid = (N,)
         grid = (n,)
         self._x = x
         self._dy = dy
@@ -191,6 +190,7 @@ class WeightedRmsNormBwdDxApi(BaseApi):
             self._d,
             self._eps,
             GROUP_N=self._group_n,
+            BLOCK_D=((self._d + 15) // 16) * 16,
         )
 
         _synchronize(self._device)

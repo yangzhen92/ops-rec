@@ -30,44 +30,7 @@ import triton
 # @manual=//triton:triton
 import triton.language as tl
 
-# ── _weighted_rms_norm_bwd_dx autotune 配置 ─────────────────────────────
-# 每 program 处理一行（grid=(N,)），BLOCK_D 必须 >= next_pow2(D) 且 <= _AUTOTUNE_MAX_BLOCK_D(8192, NPU UB 硬上限)
-# 。
-_AUTOTUNE_MAX_BLOCK_D = 8192  # NPU UB 硬上限（见 API _MAX_BLOCK_D）
 
-
-def _weighted_rms_norm_bwd_dx_prune_configs(configs, named_args, **kwargs):
-    """按 D 剪枝无效配置。
-
-    - BLOCK_D 必须覆盖整行：BLOCK_D >= next_pow2(D)，否则输出缺列；
-    - BLOCK_D 受 NPU UB 限制：BLOCK_D <= _AUTOTUNE_MAX_BLOCK_D（8192），
-      超过会 ub overflow 编译失败。
-    """
-    d = kwargs.get("D", 0)
-    min_block = triton.next_power_of_2(d)
-    kept = []
-    for config in configs:
-        block_d = config.kwargs["BLOCK_D"]
-        if min_block <= block_d <= _AUTOTUNE_MAX_BLOCK_D:
-            kept.append(config)
-    return kept
-
-
-# each CTA calculates one row of _weighted_rms_norm_bwd_dx
-@triton.autotune(
-    configs=[
-        triton.Config({"BLOCK_D": 64}),
-        triton.Config({"BLOCK_D": 128}),
-        triton.Config({"BLOCK_D": 256}),
-        triton.Config({"BLOCK_D": 512}),
-        triton.Config({"BLOCK_D": 1024}),
-        triton.Config({"BLOCK_D": 2048}),
-        triton.Config({"BLOCK_D": 4096}),
-        triton.Config({"BLOCK_D": 8192}),
-    ],
-    key=["D"],
-    prune_configs_by={"early_config_prune": _weighted_rms_norm_bwd_dx_prune_configs},
-)
 @triton.jit
 def _weighted_rms_norm_bwd_dx(
     DX,

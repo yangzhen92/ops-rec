@@ -23,48 +23,6 @@ import triton
 import triton.language as tl
 
 
-def _weighted_rms_norm_fwd_prune_configs(configs, named_args, **kwargs):
-    """按 D 与 dtype 剪枝无效配置。
-
-    - BLOCK_D 必须覆盖整行：BLOCK_D >= next_pow2(D)，否则输出缺列；
-    - BLOCK_D 受 64KB/元素 限制：BLOCK_D <= 65536 // element_size()。
-    """
-    d = kwargs.get("D", 0)
-    x = named_args.get("X")
-    element_size = 1
-    if x is not None:
-        try:
-            element_size = x.element_size()
-        except Exception:
-            element_size = 1
-    max_fused = 65536 // element_size
-    min_block = triton.next_power_of_2(d)
-    kept = []
-    for config in configs:
-        block_d = config.kwargs["BLOCK_D"]
-        if min_block <= block_d <= max_fused:
-            kept.append(config)
-    return kept
-
-
-# Each program processes one row.
-@triton.autotune(
-    configs=[
-        triton.Config({"BLOCK_D": 64}),
-        triton.Config({"BLOCK_D": 128}),
-        triton.Config({"BLOCK_D": 256}),
-        triton.Config({"BLOCK_D": 512}),
-        triton.Config({"BLOCK_D": 1024}),
-        triton.Config({"BLOCK_D": 2048}),
-        triton.Config({"BLOCK_D": 4096}),
-        triton.Config({"BLOCK_D": 8192}),
-        triton.Config({"BLOCK_D": 16384}),
-        triton.Config({"BLOCK_D": 32768}),
-        triton.Config({"BLOCK_D": 65536}),
-    ],
-    key=["D"],
-    prune_configs_by={"early_config_prune": _weighted_rms_norm_fwd_prune_configs},
-)
 @triton.jit
 def _weighted_rms_norm_fwd(
     X,

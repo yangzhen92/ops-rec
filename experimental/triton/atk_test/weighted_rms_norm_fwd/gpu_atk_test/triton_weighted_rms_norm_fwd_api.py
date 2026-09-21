@@ -13,13 +13,12 @@
 # limitations under the License.
 # ==============================================================================
 # triton_weighted_rms_norm_fwd_api.py
-"""ATK API wrapper for the GPU weighted RMS normalization kernel."""
+"""ATK API wrapper for the NPU weighted RMS normalization kernel."""
 
 from __future__ import annotations
 
 import torch
 import triton
-
 from atk.configs.dataset_config import InputDataset
 from atk.tasks.api_execute import register
 from atk.tasks.api_execute.base_api import BaseApi
@@ -46,7 +45,7 @@ def _synchronize(device: str) -> None:
 
 @register("triton_weighted_rms_norm_fwd")
 class WeightedRmsNormFwdApi(BaseApi):
-    """_weighted_rms_norm_fwd kernel 的 API 封装。"""
+    """Run weighted RMS normalization with NPU autotuning."""
 
     # pylint: disable=attribute-defined-outside-init
 
@@ -57,14 +56,19 @@ class WeightedRmsNormFwdApi(BaseApi):
         y_input = input_data.kwargs.get("Y")
         rstd_input = input_data.kwargs.get("Rstd")
         eps_input = input_data.kwargs.get("eps")
+
+        x_input = x_input.to(torch.float32) if x_input.dtype == torch.float64 else x_input
+        w_input = w_input.to(torch.float32) if w_input.dtype == torch.float64 else w_input
+        y_input = y_input.to(torch.float32) if y_input.dtype == torch.float64 else y_input
+        rstd_input = rstd_input.to(torch.float32) if rstd_input.dtype == torch.float64 else rstd_input
+        # eps_input = eps_input.to(torch.float32) if eps_input.dtype == torch.float64 else eps_input
+
         if not all(isinstance(v, torch.Tensor) for v in (x_input, w_input, y_input, rstd_input)):
             raise ValueError("X, W, Y, Rstd must all be tensors")
         if x_input.ndim != 2:
             raise ValueError(f"Expected X to be 2D, got {x_input.ndim}D")
         if w_input.ndim != 1:
             raise ValueError(f"Expected W to be 1D, got {w_input.ndim}D")
-        if x_input.dtype not in _SUPPORTED_DTYPES:
-            raise ValueError(f"Unsupported dtype: {x_input.dtype}")
         if 0 in x_input.shape:
             raise ValueError("X dimensions must be non-zero")
 
@@ -75,35 +79,41 @@ class WeightedRmsNormFwdApi(BaseApi):
             raise ValueError(f"Y shape {tuple(y_input.shape)} must match X shape {tuple(x_input.shape)}")
         if rstd_input.shape != (n,):
             raise ValueError(f"Rstd shape must be ({n},), got {tuple(rstd_input.shape)}")
-        if w_input.dtype != x_input.dtype or y_input.dtype != x_input.dtype:
+
+        if x_input.dtype == torch.float64:
+            x_input = x_input.to(torch.float32).contiguous()
+        if x_input.dtype not in _SUPPORTED_DTYPES:
+            raise ValueError(f"Unsupported dtype: {x_input.dtype}")
+        dtype = x_input.dtype
+        if w_input.dtype != dtype or y_input.dtype != dtype:
             raise ValueError("X, W, and Y must use the same dtype")
         if rstd_input.dtype != torch.float32:
             raise ValueError(f"Rstd must use fp32, got {rstd_input.dtype}")
-
-        device = _get_device()
-        self._device = device
-
-        x = x_input.contiguous()
-        x = x.to(device)
-        dtype = x.dtype
-        element_size = x.element_size()
-
-        w = w_input.to(device).contiguous()
-        if w.dtype != dtype:
-            w = w.to(dtype)
-
-        max_fused_size = 65536 // element_size
+        max_fused_size = 65536 // x_input.element_size()
         if d > max_fused_size:
             raise ValueError(f"D={d} exceeds the 64 KB row limit for {dtype}")
-        block_d = min(max_fused_size, triton.next_power_of_2(d))
-        num_warps = min(max(block_d // 256, 1), 8)
 
-        y = torch.empty((n, d), dtype=dtype, device=device).contiguous()
+        x_cpu = x_input.cpu().to(dtype).contiguous()
+        w_cpu = w_input.cpu().to(dtype).contiguous()
+
+        device = _get_device()
+        x = x_cpu.to(device)
+        w = w_cpu.to(device)
+
+        element_size = x.element_size()
+        max_fused_size = 65536 // element_size
+        block_d = min(max_fused_size, triton.next_power_of_2(d))
+
+        y = torch.empty((n, d), dtype=dtype, device=device)
         rstd = torch.empty((n,), dtype=torch.float32, device=device)
+
         grid = (n,)
+
         eps = float(eps_input) if eps_input is not None else 1e-5
         if eps <= 0:
-            raise ValueError(f"eps must be greater than 0, got {eps}")
+            eps = 1e-5
+
+        self._device = device
         self._x = x
         self._w = w
         self._y = y
@@ -113,11 +123,10 @@ class WeightedRmsNormFwdApi(BaseApi):
         self._stride_x = x.stride(0)
         self._stride_y = y.stride(0)
         self._block_d = block_d
-        self._num_warps = num_warps
         self._grid = grid
 
     def __call__(self, input_data: InputDataset, with_output: bool = False):
-        """执行 kernel（计时）。"""
+        """Execute the kernel; autotune supplies BLOCK_D."""
         _synchronize(self._device)
 
         _weighted_rms_norm_fwd[self._grid](
@@ -130,8 +139,6 @@ class WeightedRmsNormFwdApi(BaseApi):
             self._stride_x,
             self._stride_y,
             BLOCK_D=self._block_d,
-            num_warps=self._num_warps,
         )
-
         _synchronize(self._device)
         return self._y, self._rstd

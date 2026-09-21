@@ -115,6 +115,7 @@ class LnMulDropoutBwdDwdbApi(BaseApi):
             FINAL_DB=self._final_db,
             N=self._tile_num,
             D=self._d,
+            BLOCK_N=64,
             BLOCK_D=self._block_d,
         )
 

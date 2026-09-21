@@ -28,19 +28,6 @@ import triton
 import triton.language as tl
 
 
-@triton.autotune(
-    configs=[
-        triton.Config({"BLOCK_D": 32}),
-        triton.Config({"BLOCK_D": 64}),
-        triton.Config({"BLOCK_D": 128}),
-        triton.Config({"BLOCK_D": 256}),
-        triton.Config({"BLOCK_D": 512}),
-        triton.Config({"BLOCK_D": 1024}),
-        triton.Config({"BLOCK_D": 2048}),
-        triton.Config({"BLOCK_D": 4096}),
-    ],
-    key=["D"],
-)
 @triton.jit
 def _ln_mul_dropout_bwd_dx_du(
     DX,
@@ -57,7 +44,7 @@ def _ln_mul_dropout_bwd_dx_du(
     Rstd,
     stride_dx,
     stride_du0,
-    stride_du1,  # do we need this?
+    stride_du1,
     stride_dy,
     stride_x,
     stride_u0,

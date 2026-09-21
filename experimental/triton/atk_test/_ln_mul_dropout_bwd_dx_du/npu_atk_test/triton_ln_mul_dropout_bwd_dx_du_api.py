@@ -238,6 +238,7 @@ class LnMulDropoutBwdDxDuAutotuneApi(BaseApi):
             N=self._n,
             NUM_U_SLICES=self._num_u_slices,
             UD=self._ud,
+            BLOCK_D=((self._d + 15) // 16) * 16,
             TRAINING=self._training,
             CONCAT_UX=self._concat_ux,
             COMPUTE_Y=self._compute_y,

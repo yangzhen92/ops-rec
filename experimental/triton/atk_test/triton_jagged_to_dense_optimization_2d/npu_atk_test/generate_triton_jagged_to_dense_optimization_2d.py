@@ -42,7 +42,7 @@ class TritonJaggedToDenseOptimization2dGenerator(CaseGenerator):
             if hasattr(jagged_max_lengths, 'range_values'):
                 rv = jagged_max_lengths.range_values
                 if isinstance(rv, list) and len(rv) == 2:
-                    max_len = rv[0]  # 从范围中确定性选择第一个值
+                    max_len = rv[1]
                 else:
                     max_len = 8
             else:

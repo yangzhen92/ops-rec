@@ -42,10 +42,10 @@ def get_autotune_config() -> List[triton.Config]:
     的 tile-load 循环，auto-multi-buffer 也无收益，故不加。
     """
     return [
-        triton.Config({"BLOCK": 16},pre_hook=bwd_pre_hook),
-        triton.Config({"BLOCK": 32},pre_hook=bwd_pre_hook),
-        triton.Config({"BLOCK": 64},pre_hook=bwd_pre_hook),
-        triton.Config({"BLOCK": 128},pre_hook=bwd_pre_hook)
+        triton.Config({"BLOCK": 16}, pre_hook=bwd_pre_hook),
+        triton.Config({"BLOCK": 32}, pre_hook=bwd_pre_hook),
+        triton.Config({"BLOCK": 64}, pre_hook=bwd_pre_hook),
+        triton.Config({"BLOCK": 128}, pre_hook=bwd_pre_hook),
     ]
 
 

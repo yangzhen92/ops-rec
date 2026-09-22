@@ -21,7 +21,7 @@ api_type: triton_jagged_to_dense_optimization_2d
 triton_api_type: triton_jagged_to_dense_optimization_2d
 triton_name: triton_jagged_tensor_ops.triton_jagged_to_dense_optimization_2d
 generate: generate_triton_jagged_to_dense_optimization_2d
-dtype_numbers: 50
+dtype_numbers: 3334
 outputs: 0
 standard:
   acc: single_bm

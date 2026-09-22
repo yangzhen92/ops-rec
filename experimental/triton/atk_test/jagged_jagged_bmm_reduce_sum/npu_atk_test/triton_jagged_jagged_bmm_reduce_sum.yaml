@@ -28,7 +28,7 @@ generate: generate_jagged_jagged_bmm_reduce_sum
 dtype_numbers: 3334
 outputs: 0
 standard:
-  acc: single_bm
+  acc: double_benchmark
   perf: not_key
 
 inputs:

@@ -26,6 +26,7 @@ from atk.tasks.api_execute import register
 from atk.tasks.api_execute.base_api import BaseApi
 from triton_jagged_jagged_bmm_reduce_sum_kernel import _jagged_jagged_bmm_reduce_sum
 
+# pylint: disable=attribute-defined-outside-init
 
 _SUPPORTED_DTYPES = {torch.float32, torch.float16, torch.bfloat16}
 _MAX_TOTAL_ELEMENTS = 1 << 24
@@ -88,18 +89,9 @@ def _check_core_dim(m: int, n: int, b: int) -> None:
         )
 
 
-@register("commons.ops.triton_ops.triton_jagged._jagged_jagged_bmm_reduce_sum")
-@register("triton_jagged._jagged_jagged_bmm_reduce_sum")
-@register("_jagged_jagged_bmm_reduce_sum")
 @register("triton_jagged_jagged_bmm_reduce_sum")
 class TritonJaggedJaggedBmmReduceSumApi(BaseApi):
     """使用固定分块启动 GPU kernel。"""
-
-    def __init__(self):
-        self._device = self._jagged_a = self._jagged_b = None
-        self._reduce_out = self._seq_offsets = self._out = None
-        self._grid = None
-        self._m = self._n = self._autotune_max_seq_len = 0
 
     def init_by_input_data(self, input_data: InputDataset):
         jagged_a_input = input_data.kwargs.get("JaggedA")

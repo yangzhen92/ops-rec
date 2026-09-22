@@ -27,6 +27,7 @@ from atk.tasks.api_execute.base_api import BaseApi
 
 from triton_jagged_jagged_bmm_reduce_sum_kernel import _jagged_jagged_bmm_reduce_sum
 
+# pylint: disable=attribute-defined-outside-init
 
 _SUPPORTED_DTYPES = {torch.float32, torch.float16, torch.bfloat16}
 _MAX_TOTAL_ELEMENTS = 1 << 24
@@ -73,18 +74,9 @@ def _build_offsets(batch_size: int, total_length: int, device: str) -> tuple[tor
     return torch.tensor(offsets, dtype=torch.int64, device=device), seg_lens
 
 
-@register("autotune_triton_jagged_jagged_bmm_reduce_sum")
 @register("triton_jagged_jagged_bmm_reduce_sum")
-@register("triton_jagged._jagged_jagged_bmm_reduce_sum")
-@register("_jagged_jagged_bmm_reduce_sum")
 class TritonJaggedJaggedBmmReduceSumPerfApi(BaseApi):
     """_jagged_jagged_bmm_reduce_sum 的 Autotune API 封装。"""
-
-    def __init__(self):
-        self._device = self._jagged_a = self._jagged_b = None
-        self._out = self._reduce_out = self._seq_offsets = None
-        self._grid = None
-        self._m = self._n = self._autotune_max_seq_len = 0
 
     def init_by_input_data(self, input_data: InputDataset):
         jagged_a_input = input_data.kwargs.get("JaggedA")

@@ -87,7 +87,8 @@ def test_target_group_block_packed(direction):
     encoded, offsets = run_operator(config)
     maximum = max(config["lengths"])
     q_block = 128 if direction == "q2k" else 256
-    packed = getattr(torch.ops.ops_rec, f"create_{direction}_packed_block_sparse")(
+    op = torch.ops.ops_rec.create_fwd_packed_block_sparse if direction == "q2k" else torch.ops.ops_rec.create_bwd_packed_block_sparse
+    packed = op(
         encoded, offsets, offsets, maximum, maximum, q_block, 128)
     decoded = packed[6].cpu().to(torch.int32) & 3
     assert torch.all((decoded == 0) | (decoded == 1) | (decoded == 3))

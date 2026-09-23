@@ -3,6 +3,7 @@
 # ----------------------------------------------------------------------------
 # 使用 CANN 的 npu_op_code_gen + npu_op_library 编译。
 # npu_op_package 已在上层 CMakeLists.txt 调用。
+# test
 set(MY_COMMON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../common)
 
 # OPS_REC_SOC_CXX_DEFS 由根 CMakeLists.txt 统一设置（SUPPORT_950 / SUPPORT_A2 / SUPPORT_A3）

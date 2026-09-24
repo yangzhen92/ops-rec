@@ -23,23 +23,31 @@ def main():
     calls = {
         "causal": lambda: ops_rec.ascendc.attention.build_causal_mask_arbitrary_func(offsets, total),
         "sliding_window": lambda: ops_rec.ascendc.attention.build_sliding_window_mask_arbitrary_func(
-            offsets, window_sizes, total),
-        "prefix_lm": lambda: ops_rec.ascendc.attention.build_prefix_lm_mask_arbitrary_func(
-            offsets, prefix_lens, total),
+            offsets, window_sizes, total
+        ),
+        "prefix_lm": lambda: ops_rec.ascendc.attention.build_prefix_lm_mask_arbitrary_func(offsets, prefix_lens, total),
         "group_wise": lambda: ops_rec.ascendc.attention.build_group_wise_mask_arbitrary_func(
-            offsets, group_sizes, total),
+            offsets, group_sizes, total
+        ),
         "block_causal": lambda: ops_rec.ascendc.attention.build_block_causal_mask_arbitrary_func(
-            offsets, block_sizes, total),
+            offsets, block_sizes, total
+        ),
         "grouped_causal": lambda: ops_rec.ascendc.attention.build_grouped_causal_mask_arbitrary_func(
-            offsets, group_sizes, total),
+            offsets, group_sizes, total
+        ),
         "block_diagonal": lambda: ops_rec.ascendc.attention.build_block_diagonal_mask_arbitrary_func(offsets, total),
-        "upper_triangular": lambda: ops_rec.ascendc.attention.build_upper_triangular_mask_arbitrary_func(offsets, total),
+        "upper_triangular": lambda: ops_rec.ascendc.attention.build_upper_triangular_mask_arbitrary_func(
+            offsets, total
+        ),
         "padding_row": lambda: ops_rec.ascendc.attention.build_padding_row_mask_arbitrary_func(
-            offsets, valid_lens, total),
+            offsets, valid_lens, total
+        ),
         "target_group_block": lambda: ops_rec.ascendc.attention.build_target_group_block_mask_arbitrary_func(
-            offsets, target_lens, group_sizes, total),
+            offsets, target_lens, group_sizes, total
+        ),
         "gist": lambda: ops_rec.ascendc.attention.build_gist_mask_arbitrary_func(
-            offsets, pre_doc_lens, gist_starts, gist_ends, total),
+            offsets, pre_doc_lens, gist_starts, gist_ends, total
+        ),
     }
 
     expected_n_func = {

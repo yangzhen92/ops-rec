@@ -6,12 +6,12 @@ namespace BuildTargetGroupBlockMaskArbitraryFunc {
 constexpr uint32_t THREADS = 1024;
 constexpr int32_t N_FUNC = 4;
 
-__simt_vf__ __aicore__ LAUNCH_BOUND(THREADS) inline void Build(
-    __gm__ int32_t* __restrict__ output,
-    const __gm__ int32_t* __restrict__ offsets,
-    const __gm__ int32_t* __restrict__ targetLens,
-    const __gm__ int32_t* __restrict__ groupSizes,
-    int32_t totalSeqLen, int32_t batchSize, uint32_t blockId, uint32_t totalThreads)
+__simt_vf__ __aicore__ LAUNCH_BOUND(THREADS) inline void Build(__gm__ int32_t* __restrict__ output,
+                                                               const __gm__ int32_t* __restrict__ offsets,
+                                                               const __gm__ int32_t* __restrict__ targetLens,
+                                                               const __gm__ int32_t* __restrict__ groupSizes,
+                                                               int32_t totalSeqLen, int32_t batchSize, uint32_t blockId,
+                                                               uint32_t totalThreads)
 {
     int32_t globalPos = static_cast<int32_t>(blockId * blockDim.x + threadIdx.x);
     for (; globalPos < totalSeqLen; globalPos += static_cast<int32_t>(totalThreads)) {
@@ -58,16 +58,16 @@ __simt_vf__ __aicore__ LAUNCH_BOUND(THREADS) inline void Build(
 }
 }  // namespace BuildTargetGroupBlockMaskArbitraryFunc
 
-extern "C" __global__ __aicore__ void build_target_group_block_mask_arbitrary_func(
-    GM_ADDR offsets, GM_ADDR targetLens, GM_ADDR groupSizes, GM_ADDR arbitraryFunc, GM_ADDR workspace, GM_ADDR tiling)
+extern "C" __global__ __aicore__ void build_target_group_block_mask_arbitrary_func(GM_ADDR offsets, GM_ADDR targetLens,
+                                                                                   GM_ADDR groupSizes,
+                                                                                   GM_ADDR arbitraryFunc,
+                                                                                   GM_ADDR workspace, GM_ADDR tiling)
 {
     GET_TILING_DATA(tilingData, tiling);
     const uint32_t totalThreads = BuildTargetGroupBlockMaskArbitraryFunc::THREADS * AscendC::GetBlockNum();
     AscendC::Simt::VF_CALL<BuildTargetGroupBlockMaskArbitraryFunc::Build>(
         AscendC::Simt::Dim3{BuildTargetGroupBlockMaskArbitraryFunc::THREADS, 1, 1},
-        reinterpret_cast<__gm__ int32_t*>(arbitraryFunc),
-        reinterpret_cast<const __gm__ int32_t*>(offsets),
-        reinterpret_cast<const __gm__ int32_t*>(targetLens),
-        reinterpret_cast<const __gm__ int32_t*>(groupSizes),
+        reinterpret_cast<__gm__ int32_t*>(arbitraryFunc), reinterpret_cast<const __gm__ int32_t*>(offsets),
+        reinterpret_cast<const __gm__ int32_t*>(targetLens), reinterpret_cast<const __gm__ int32_t*>(groupSizes),
         tilingData.totalSeqLen, tilingData.batchSize, AscendC::GetBlockIdx(), totalThreads);
 }

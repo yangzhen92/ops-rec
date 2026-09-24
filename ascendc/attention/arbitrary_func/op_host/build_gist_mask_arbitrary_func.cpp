@@ -18,23 +18,23 @@ static ge::graphStatus BuildGistMaskArbitraryFuncTiling(gert::TilingContext* con
     const auto* offsetsShape = context->GetInputShape(0);
     OPS_LOG_E_IF_NULL("offsetsShape", offsetsShape, return ge::GRAPH_FAILED);
     const auto& offsets = offsetsShape->GetStorageShape();
-    OPS_LOG_E_IF(offsets.GetDimNum() != 1 || offsets.GetDim(0) < 1, context,
-                 return ge::GRAPH_FAILED, "offsets must have shape [batch_size + 1]");
+    OPS_LOG_E_IF(offsets.GetDimNum() != 1 || offsets.GetDim(0) < 1, context, return ge::GRAPH_FAILED,
+                 "offsets must have shape [batch_size + 1]");
     const int32_t batchSize = static_cast<int32_t>(offsets.GetDim(0)) - 1;
     for (int32_t index = 1; index <= 3; ++index) {
         const auto* cfgShape = context->GetInputShape(index);
         OPS_LOG_E_IF_NULL("cfgShape", cfgShape, return ge::GRAPH_FAILED);
         const auto& storage = cfgShape->GetStorageShape();
-        OPS_LOG_E_IF(storage.GetDimNum() != 1 || storage.GetDim(0) != batchSize, context,
-                     return ge::GRAPH_FAILED, "gist mask config tensors must have shape [batch_size]");
+        OPS_LOG_E_IF(storage.GetDimNum() != 1 || storage.GetDim(0) != batchSize, context, return ge::GRAPH_FAILED,
+                     "gist mask config tensors must have shape [batch_size]");
     }
 
     const auto* attrs = context->GetAttrs();
     OPS_LOG_E_IF_NULL("attrs", attrs, return ge::GRAPH_FAILED);
     const auto* totalSeqLen = attrs->GetAttrPointer<int64_t>(0);
     OPS_LOG_E_IF_NULL("totalSeqLen", totalSeqLen, return ge::GRAPH_FAILED);
-    OPS_LOG_E_IF(*totalSeqLen < 0 || *totalSeqLen > INT32_MAX, context,
-                 return ge::GRAPH_FAILED, "total_seqlen must fit non-negative int32");
+    OPS_LOG_E_IF(*totalSeqLen < 0 || *totalSeqLen > INT32_MAX, context, return ge::GRAPH_FAILED,
+                 "total_seqlen must fit non-negative int32");
     auto platform = platform_ascendc::PlatformAscendC(context->GetPlatformInfo());
     const uint32_t blockDim = static_cast<uint32_t>(platform.GetCoreNumAiv());
     OPS_LOG_E_IF(blockDim == 0, context, return ge::GRAPH_FAILED, "AI Vector core count is zero");
@@ -54,8 +54,7 @@ static ge::graphStatus BuildGistMaskArbitraryFuncInferShape(gert::InferShapeCont
     OPS_LOG_E_IF_NULL("attrs", attrs, return ge::GRAPH_FAILED);
     const auto* totalSeqLen = attrs->GetAttrPointer<int64_t>(0);
     OPS_LOG_E_IF_NULL("totalSeqLen", totalSeqLen, return ge::GRAPH_FAILED);
-    OPS_LOG_E_IF(*totalSeqLen < 0, context, return ge::GRAPH_FAILED,
-                 "total_seqlen must be non-negative");
+    OPS_LOG_E_IF(*totalSeqLen < 0, context, return ge::GRAPH_FAILED, "total_seqlen must be non-negative");
     auto* output = context->GetOutputShape(0);
     OPS_LOG_E_IF_NULL("output", output, return ge::GRAPH_FAILED);
     output->SetDimNum(4);
@@ -72,17 +71,32 @@ class BuildGistMaskArbitraryFunc : public OpDef {
 public:
     explicit BuildGistMaskArbitraryFunc(const char* name) : OpDef(name)
     {
-        this->Input("offsets").ParamType(REQUIRED).DataType({ge::DT_INT32})
-            .Format({ge::FORMAT_ND}).UnknownShapeFormat({ge::FORMAT_ND});
-        this->Input("preDocLens").ParamType(REQUIRED).DataType({ge::DT_INT32})
-            .Format({ge::FORMAT_ND}).UnknownShapeFormat({ge::FORMAT_ND});
-        this->Input("gistStarts").ParamType(REQUIRED).DataType({ge::DT_INT32})
-            .Format({ge::FORMAT_ND}).UnknownShapeFormat({ge::FORMAT_ND});
-        this->Input("gistEnds").ParamType(REQUIRED).DataType({ge::DT_INT32})
-            .Format({ge::FORMAT_ND}).UnknownShapeFormat({ge::FORMAT_ND});
+        this->Input("offsets")
+            .ParamType(REQUIRED)
+            .DataType({ge::DT_INT32})
+            .Format({ge::FORMAT_ND})
+            .UnknownShapeFormat({ge::FORMAT_ND});
+        this->Input("preDocLens")
+            .ParamType(REQUIRED)
+            .DataType({ge::DT_INT32})
+            .Format({ge::FORMAT_ND})
+            .UnknownShapeFormat({ge::FORMAT_ND});
+        this->Input("gistStarts")
+            .ParamType(REQUIRED)
+            .DataType({ge::DT_INT32})
+            .Format({ge::FORMAT_ND})
+            .UnknownShapeFormat({ge::FORMAT_ND});
+        this->Input("gistEnds")
+            .ParamType(REQUIRED)
+            .DataType({ge::DT_INT32})
+            .Format({ge::FORMAT_ND})
+            .UnknownShapeFormat({ge::FORMAT_ND});
         this->Attr("totalSeqLen").AttrType(REQUIRED).Int(0);
-        this->Output("arbitraryFunc").ParamType(REQUIRED).DataType({ge::DT_INT32})
-            .Format({ge::FORMAT_ND}).UnknownShapeFormat({ge::FORMAT_ND});
+        this->Output("arbitraryFunc")
+            .ParamType(REQUIRED)
+            .DataType({ge::DT_INT32})
+            .Format({ge::FORMAT_ND})
+            .UnknownShapeFormat({ge::FORMAT_ND});
         this->SetInferShape(optiling::BuildGistMaskArbitraryFuncInferShape);
         OpAICoreConfig config;
         config.DynamicCompileStaticFlag(true)

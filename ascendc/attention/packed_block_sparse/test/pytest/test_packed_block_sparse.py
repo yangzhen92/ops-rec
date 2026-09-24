@@ -1,7 +1,7 @@
 import os
 import pytest
 import torch
-import torch_npu
+import torch_npu  # noqa: F401
 
 import ops_rec
 
@@ -11,8 +11,11 @@ def direct_state(descriptor):
 
 
 def create_packed(direction, *args):
-    op = (torch.ops.ops_rec.create_fwd_packed_block_sparse if direction == "q2k"
-          else torch.ops.ops_rec.create_bwd_packed_block_sparse)
+    op = (
+        torch.ops.ops_rec.create_fwd_packed_block_sparse
+        if direction == "q2k"
+        else torch.ops.ops_rec.create_bwd_packed_block_sparse
+    )
     return op(*args)
 
 
@@ -28,9 +31,7 @@ def test_descriptor_matches_cpu_reference(direction, q_block, length):
         16,
         length,
     )
-    packed = create_packed(direction,
-        func, offsets, offsets, length, length, q_block, 128
-    )
+    packed = create_packed(direction, func, offsets, offsets, length, length, q_block, 128)
     torch.npu.synchronize()
 
     func_cpu = func.cpu()
@@ -43,8 +44,7 @@ def test_descriptor_matches_cpu_reference(direction, q_block, length):
     descriptor = direct_state(packed[6]).reshape(-1, inner_blocks)
     expected_mask_cnt = torch.zeros_like(packed_mask_cnt).reshape(-1)
     expected_full_cnt = torch.zeros_like(packed_full_cnt).reshape(-1)
-    outer_blocks = (length + (128 if direction == "k2q" else q_block) - 1) // (
-        128 if direction == "k2q" else q_block)
+    outer_blocks = (length + (128 if direction == "k2q" else q_block) - 1) // (128 if direction == "k2q" else q_block)
     inner_blocks = descriptor.shape[1]
     for row in range(descriptor.shape[0]):
         expected = torch.zeros_like(descriptor[row])
@@ -88,10 +88,13 @@ def test_default_keeps_placeholder_metadata(direction, q_block):
     length = 256
     offsets = torch.tensor([0, length], dtype=torch.int32, device="npu")
     func = ops_rec.ascendc.attention.build_hstu_mask_arbitrary_func(
-        offsets, torch.tensor([128], dtype=torch.int32, device="npu"),
-        torch.tensor([128], dtype=torch.int32, device="npu"), 16, length)
-    packed = create_packed(direction,
-        func, offsets, offsets, length, length, q_block, 128)
+        offsets,
+        torch.tensor([128], dtype=torch.int32, device="npu"),
+        torch.tensor([128], dtype=torch.int32, device="npu"),
+        16,
+        length,
+    )
+    packed = create_packed(direction, func, offsets, offsets, length, length, q_block, 128)
     assert packed[2].numel() == 1
 
 
@@ -103,13 +106,9 @@ def test_varlen_tnd_multi_sequence(direction, q_block):
     max_seqlen = max(seq_lens)
     offsets = torch.tensor([0, 129, 514, 1291], dtype=torch.int32, device="npu")
     zeros = torch.zeros(len(seq_lens), dtype=torch.int32, device="npu")
-    func = ops_rec.ascendc.attention.build_hstu_mask_arbitrary_func(
-        offsets, zeros, zeros, 1, sum(seq_lens)
-    )
+    func = ops_rec.ascendc.attention.build_hstu_mask_arbitrary_func(offsets, zeros, zeros, 1, sum(seq_lens))
 
-    packed = create_packed(direction,
-        func, offsets, offsets, max_seqlen, max_seqlen, q_block, 128
-    )
+    packed = create_packed(direction, func, offsets, offsets, max_seqlen, max_seqlen, q_block, 128)
     torch.npu.synchronize()
 
     num_q = (max_seqlen + q_block - 1) // q_block
@@ -127,8 +126,10 @@ def test_varlen_tnd_multi_sequence(direction, q_block):
             128 if direction == "k2q" else q_block
         )
         if actual_outer < outer:
-            assert torch.equal(descriptors[batch_idx, 0, actual_outer:],
-                               torch.zeros_like(descriptors[batch_idx, 0, actual_outer:]))
-            assert torch.equal(bounds[batch_idx, 0, actual_outer:],
-                               torch.full_like(bounds[batch_idx, 0, actual_outer:], -1))
+            assert torch.equal(
+                descriptors[batch_idx, 0, actual_outer:], torch.zeros_like(descriptors[batch_idx, 0, actual_outer:])
+            )
+            assert torch.equal(
+                bounds[batch_idx, 0, actual_outer:], torch.full_like(bounds[batch_idx, 0, actual_outer:], -1)
+            )
         assert (descriptors[batch_idx, 0, :actual_outer] != 0).any()

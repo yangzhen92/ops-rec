@@ -36,13 +36,13 @@ at::Tensor build_causal_mask_arbitrary_func_impl_npu(const at::Tensor& offsets, 
     auto offsets_conti = offsets.contiguous();
     TORCH_CHECK(offsets_conti[-1].item<int32_t>() == total_seqlen, "total_seqlen must equal offsets[-1]");
     auto output = at::empty({1, 1, total_seqlen, SINGLE_INTERVAL_N_FUNC}, offsets.options());
-    if (total_seqlen != 0) EXEC_NPU_CMD(aclnnBuildCausalMaskArbitraryFunc, offsets_conti, total_seqlen, output);
+    if (total_seqlen != 0)
+        EXEC_NPU_CMD(aclnnBuildCausalMaskArbitraryFunc, offsets_conti, total_seqlen, output);
     return output;
 }
 
-at::Tensor build_sliding_window_mask_arbitrary_func_impl_npu(const at::Tensor& offsets,
-                                                              const at::Tensor& window_sizes,
-                                                              int64_t total_seqlen)
+at::Tensor build_sliding_window_mask_arbitrary_func_impl_npu(const at::Tensor& offsets, const at::Tensor& window_sizes,
+                                                             int64_t total_seqlen)
 {
     check_tensor_non_empty(offsets, "offsets");
     check_tensor_non_empty(window_sizes, "window_sizes");
@@ -56,13 +56,12 @@ at::Tensor build_sliding_window_mask_arbitrary_func_impl_npu(const at::Tensor& o
     auto windows_conti = window_sizes.contiguous();
     TORCH_CHECK(offsets_conti[-1].item<int32_t>() == total_seqlen, "total_seqlen must equal offsets[-1]");
     auto output = at::empty({1, 1, total_seqlen, SINGLE_INTERVAL_N_FUNC}, offsets.options());
-    if (total_seqlen != 0) EXEC_NPU_CMD(aclnnBuildSlidingWindowMaskArbitraryFunc, offsets_conti, windows_conti,
-                                        total_seqlen, output);
+    if (total_seqlen != 0)
+        EXEC_NPU_CMD(aclnnBuildSlidingWindowMaskArbitraryFunc, offsets_conti, windows_conti, total_seqlen, output);
     return output;
 }
 
-at::Tensor build_prefix_lm_mask_arbitrary_func_impl_npu(const at::Tensor& offsets,
-                                                        const at::Tensor& prefix_lens,
+at::Tensor build_prefix_lm_mask_arbitrary_func_impl_npu(const at::Tensor& offsets, const at::Tensor& prefix_lens,
                                                         int64_t total_seqlen)
 {
     check_tensor_non_empty(offsets, "offsets");
@@ -77,13 +76,12 @@ at::Tensor build_prefix_lm_mask_arbitrary_func_impl_npu(const at::Tensor& offset
     auto prefix_conti = prefix_lens.contiguous();
     TORCH_CHECK(offsets_conti[-1].item<int32_t>() == total_seqlen, "total_seqlen must equal offsets[-1]");
     auto output = at::empty({1, 1, total_seqlen, SINGLE_INTERVAL_N_FUNC}, offsets.options());
-    if (total_seqlen != 0) EXEC_NPU_CMD(aclnnBuildPrefixLmMaskArbitraryFunc, offsets_conti, prefix_conti,
-                                        total_seqlen, output);
+    if (total_seqlen != 0)
+        EXEC_NPU_CMD(aclnnBuildPrefixLmMaskArbitraryFunc, offsets_conti, prefix_conti, total_seqlen, output);
     return output;
 }
 
-at::Tensor build_group_wise_mask_arbitrary_func_impl_npu(const at::Tensor& offsets,
-                                                         const at::Tensor& group_sizes,
+at::Tensor build_group_wise_mask_arbitrary_func_impl_npu(const at::Tensor& offsets, const at::Tensor& group_sizes,
                                                          int64_t total_seqlen)
 {
     check_tensor_non_empty(offsets, "offsets");
@@ -98,13 +96,12 @@ at::Tensor build_group_wise_mask_arbitrary_func_impl_npu(const at::Tensor& offse
     auto groups_conti = group_sizes.contiguous();
     TORCH_CHECK(offsets_conti[-1].item<int32_t>() == total_seqlen, "total_seqlen must equal offsets[-1]");
     auto output = at::empty({1, 1, total_seqlen, SINGLE_INTERVAL_N_FUNC}, offsets.options());
-    if (total_seqlen != 0) EXEC_NPU_CMD(aclnnBuildGroupWiseMaskArbitraryFunc, offsets_conti, groups_conti,
-                                        total_seqlen, output);
+    if (total_seqlen != 0)
+        EXEC_NPU_CMD(aclnnBuildGroupWiseMaskArbitraryFunc, offsets_conti, groups_conti, total_seqlen, output);
     return output;
 }
 
-at::Tensor build_block_causal_mask_arbitrary_func_impl_npu(const at::Tensor& offsets,
-                                                           const at::Tensor& block_sizes,
+at::Tensor build_block_causal_mask_arbitrary_func_impl_npu(const at::Tensor& offsets, const at::Tensor& block_sizes,
                                                            int64_t total_seqlen)
 {
     check_tensor_non_empty(offsets, "offsets");
@@ -119,13 +116,12 @@ at::Tensor build_block_causal_mask_arbitrary_func_impl_npu(const at::Tensor& off
     auto blocks_conti = block_sizes.contiguous();
     TORCH_CHECK(offsets_conti[-1].item<int32_t>() == total_seqlen, "total_seqlen must equal offsets[-1]");
     auto output = at::empty({1, 1, total_seqlen, SINGLE_INTERVAL_N_FUNC}, offsets.options());
-    if (total_seqlen != 0) EXEC_NPU_CMD(aclnnBuildBlockCausalMaskArbitraryFunc, offsets_conti, blocks_conti,
-                                        total_seqlen, output);
+    if (total_seqlen != 0)
+        EXEC_NPU_CMD(aclnnBuildBlockCausalMaskArbitraryFunc, offsets_conti, blocks_conti, total_seqlen, output);
     return output;
 }
 
-at::Tensor build_grouped_causal_mask_arbitrary_func_impl_npu(const at::Tensor& offsets,
-                                                             const at::Tensor& group_sizes,
+at::Tensor build_grouped_causal_mask_arbitrary_func_impl_npu(const at::Tensor& offsets, const at::Tensor& group_sizes,
                                                              int64_t total_seqlen)
 {
     check_tensor_non_empty(offsets, "offsets");
@@ -140,8 +136,8 @@ at::Tensor build_grouped_causal_mask_arbitrary_func_impl_npu(const at::Tensor& o
     auto groups_conti = group_sizes.contiguous();
     TORCH_CHECK(offsets_conti[-1].item<int32_t>() == total_seqlen, "total_seqlen must equal offsets[-1]");
     auto output = at::empty({1, 1, total_seqlen, SINGLE_INTERVAL_N_FUNC}, offsets.options());
-    if (total_seqlen != 0) EXEC_NPU_CMD(aclnnBuildGroupedCausalMaskArbitraryFunc, offsets_conti, groups_conti,
-                                        total_seqlen, output);
+    if (total_seqlen != 0)
+        EXEC_NPU_CMD(aclnnBuildGroupedCausalMaskArbitraryFunc, offsets_conti, groups_conti, total_seqlen, output);
     return output;
 }
 
@@ -155,7 +151,8 @@ at::Tensor build_block_diagonal_mask_arbitrary_func_impl_npu(const at::Tensor& o
     auto offsets_conti = offsets.contiguous();
     TORCH_CHECK(offsets_conti[-1].item<int32_t>() == total_seqlen, "total_seqlen must equal offsets[-1]");
     auto output = at::empty({1, 1, total_seqlen, SINGLE_INTERVAL_N_FUNC}, offsets.options());
-    if (total_seqlen != 0) EXEC_NPU_CMD(aclnnBuildBlockDiagonalMaskArbitraryFunc, offsets_conti, total_seqlen, output);
+    if (total_seqlen != 0)
+        EXEC_NPU_CMD(aclnnBuildBlockDiagonalMaskArbitraryFunc, offsets_conti, total_seqlen, output);
     return output;
 }
 
@@ -169,13 +166,12 @@ at::Tensor build_upper_triangular_mask_arbitrary_func_impl_npu(const at::Tensor&
     auto offsets_conti = offsets.contiguous();
     TORCH_CHECK(offsets_conti[-1].item<int32_t>() == total_seqlen, "total_seqlen must equal offsets[-1]");
     auto output = at::empty({1, 1, total_seqlen, SINGLE_INTERVAL_N_FUNC}, offsets.options());
-    if (total_seqlen != 0) EXEC_NPU_CMD(aclnnBuildUpperTriangularMaskArbitraryFunc, offsets_conti,
-                                        total_seqlen, output);
+    if (total_seqlen != 0)
+        EXEC_NPU_CMD(aclnnBuildUpperTriangularMaskArbitraryFunc, offsets_conti, total_seqlen, output);
     return output;
 }
 
-at::Tensor build_padding_row_mask_arbitrary_func_impl_npu(const at::Tensor& offsets,
-                                                          const at::Tensor& valid_lens,
+at::Tensor build_padding_row_mask_arbitrary_func_impl_npu(const at::Tensor& offsets, const at::Tensor& valid_lens,
                                                           int64_t total_seqlen)
 {
     check_tensor_non_empty(offsets, "offsets");
@@ -190,15 +186,14 @@ at::Tensor build_padding_row_mask_arbitrary_func_impl_npu(const at::Tensor& offs
     auto valid_conti = valid_lens.contiguous();
     TORCH_CHECK(offsets_conti[-1].item<int32_t>() == total_seqlen, "total_seqlen must equal offsets[-1]");
     auto output = at::empty({1, 1, total_seqlen, SINGLE_INTERVAL_N_FUNC}, offsets.options());
-    if (total_seqlen != 0) EXEC_NPU_CMD(aclnnBuildPaddingRowMaskArbitraryFunc, offsets_conti, valid_conti,
-                                        total_seqlen, output);
+    if (total_seqlen != 0)
+        EXEC_NPU_CMD(aclnnBuildPaddingRowMaskArbitraryFunc, offsets_conti, valid_conti, total_seqlen, output);
     return output;
 }
 
 at::Tensor build_target_group_block_mask_arbitrary_func_impl_npu(const at::Tensor& offsets,
                                                                  const at::Tensor& target_lens,
-                                                                 const at::Tensor& group_sizes,
-                                                                 int64_t total_seqlen)
+                                                                 const at::Tensor& group_sizes, int64_t total_seqlen)
 {
     check_tensor_non_empty(offsets, "offsets");
     check_tensor_non_empty(target_lens, "target_lens");
@@ -217,15 +212,14 @@ at::Tensor build_target_group_block_mask_arbitrary_func_impl_npu(const at::Tenso
     auto groups_conti = group_sizes.contiguous();
     TORCH_CHECK(offsets_conti[-1].item<int32_t>() == total_seqlen, "total_seqlen must equal offsets[-1]");
     auto output = at::empty({1, 1, total_seqlen, DOUBLE_INTERVAL_N_FUNC}, offsets.options());
-    if (total_seqlen != 0) EXEC_NPU_CMD(aclnnBuildTargetGroupBlockMaskArbitraryFunc, offsets_conti, targets_conti,
-                                        groups_conti, total_seqlen, output);
+    if (total_seqlen != 0)
+        EXEC_NPU_CMD(aclnnBuildTargetGroupBlockMaskArbitraryFunc, offsets_conti, targets_conti, groups_conti,
+                     total_seqlen, output);
     return output;
 }
 
-at::Tensor build_gist_mask_arbitrary_func_impl_npu(const at::Tensor& offsets,
-                                                   const at::Tensor& pre_doc_lens,
-                                                   const at::Tensor& gist_starts,
-                                                   const at::Tensor& gist_ends,
+at::Tensor build_gist_mask_arbitrary_func_impl_npu(const at::Tensor& offsets, const at::Tensor& pre_doc_lens,
+                                                   const at::Tensor& gist_starts, const at::Tensor& gist_ends,
                                                    int64_t total_seqlen)
 {
     check_tensor_non_empty(offsets, "offsets");
@@ -239,12 +233,11 @@ at::Tensor build_gist_mask_arbitrary_func_impl_npu(const at::Tensor& offsets,
                 "pre_doc_lens must be one-dimensional int32");
     TORCH_CHECK(gist_starts.scalar_type() == at::kInt && gist_starts.dim() == 1,
                 "gist_starts must be one-dimensional int32");
-    TORCH_CHECK(gist_ends.scalar_type() == at::kInt && gist_ends.dim() == 1,
-                "gist_ends must be one-dimensional int32");
+    TORCH_CHECK(gist_ends.scalar_type() == at::kInt && gist_ends.dim() == 1, "gist_ends must be one-dimensional int32");
     const int64_t batch_size = offsets.numel() - 1;
-    TORCH_CHECK(pre_doc_lens.numel() == batch_size && gist_starts.numel() == batch_size &&
-                gist_ends.numel() == batch_size,
-                "pre_doc_lens/gist_starts/gist_ends must have shape [batch_size]");
+    TORCH_CHECK(
+        pre_doc_lens.numel() == batch_size && gist_starts.numel() == batch_size && gist_ends.numel() == batch_size,
+        "pre_doc_lens/gist_starts/gist_ends must have shape [batch_size]");
     TORCH_CHECK(total_seqlen >= 0 && total_seqlen <= INT32_MAX, "total_seqlen must fit non-negative int32");
     auto offsets_conti = offsets.contiguous();
     auto pre_doc_conti = pre_doc_lens.contiguous();
@@ -253,8 +246,8 @@ at::Tensor build_gist_mask_arbitrary_func_impl_npu(const at::Tensor& offsets,
     TORCH_CHECK(offsets_conti[-1].item<int32_t>() == total_seqlen, "total_seqlen must equal offsets[-1]");
     auto output = at::empty({1, 1, total_seqlen, DOUBLE_INTERVAL_N_FUNC}, offsets.options());
     if (total_seqlen != 0) {
-        EXEC_NPU_CMD(aclnnBuildGistMaskArbitraryFunc, offsets_conti, pre_doc_conti, gist_start_conti,
-                     gist_end_conti, total_seqlen, output);
+        EXEC_NPU_CMD(aclnnBuildGistMaskArbitraryFunc, offsets_conti, pre_doc_conti, gist_start_conti, gist_end_conti,
+                     total_seqlen, output);
     }
     return output;
 }
@@ -397,35 +390,55 @@ at::Tensor build_named_mask_meta(const at::Tensor& offsets, int64_t total_seqlen
 }
 
 at::Tensor build_causal_mask_arbitrary_func_meta(const at::Tensor& offsets, int64_t total_seqlen)
-{ return build_named_mask_meta(offsets, total_seqlen, SINGLE_INTERVAL_N_FUNC); }
+{
+    return build_named_mask_meta(offsets, total_seqlen, SINGLE_INTERVAL_N_FUNC);
+}
 at::Tensor build_sliding_window_mask_arbitrary_func_meta(const at::Tensor& offsets, const at::Tensor&,
                                                          int64_t total_seqlen)
-{ return build_named_mask_meta(offsets, total_seqlen, SINGLE_INTERVAL_N_FUNC); }
-at::Tensor build_prefix_lm_mask_arbitrary_func_meta(const at::Tensor& offsets, const at::Tensor&,
-                                                    int64_t total_seqlen)
-{ return build_named_mask_meta(offsets, total_seqlen, SINGLE_INTERVAL_N_FUNC); }
-at::Tensor build_group_wise_mask_arbitrary_func_meta(const at::Tensor& offsets, const at::Tensor&,
-                                                     int64_t total_seqlen)
-{ return build_named_mask_meta(offsets, total_seqlen, SINGLE_INTERVAL_N_FUNC); }
+{
+    return build_named_mask_meta(offsets, total_seqlen, SINGLE_INTERVAL_N_FUNC);
+}
+at::Tensor build_prefix_lm_mask_arbitrary_func_meta(const at::Tensor& offsets, const at::Tensor&, int64_t total_seqlen)
+{
+    return build_named_mask_meta(offsets, total_seqlen, SINGLE_INTERVAL_N_FUNC);
+}
+at::Tensor build_group_wise_mask_arbitrary_func_meta(const at::Tensor& offsets, const at::Tensor&, int64_t total_seqlen)
+{
+    return build_named_mask_meta(offsets, total_seqlen, SINGLE_INTERVAL_N_FUNC);
+}
 at::Tensor build_block_causal_mask_arbitrary_func_meta(const at::Tensor& offsets, const at::Tensor&,
                                                        int64_t total_seqlen)
-{ return build_named_mask_meta(offsets, total_seqlen, SINGLE_INTERVAL_N_FUNC); }
+{
+    return build_named_mask_meta(offsets, total_seqlen, SINGLE_INTERVAL_N_FUNC);
+}
 at::Tensor build_grouped_causal_mask_arbitrary_func_meta(const at::Tensor& offsets, const at::Tensor&,
                                                          int64_t total_seqlen)
-{ return build_named_mask_meta(offsets, total_seqlen, SINGLE_INTERVAL_N_FUNC); }
+{
+    return build_named_mask_meta(offsets, total_seqlen, SINGLE_INTERVAL_N_FUNC);
+}
 at::Tensor build_block_diagonal_mask_arbitrary_func_meta(const at::Tensor& offsets, int64_t total_seqlen)
-{ return build_named_mask_meta(offsets, total_seqlen, SINGLE_INTERVAL_N_FUNC); }
+{
+    return build_named_mask_meta(offsets, total_seqlen, SINGLE_INTERVAL_N_FUNC);
+}
 at::Tensor build_upper_triangular_mask_arbitrary_func_meta(const at::Tensor& offsets, int64_t total_seqlen)
-{ return build_named_mask_meta(offsets, total_seqlen, SINGLE_INTERVAL_N_FUNC); }
+{
+    return build_named_mask_meta(offsets, total_seqlen, SINGLE_INTERVAL_N_FUNC);
+}
 at::Tensor build_padding_row_mask_arbitrary_func_meta(const at::Tensor& offsets, const at::Tensor&,
                                                       int64_t total_seqlen)
-{ return build_named_mask_meta(offsets, total_seqlen, SINGLE_INTERVAL_N_FUNC); }
+{
+    return build_named_mask_meta(offsets, total_seqlen, SINGLE_INTERVAL_N_FUNC);
+}
 at::Tensor build_target_group_block_mask_arbitrary_func_meta(const at::Tensor& offsets, const at::Tensor&,
                                                              const at::Tensor&, int64_t total_seqlen)
-{ return build_named_mask_meta(offsets, total_seqlen, DOUBLE_INTERVAL_N_FUNC); }
+{
+    return build_named_mask_meta(offsets, total_seqlen, DOUBLE_INTERVAL_N_FUNC);
+}
 at::Tensor build_gist_mask_arbitrary_func_meta(const at::Tensor& offsets, const at::Tensor&, const at::Tensor&,
                                                const at::Tensor&, int64_t total_seqlen)
-{ return build_named_mask_meta(offsets, total_seqlen, DOUBLE_INTERVAL_N_FUNC); }
+{
+    return build_named_mask_meta(offsets, total_seqlen, DOUBLE_INTERVAL_N_FUNC);
+}
 
 at::Tensor build_hstu_mask_arbitrary_func_meta(const at::Tensor& offsets, const at::Tensor& ctx_lens,
                                                const at::Tensor& tgt_lens, int64_t target_group_size,

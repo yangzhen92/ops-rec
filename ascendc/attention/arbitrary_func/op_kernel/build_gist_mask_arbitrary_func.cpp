@@ -6,8 +6,8 @@ namespace BuildGistMaskArbitraryFunc {
 constexpr uint32_t THREADS = 1024;
 constexpr int32_t N_FUNC = 4;
 
-__forceinline__ __simt_callee__ void AppendInterval(
-    int32_t begin, int32_t end, int32_t seqStart, int32_t seqEnd, int32_t* intervals, int32_t& count)
+__forceinline__ __simt_callee__ void AppendInterval(int32_t begin, int32_t end, int32_t seqStart, int32_t seqEnd,
+                                                    int32_t* intervals, int32_t& count)
 {
     begin = max(begin, seqStart);
     end = min(end, seqEnd);
@@ -26,13 +26,13 @@ __forceinline__ __simt_callee__ void AppendInterval(
     ++count;
 }
 
-__simt_vf__ __aicore__ LAUNCH_BOUND(THREADS) inline void Build(
-    __gm__ int32_t* __restrict__ output,
-    const __gm__ int32_t* __restrict__ offsets,
-    const __gm__ int32_t* __restrict__ preDocLens,
-    const __gm__ int32_t* __restrict__ gistStarts,
-    const __gm__ int32_t* __restrict__ gistEnds,
-    int32_t totalSeqLen, int32_t batchSize, uint32_t blockId, uint32_t totalThreads)
+__simt_vf__ __aicore__ LAUNCH_BOUND(THREADS) inline void Build(__gm__ int32_t* __restrict__ output,
+                                                               const __gm__ int32_t* __restrict__ offsets,
+                                                               const __gm__ int32_t* __restrict__ preDocLens,
+                                                               const __gm__ int32_t* __restrict__ gistStarts,
+                                                               const __gm__ int32_t* __restrict__ gistEnds,
+                                                               int32_t totalSeqLen, int32_t batchSize, uint32_t blockId,
+                                                               uint32_t totalThreads)
 {
     int32_t globalPos = static_cast<int32_t>(blockId * blockDim.x + threadIdx.x);
     for (; globalPos < totalSeqLen; globalPos += static_cast<int32_t>(totalThreads)) {
@@ -83,18 +83,17 @@ __simt_vf__ __aicore__ LAUNCH_BOUND(THREADS) inline void Build(
 }
 }  // namespace BuildGistMaskArbitraryFunc
 
-extern "C" __global__ __aicore__ void build_gist_mask_arbitrary_func(
-    GM_ADDR offsets, GM_ADDR preDocLens, GM_ADDR gistStarts, GM_ADDR gistEnds,
-    GM_ADDR arbitraryFunc, GM_ADDR workspace, GM_ADDR tiling)
+extern "C" __global__ __aicore__ void build_gist_mask_arbitrary_func(GM_ADDR offsets, GM_ADDR preDocLens,
+                                                                     GM_ADDR gistStarts, GM_ADDR gistEnds,
+                                                                     GM_ADDR arbitraryFunc, GM_ADDR workspace,
+                                                                     GM_ADDR tiling)
 {
     GET_TILING_DATA(tilingData, tiling);
     const uint32_t totalThreads = BuildGistMaskArbitraryFunc::THREADS * AscendC::GetBlockNum();
     AscendC::Simt::VF_CALL<BuildGistMaskArbitraryFunc::Build>(
         AscendC::Simt::Dim3{BuildGistMaskArbitraryFunc::THREADS, 1, 1},
-        reinterpret_cast<__gm__ int32_t*>(arbitraryFunc),
-        reinterpret_cast<const __gm__ int32_t*>(offsets),
-        reinterpret_cast<const __gm__ int32_t*>(preDocLens),
-        reinterpret_cast<const __gm__ int32_t*>(gistStarts),
-        reinterpret_cast<const __gm__ int32_t*>(gistEnds),
-        tilingData.totalSeqLen, tilingData.batchSize, AscendC::GetBlockIdx(), totalThreads);
+        reinterpret_cast<__gm__ int32_t*>(arbitraryFunc), reinterpret_cast<const __gm__ int32_t*>(offsets),
+        reinterpret_cast<const __gm__ int32_t*>(preDocLens), reinterpret_cast<const __gm__ int32_t*>(gistStarts),
+        reinterpret_cast<const __gm__ int32_t*>(gistEnds), tilingData.totalSeqLen, tilingData.batchSize,
+        AscendC::GetBlockIdx(), totalThreads);
 }

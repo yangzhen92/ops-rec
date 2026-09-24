@@ -26,18 +26,19 @@ def operator_cases():
                 offsets = [0]
                 for length in seq_lens:
                     offsets.append(offsets[-1] + length)
-                rows.append({
-                    "case_id": case_id,
-                    "batch": batch,
-                    "heads": head,
-                    "max_seq_len": max_seq_len,
-                    "seq_lens": seq_lens,
-                    "offsets": offsets,
-                    "head_dim": (32, 64, 128)[(case_id - 1) % 3],
-                    "has_arbitrary": case_id % 2 == 0,
-                    "direction": "q2k" if case_id % 2 else "k2q",
-                    "seed": 20260920 + case_id,
-                })
+                rows.append(
+                    {
+                        "case_id": case_id,
+                        "batch": batch,
+                        "heads": head,
+                        "max_seq_len": max_seq_len,
+                        "seq_lens": seq_lens,
+                        "offsets": offsets,
+                        "head_dim": (32, 64, 128)[(case_id - 1) % 3],
+                        "has_arbitrary": case_id % 2 == 0,
+                        "direction": "q2k" if case_id % 2 else "k2q",
+                        "seed": 20260920 + case_id,
+                    }
+                )
     assert len(rows) == 100
     return rows
-

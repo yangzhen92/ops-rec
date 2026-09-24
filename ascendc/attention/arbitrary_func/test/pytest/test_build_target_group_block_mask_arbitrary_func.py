@@ -1,9 +1,10 @@
 """Independent correctness and packed integration tests for target_group_block."""
+
 import random
 import numpy as np
 import pytest
 import torch
-import ops_rec
+import ops_rec  # noqa: F401
 
 DEVICE = "npu:0"
 N_FUNC = 4
@@ -37,7 +38,19 @@ def expected_dense(config):
         start = config["offsets"][batch]
         for query in range(length):
             for key in range(length):
-                dense[start + query, start + key] = ((query < length - config["target_lens"][batch] and key <= query) or (query >= length - config["target_lens"][batch] and (key < length - config["target_lens"][batch] or (key >= length - config["target_lens"][batch] and (key - (length - config["target_lens"][batch])) // config["group_sizes"][batch] == (query - (length - config["target_lens"][batch])) // config["group_sizes"][batch]))))
+                dense[start + query, start + key] = (
+                    key <= query < length - config["target_lens"][batch]
+                ) or (
+                    query >= length - config["target_lens"][batch]
+                    and (
+                        key < length - config["target_lens"][batch]
+                        or (
+                            key >= length - config["target_lens"][batch]
+                            and (key - (length - config["target_lens"][batch])) // config["group_sizes"][batch]
+                            == (query - (length - config["target_lens"][batch])) // config["group_sizes"][batch]
+                        )
+                    )
+                )
     return dense
 
 
@@ -45,7 +58,7 @@ def expected_intervals(config):
     total = config["offsets"][-1]
     encoded = np.zeros((1, 1, total, N_FUNC), dtype=np.int32)
     for batch, length in enumerate(config["lengths"]):
-        start, end = config["offsets"][batch:batch + 2]
+        start, end = config["offsets"][batch : batch + 2]
         target = config["target_lens"][batch]
         history = length - target
         group = config["group_sizes"][batch]
@@ -65,8 +78,9 @@ def expected_intervals(config):
 def run_operator(config):
     torch.npu.set_device(DEVICE)
     offsets = torch.tensor(config["offsets"], dtype=torch.int32, device=DEVICE)
-    tensors = {key: torch.tensor(config[key], dtype=torch.int32, device=DEVICE)
-               for key in ["target_lens","group_sizes"]}
+    tensors = {
+        key: torch.tensor(config[key], dtype=torch.int32, device=DEVICE) for key in ["target_lens", "group_sizes"]
+    }
     total = config["offsets"][-1]
     function = torch.ops.ops_rec.build_target_group_block_mask_arbitrary_func
     return function(offsets, tensors["target_lens"], tensors["group_sizes"], total), offsets
@@ -87,9 +101,12 @@ def test_target_group_block_packed(direction):
     encoded, offsets = run_operator(config)
     maximum = max(config["lengths"])
     q_block = 128 if direction == "q2k" else 256
-    op = torch.ops.ops_rec.create_fwd_packed_block_sparse if direction == "q2k" else torch.ops.ops_rec.create_bwd_packed_block_sparse
-    packed = op(
-        encoded, offsets, offsets, maximum, maximum, q_block, 128)
+    op = (
+        torch.ops.ops_rec.create_fwd_packed_block_sparse
+        if direction == "q2k"
+        else torch.ops.ops_rec.create_bwd_packed_block_sparse
+    )
+    packed = op(encoded, offsets, offsets, maximum, maximum, q_block, 128)
     decoded = packed[6].cpu().to(torch.int32) & 3
     assert torch.all((decoded == 0) | (decoded == 1) | (decoded == 3))
     assert int((decoded == 3).sum()) == int(packed[0].sum().cpu())

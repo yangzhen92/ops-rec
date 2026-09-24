@@ -60,9 +60,8 @@ __forceinline__ __simt_callee__ void LoadFunc(const __gm__ int32_t* src, int32_t
 }
 
 template <int32_t N_FUNC>
-__forceinline__ __simt_callee__ uint32_t TokenState(const int32_t* regs, const __gm__ int32_t* src,
-                                                     int32_t nFunc, int32_t strideF, int32_t kvLeft,
-                                                     int32_t kvRight)
+__forceinline__ __simt_callee__ uint32_t TokenState(const int32_t* regs, const __gm__ int32_t* src, int32_t nFunc,
+                                                    int32_t strideF, int32_t kvLeft, int32_t kvRight)
 {
     if constexpr (N_FUNC > 0) {
         constexpr int32_t intervals = N_FUNC / 2;
@@ -78,7 +77,8 @@ __forceinline__ __simt_callee__ uint32_t TokenState(const int32_t* regs, const _
             begin = candidate >= i ? regs[2 * i] : begin;
             end = candidate >= i ? regs[2 * i + 1] : end;
         }
-        if (begin <= kvLeft && end >= kvRight) return 2U;
+        if (begin <= kvLeft && end >= kvRight)
+            return 2U;
         return begin < kvRight && end > kvLeft ? 1U : 0U;
     }
     bool any = false;
@@ -98,9 +98,8 @@ __forceinline__ __simt_callee__ uint32_t TokenState(const int32_t* regs, const _
 }
 
 template <int32_t N_FUNC>
-__forceinline__ __simt_callee__ void TokenBitmap(const int32_t* regs, const __gm__ int32_t* src,
-                                                 int32_t nFunc, int32_t strideF, int32_t kvLeft,
-                                                 int32_t kvRight, uint32_t (&bits)[4])
+__forceinline__ __simt_callee__ void TokenBitmap(const int32_t* regs, const __gm__ int32_t* src, int32_t nFunc,
+                                                 int32_t strideF, int32_t kvLeft, int32_t kvRight, uint32_t (&bits)[4])
 {
     bits[0] = bits[1] = bits[2] = bits[3] = 0U;
     const int32_t count = N_FUNC > 0 ? N_FUNC : nFunc;

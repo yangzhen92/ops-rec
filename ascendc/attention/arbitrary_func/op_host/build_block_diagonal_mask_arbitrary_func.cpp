@@ -18,15 +18,15 @@ static ge::graphStatus BuildBlockDiagonalMaskArbitraryFuncTiling(gert::TilingCon
     const auto* offsetsShape = context->GetInputShape(0);
     OPS_LOG_E_IF_NULL("offsetsShape", offsetsShape, return ge::GRAPH_FAILED);
     const auto& offsets = offsetsShape->GetStorageShape();
-    OPS_LOG_E_IF(offsets.GetDimNum() != 1 || offsets.GetDim(0) < 1, context,
-                 return ge::GRAPH_FAILED, "offsets must have shape [batch_size + 1]");
+    OPS_LOG_E_IF(offsets.GetDimNum() != 1 || offsets.GetDim(0) < 1, context, return ge::GRAPH_FAILED,
+                 "offsets must have shape [batch_size + 1]");
     const int32_t batchSize = static_cast<int32_t>(offsets.GetDim(0)) - 1;
     const auto* attrs = context->GetAttrs();
     OPS_LOG_E_IF_NULL("attrs", attrs, return ge::GRAPH_FAILED);
     const auto* totalSeqLen = attrs->GetAttrPointer<int64_t>(0);
     OPS_LOG_E_IF_NULL("totalSeqLen", totalSeqLen, return ge::GRAPH_FAILED);
-    OPS_LOG_E_IF(*totalSeqLen < 0 || *totalSeqLen > INT32_MAX, context,
-                 return ge::GRAPH_FAILED, "total_seqlen must fit non-negative int32");
+    OPS_LOG_E_IF(*totalSeqLen < 0 || *totalSeqLen > INT32_MAX, context, return ge::GRAPH_FAILED,
+                 "total_seqlen must fit non-negative int32");
     auto platform = platform_ascendc::PlatformAscendC(context->GetPlatformInfo());
     const uint32_t blockDim = static_cast<uint32_t>(platform.GetCoreNumAiv());
     OPS_LOG_E_IF(blockDim == 0, context, return ge::GRAPH_FAILED, "AI Vector core count is zero");
@@ -45,8 +45,7 @@ static ge::graphStatus BuildBlockDiagonalMaskArbitraryFuncInferShape(gert::Infer
     OPS_LOG_E_IF_NULL("attrs", attrs, return ge::GRAPH_FAILED);
     const auto* totalSeqLen = attrs->GetAttrPointer<int64_t>(0);
     OPS_LOG_E_IF_NULL("totalSeqLen", totalSeqLen, return ge::GRAPH_FAILED);
-    OPS_LOG_E_IF(*totalSeqLen < 0, context, return ge::GRAPH_FAILED,
-                 "total_seqlen must be non-negative");
+    OPS_LOG_E_IF(*totalSeqLen < 0, context, return ge::GRAPH_FAILED, "total_seqlen must be non-negative");
     auto* output = context->GetOutputShape(0);
     OPS_LOG_E_IF_NULL("output", output, return ge::GRAPH_FAILED);
     output->SetDimNum(4);
@@ -63,11 +62,17 @@ class BuildBlockDiagonalMaskArbitraryFunc : public OpDef {
 public:
     explicit BuildBlockDiagonalMaskArbitraryFunc(const char* name) : OpDef(name)
     {
-        this->Input("offsets").ParamType(REQUIRED).DataType({ge::DT_INT32})
-            .Format({ge::FORMAT_ND}).UnknownShapeFormat({ge::FORMAT_ND});
+        this->Input("offsets")
+            .ParamType(REQUIRED)
+            .DataType({ge::DT_INT32})
+            .Format({ge::FORMAT_ND})
+            .UnknownShapeFormat({ge::FORMAT_ND});
         this->Attr("totalSeqLen").AttrType(REQUIRED).Int(0);
-        this->Output("arbitraryFunc").ParamType(REQUIRED).DataType({ge::DT_INT32})
-            .Format({ge::FORMAT_ND}).UnknownShapeFormat({ge::FORMAT_ND});
+        this->Output("arbitraryFunc")
+            .ParamType(REQUIRED)
+            .DataType({ge::DT_INT32})
+            .Format({ge::FORMAT_ND})
+            .UnknownShapeFormat({ge::FORMAT_ND});
         this->SetInferShape(optiling::BuildBlockDiagonalMaskArbitraryFuncInferShape);
         OpAICoreConfig config;
         config.DynamicCompileStaticFlag(true)

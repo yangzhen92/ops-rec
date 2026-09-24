@@ -1,9 +1,10 @@
 """Correctness and packed integration tests for gist-cache mask."""
+
 import random
 import numpy as np
 import pytest
 import torch
-import ops_rec
+import ops_rec  # noqa: F401
 
 DEVICE = "npu:0"
 N_FUNC = 4
@@ -56,7 +57,7 @@ def expected_intervals(config):
     total = config["offsets"][-1]
     encoded = np.zeros((1, 1, total, N_FUNC), dtype=np.int32)
     for batch_id, length in enumerate(config["lengths"]):
-        seq_start, seq_end = config["offsets"][batch_id:batch_id + 2]
+        seq_start, seq_end = config["offsets"][batch_id : batch_id + 2]
         p = config["pre_doc_lens"][batch_id]
         g0 = config["gist_starts"][batch_id]
         g1 = config["gist_ends"][batch_id]
@@ -101,7 +102,8 @@ def run_operator(config):
     gist_ends = torch.tensor(config["gist_ends"], dtype=torch.int32, device=DEVICE)
     total = config["offsets"][-1]
     return torch.ops.ops_rec.build_gist_mask_arbitrary_func(
-        offsets, pre_doc_lens, gist_starts, gist_ends, total), offsets
+        offsets, pre_doc_lens, gist_starts, gist_ends, total
+    ), offsets
 
 
 @pytest.mark.parametrize("case_id", range(30), ids=lambda value: f"case{value + 1:02d}")
@@ -119,11 +121,13 @@ def test_gist_mask_packed(direction):
     encoded, offsets = run_operator(config)
     maximum = max(config["lengths"])
     q_block = 128 if direction == "q2k" else 256
-    op = torch.ops.ops_rec.create_fwd_packed_block_sparse if direction == "q2k" else torch.ops.ops_rec.create_bwd_packed_block_sparse
-    packed = op(
-        encoded, offsets, offsets, maximum, maximum, q_block, 128)
+    op = (
+        torch.ops.ops_rec.create_fwd_packed_block_sparse
+        if direction == "q2k"
+        else torch.ops.ops_rec.create_bwd_packed_block_sparse
+    )
+    packed = op(encoded, offsets, offsets, maximum, maximum, q_block, 128)
     decoded = packed[6].cpu().to(torch.int32) & 3
     assert torch.all((decoded == 0) | (decoded == 1) | (decoded == 3))
     assert int((decoded == 3).sum()) == int(packed[0].sum().cpu())
     assert int((decoded == 1).sum()) == int(packed[3].sum().cpu())
-

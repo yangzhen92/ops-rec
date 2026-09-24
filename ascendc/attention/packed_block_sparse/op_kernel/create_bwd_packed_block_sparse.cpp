@@ -9,10 +9,9 @@ namespace {
 template <int32_t N_FUNC, int32_t Q_BLOCK, int32_t KV_BLOCK, bool K2Q>
 __simt_vf__ __aicore__ LAUNCH_BOUND(THREADS) inline void CreatePackedVf(
     const __gm__ int32_t* func, const __gm__ int32_t* qOffsets, const __gm__ int32_t* kvOffsets,
-    __gm__ int32_t* maskCnt, __gm__ int32_t* fullCnt, __gm__ int32_t* rowBounds,
-    __gm__ int32_t* descriptor, __gm__ int32_t* bitmap, int32_t strideH,
-    int32_t strideQ, int32_t strideF, int32_t nFunc,
-    int32_t numQBlocks, int32_t numKvBlocks, int32_t hNum, int32_t bNum)
+    __gm__ int32_t* maskCnt, __gm__ int32_t* fullCnt, __gm__ int32_t* rowBounds, __gm__ int32_t* descriptor,
+    __gm__ int32_t* bitmap, int32_t strideH, int32_t strideQ, int32_t strideF, int32_t nFunc, int32_t numQBlocks,
+    int32_t numKvBlocks, int32_t hNum, int32_t bNum)
 {
     constexpr int32_t BITMAP_WORDS = KV_BLOCK / 32;
     constexpr int32_t TOKENS_PER_LANE = Q_BLOCK / WARP_SIZE;
@@ -27,8 +26,7 @@ __simt_vf__ __aicore__ LAUNCH_BOUND(THREADS) inline void CreatePackedVf(
     __ubuf__ int32_t firstBlocks[WARPS];
     __ubuf__ int32_t lastBlocks[WARPS];
 
-    for (int32_t outer = AscendC::Simt::GetBlockIdx(); outer < totalOuter;
-         outer += AscendC::Simt::GetBlockNum()) {
+    for (int32_t outer = AscendC::Simt::GetBlockIdx(); outer < totalOuter; outer += AscendC::Simt::GetBlockNum()) {
         const int32_t bh = outer / outerBlocks;
         const int32_t outerBlock = outer - bh * outerBlocks;
         const int32_t b = bh / hNum;
@@ -73,8 +71,8 @@ __simt_vf__ __aicore__ LAUNCH_BOUND(THREADS) inline void CreatePackedVf(
                     if constexpr (K2Q && N_FUNC > 0) {
                         LoadFunc<N_FUNC>(row, strideF, regs[token]);
                     }
-                    const uint32_t tokenState = TokenState<N_FUNC>(
-                        regs[token], row, nFunc, strideF, kvLeftGlobal, kvRightGlobal);
+                    const uint32_t tokenState =
+                        TokenState<N_FUNC>(regs[token], row, nFunc, strideF, kvLeftGlobal, kvRightGlobal);
                     localStateMask |= 1U << tokenState;
                 } else {
                     localStateMask |= 1U;
@@ -106,8 +104,7 @@ __simt_vf__ __aicore__ LAUNCH_BOUND(THREADS) inline void CreatePackedVf(
                     uint32_t bits[4] = {0U, 0U, 0U, 0U};
                     if (q < qLen && kvLeft < kvLen) {
                         const __gm__ int32_t* row = funcHead + (funcQStartGlobal + q) * strideQ;
-                        TokenBitmap<N_FUNC>(
-                            regs[token], row, nFunc, strideF, kvLeftGlobal, kvRightGlobal, bits);
+                        TokenBitmap<N_FUNC>(regs[token], row, nFunc, strideF, kvLeftGlobal, kvRightGlobal, bits);
                     }
                     const int64_t bitmapPos = (slot * Q_BLOCK + rowInBlock) * BITMAP_WORDS;
 #pragma unroll
@@ -146,23 +143,36 @@ __simt_vf__ __aicore__ LAUNCH_BOUND(THREADS) inline void CreatePackedVf(
     }
 }
 
-#define LAUNCH_PACKED(NF, QB, KB, K2Q_MODE) \
-    asc_vf_call<CreatePackedVf<NF, QB, KB, K2Q_MODE>>(dim3{256}, f, qOffsets, kvOffsets, mc, fc, bounds, desc, bm, t.strideH, \
-        t.strideQ, t.strideF, t.nFunc, t.numQBlocks, t.numKvBlocks, t.hNum, t.bNum)
+#define LAUNCH_PACKED(NF, QB, KB, K2Q_MODE)                                                                        \
+    asc_vf_call<CreatePackedVf<NF, QB, KB, K2Q_MODE>>(dim3{256}, f, qOffsets, kvOffsets, mc, fc, bounds, desc, bm, \
+                                                      t.strideH, t.strideQ, t.strideF, t.nFunc, t.numQBlocks,      \
+                                                      t.numKvBlocks, t.hNum, t.bNum)
 
-#define DISPATCH_PACKED(QB, KB, K2Q_MODE) \
-    switch (t.nFunc) { \
-        case 2: LAUNCH_PACKED(2, QB, KB, K2Q_MODE); break; \
-        case 4: LAUNCH_PACKED(4, QB, KB, K2Q_MODE); break; \
-        case 6: LAUNCH_PACKED(6, QB, KB, K2Q_MODE); break; \
-        case 8: LAUNCH_PACKED(8, QB, KB, K2Q_MODE); break; \
-        default: LAUNCH_PACKED(0, QB, KB, K2Q_MODE); break; \
+#define DISPATCH_PACKED(QB, KB, K2Q_MODE)       \
+    switch (t.nFunc) {                          \
+        case 2:                                 \
+            LAUNCH_PACKED(2, QB, KB, K2Q_MODE); \
+            break;                              \
+        case 4:                                 \
+            LAUNCH_PACKED(4, QB, KB, K2Q_MODE); \
+            break;                              \
+        case 6:                                 \
+            LAUNCH_PACKED(6, QB, KB, K2Q_MODE); \
+            break;                              \
+        case 8:                                 \
+            LAUNCH_PACKED(8, QB, KB, K2Q_MODE); \
+            break;                              \
+        default:                                \
+            LAUNCH_PACKED(0, QB, KB, K2Q_MODE); \
+            break;                              \
     }
 }  // namespace
 
-extern "C" __global__ __aicore__ void create_bwd_packed_block_sparse(
-    GM_ADDR func, GM_ADDR qOffsetsAddr, GM_ADDR kvOffsetsAddr, GM_ADDR maskCnt, GM_ADDR fullCnt, GM_ADDR rowBounds,
-    GM_ADDR descriptor, GM_ADDR bitmap, GM_ADDR, GM_ADDR tiling)
+extern "C" __global__ __aicore__ void create_bwd_packed_block_sparse(GM_ADDR func, GM_ADDR qOffsetsAddr,
+                                                                     GM_ADDR kvOffsetsAddr, GM_ADDR maskCnt,
+                                                                     GM_ADDR fullCnt, GM_ADDR rowBounds,
+                                                                     GM_ADDR descriptor, GM_ADDR bitmap, GM_ADDR,
+                                                                     GM_ADDR tiling)
 {
     KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AIV_ONLY);
     GET_TILING_DATA(t, tiling);

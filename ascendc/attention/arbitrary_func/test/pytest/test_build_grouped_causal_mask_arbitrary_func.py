@@ -1,9 +1,10 @@
 """Independent correctness and packed integration tests for grouped_causal."""
+
 import random
 import numpy as np
 import pytest
 import torch
-import ops_rec
+import ops_rec  # noqa: F401
 
 DEVICE = "npu:0"
 N_FUNC = 2
@@ -34,7 +35,9 @@ def expected_dense(config):
         start = config["offsets"][batch]
         for query in range(length):
             for key in range(length):
-                dense[start + query, start + key] = key // config["group_sizes"][batch] == query // config["group_sizes"][batch] and key <= query
+                dense[start + query, start + key] = (
+                    key // config["group_sizes"][batch] == query // config["group_sizes"][batch] and key <= query
+                )
     return dense
 
 
@@ -43,7 +46,7 @@ def expected_intervals(config):
     total = dense.shape[0]
     encoded = np.zeros((1, 1, total, N_FUNC), dtype=np.int32)
     for batch, length in enumerate(config["lengths"]):
-        start, end = config["offsets"][batch:batch + 2]
+        start, end = config["offsets"][batch : batch + 2]
         for query in range(start, end):
             active = np.flatnonzero(dense[query, start:end]) + start
             intervals = []
@@ -66,8 +69,7 @@ def expected_intervals(config):
 def run_operator(config):
     torch.npu.set_device(DEVICE)
     offsets = torch.tensor(config["offsets"], dtype=torch.int32, device=DEVICE)
-    tensors = {key: torch.tensor(config[key], dtype=torch.int32, device=DEVICE)
-               for key in ["group_sizes"]}
+    tensors = {key: torch.tensor(config[key], dtype=torch.int32, device=DEVICE) for key in ["group_sizes"]}
     total = config["offsets"][-1]
     function = torch.ops.ops_rec.build_grouped_causal_mask_arbitrary_func
     return function(offsets, tensors["group_sizes"], total), offsets
@@ -88,9 +90,12 @@ def test_grouped_causal_packed(direction):
     encoded, offsets = run_operator(config)
     maximum = max(config["lengths"])
     q_block = 128 if direction == "q2k" else 256
-    op = torch.ops.ops_rec.create_fwd_packed_block_sparse if direction == "q2k" else torch.ops.ops_rec.create_bwd_packed_block_sparse
-    packed = op(
-        encoded, offsets, offsets, maximum, maximum, q_block, 128)
+    op = (
+        torch.ops.ops_rec.create_fwd_packed_block_sparse
+        if direction == "q2k"
+        else torch.ops.ops_rec.create_bwd_packed_block_sparse
+    )
+    packed = op(encoded, offsets, offsets, maximum, maximum, q_block, 128)
     decoded = packed[6].cpu().to(torch.int32) & 3
     assert torch.all((decoded == 0) | (decoded == 1) | (decoded == 3))
     assert int((decoded == 3).sum()) == int(packed[0].sum().cpu())

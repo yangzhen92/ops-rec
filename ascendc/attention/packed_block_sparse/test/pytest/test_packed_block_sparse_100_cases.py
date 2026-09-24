@@ -3,7 +3,6 @@
 import pytest
 import torch
 
-import ops_rec
 
 from cases import operator_cases
 
@@ -16,7 +15,7 @@ def _expected_descriptor(arbitrary_cpu, case, direction, q_block, kv_block):
     expected = torch.zeros((case["batch"], 1, outer, inner), dtype=torch.int32)
     offset = 0
     for batch_idx, seq_len in enumerate(case["seq_lens"]):
-        rows = arbitrary_cpu[0, 0, offset:offset + seq_len]
+        rows = arbitrary_cpu[0, 0, offset : offset + seq_len]
         visible = torch.zeros((seq_len, seq_len), dtype=torch.bool)
         for q_pos in range(seq_len):
             for pair in range(0, rows.shape[-1], 2):
@@ -33,7 +32,7 @@ def _expected_descriptor(arbitrary_cpu, case, direction, q_block, kv_block):
                 block = visible[q_begin:q_end, k_begin:k_end]
                 if not bool(block.any()):
                     continue
-                is_full = (q_end - q_begin == q_block and k_end - k_begin == kv_block and bool(block.all()))
+                is_full = q_end - q_begin == q_block and k_end - k_begin == kv_block and bool(block.all())
                 outer_idx, inner_idx = (q_idx, k_idx) if direction == "q2k" else (k_idx, q_idx)
                 expected[batch_idx, 0, outer_idx, inner_idx] = 1 if is_full else 3
         offset += seq_len
@@ -45,8 +44,11 @@ def _direct_state(descriptor):
 
 
 def _create_packed(direction, *args):
-    op = (torch.ops.ops_rec.create_fwd_packed_block_sparse if direction == "q2k"
-          else torch.ops.ops_rec.create_bwd_packed_block_sparse)
+    op = (
+        torch.ops.ops_rec.create_fwd_packed_block_sparse
+        if direction == "q2k"
+        else torch.ops.ops_rec.create_bwd_packed_block_sparse
+    )
     return op(*args)
 
 
@@ -55,12 +57,11 @@ def test_packed_block_sparse_100_cases(case):
     torch.npu.set_device(0)
     offsets = torch.tensor(case["offsets"], dtype=torch.int32, device="npu")
     zeros = torch.zeros(case["batch"], dtype=torch.int32, device="npu")
-    arbitrary = torch.ops.ops_rec.build_hstu_mask_arbitrary_func(
-        offsets, zeros, zeros, 1, case["offsets"][-1])
+    arbitrary = torch.ops.ops_rec.build_hstu_mask_arbitrary_func(offsets, zeros, zeros, 1, case["offsets"][-1])
     q_block = 128 if case["direction"] == "q2k" else 256
-    packed = _create_packed(case["direction"],
-        arbitrary, offsets, offsets, case["max_seq_len"], case["max_seq_len"],
-        q_block, 128)
+    packed = _create_packed(
+        case["direction"], arbitrary, offsets, offsets, case["max_seq_len"], case["max_seq_len"], q_block, 128
+    )
     torch.npu.synchronize()
 
     expected = _expected_descriptor(arbitrary.cpu(), case, case["direction"], q_block, 128)
@@ -81,4 +82,3 @@ def test_packed_block_sparse_100_cases(case):
         positions = torch.nonzero(nonempty[b, h, outer], as_tuple=False).flatten()
         bounds[b, h, outer] = torch.tensor([int(positions[0]), int(positions[-1])])
     assert torch.equal(packed[1].cpu(), bounds)
-

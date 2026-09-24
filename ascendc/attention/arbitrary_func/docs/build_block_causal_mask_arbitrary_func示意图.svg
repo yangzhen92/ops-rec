@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="560" viewBox="0 0 760 560">
+<defs><style>
+.title{font:bold 24px Arial,sans-serif;fill:#203040}.subtitle{font:14px Arial,sans-serif;fill:#52616b}.label{font:13px Arial,sans-serif;fill:#203040}.small{font:12px Arial,sans-serif;fill:#52616b}.panel{fill:white;stroke:#bac7d5;stroke-width:1.5;rx:8}.segA{fill:#3b82f6}.segB{fill:#f59e0b}.segC{fill:#10b981}.segD{fill:#ef4444}.visible{fill:#22c55e}.hidden{fill:#eef2f7}.grid{stroke:#cbd5e1;stroke-width:1}.formula{font:13px monospace;fill:#203040}
+</style></defs>
+<rect width="100%" height="100%" fill="#f7f9fb"/>
+<text x="380" y="38" text-anchor="middle" class="title">Block-causal mask</text>
+<text x="380" y="64" text-anchor="middle" class="subtitle">Block size B=3; tokens attend through current block end</text>
+<rect x="40" y="88" width="680" height="88" class="panel"/>
+<text x="56" y="108" class="label">Sequence layout</text>
+<rect x="64" y="118" width="616" height="30" class="segB" rx="4"/>
+<text x="372.0" y="138" text-anchor="middle" style="font:bold 13px Arial,sans-serif;fill:white">sequence [0,S)</text>
+<rect x="40" y="188" width="324" height="304" class="panel"/>
+<text x="202" y="214" text-anchor="middle" class="label">Attention mask example (green = visible)</text>
+<line x1="70" y1="190" x2="70" y2="414" class="grid"/>
+<line x1="70" y1="190" x2="294" y2="190" class="grid"/>
+<line x1="98" y1="190" x2="98" y2="414" class="grid"/>
+<line x1="70" y1="218" x2="294" y2="218" class="grid"/>
+<line x1="126" y1="190" x2="126" y2="414" class="grid"/>
+<line x1="70" y1="246" x2="294" y2="246" class="grid"/>
+<line x1="154" y1="190" x2="154" y2="414" class="grid"/>
+<line x1="70" y1="274" x2="294" y2="274" class="grid"/>
+<line x1="182" y1="190" x2="182" y2="414" class="grid"/>
+<line x1="70" y1="302" x2="294" y2="302" class="grid"/>
+<line x1="210" y1="190" x2="210" y2="414" class="grid"/>
+<line x1="70" y1="330" x2="294" y2="330" class="grid"/>
+<line x1="238" y1="190" x2="238" y2="414" class="grid"/>
+<line x1="70" y1="358" x2="294" y2="358" class="grid"/>
+<line x1="266" y1="190" x2="266" y2="414" class="grid"/>
+<line x1="70" y1="386" x2="294" y2="386" class="grid"/>
+<line x1="294" y1="190" x2="294" y2="414" class="grid"/>
+<line x1="70" y1="414" x2="294" y2="414" class="grid"/>
+<text x="58" y="208" text-anchor="end" class="small">q0</text>
+<text x="84" y="182" text-anchor="middle" class="small">k0</text>
+<rect x="71" y="191" width="26" height="26" class="visible"/>
+<rect x="99" y="191" width="26" height="26" class="visible"/>
+<rect x="127" y="191" width="26" height="26" class="visible"/>
+<rect x="155" y="191" width="26" height="26" class="hidden"/>
+<rect x="183" y="191" width="26" height="26" class="hidden"/>
+<rect x="211" y="191" width="26" height="26" class="hidden"/>
+<rect x="239" y="191" width="26" height="26" class="hidden"/>
+<rect x="267" y="191" width="26" height="26" class="hidden"/>
+<text x="58" y="236" text-anchor="end" class="small">q1</text>
+<text x="112" y="182" text-anchor="middle" class="small">k1</text>
+<rect x="71" y="219" width="26" height="26" class="visible"/>
+<rect x="99" y="219" width="26" height="26" class="visible"/>
+<rect x="127" y="219" width="26" height="26" class="visible"/>
+<rect x="155" y="219" width="26" height="26" class="hidden"/>
+<rect x="183" y="219" width="26" height="26" class="hidden"/>
+<rect x="211" y="219" width="26" height="26" class="hidden"/>
+<rect x="239" y="219" width="26" height="26" class="hidden"/>
+<rect x="267" y="219" width="26" height="26" class="hidden"/>
+<text x="58" y="264" text-anchor="end" class="small">q2</text>
+<text x="140" y="182" text-anchor="middle" class="small">k2</text>
+<rect x="71" y="247" width="26" height="26" class="visible"/>
+<rect x="99" y="247" width="26" height="26" class="visible"/>
+<rect x="127" y="247" width="26" height="26" class="visible"/>
+<rect x="155" y="247" width="26" height="26" class="hidden"/>
+<rect x="183" y="247" width="26" height="26" class="hidden"/>
+<rect x="211" y="247" width="26" height="26" class="hidden"/>
+<rect x="239" y="247" width="26" height="26" class="hidden"/>
+<rect x="267" y="247" width="26" height="26" class="hidden"/>
+<text x="58" y="292" text-anchor="end" class="small">q3</text>
+<text x="168" y="182" text-anchor="middle" class="small">k3</text>
+<rect x="71" y="275" width="26" height="26" class="visible"/>
+<rect x="99" y="275" width="26" height="26" class="visible"/>
+<rect x="127" y="275" width="26" height="26" class="visible"/>
+<rect x="155" y="275" width="26" height="26" class="visible"/>
+<rect x="183" y="275" width="26" height="26" class="visible"/>
+<rect x="211" y="275" width="26" height="26" class="visible"/>
+<rect x="239" y="275" width="26" height="26" class="hidden"/>
+<rect x="267" y="275" width="26" height="26" class="hidden"/>
+<text x="58" y="320" text-anchor="end" class="small">q4</text>
+<text x="196" y="182" text-anchor="middle" class="small">k4</text>
+<rect x="71" y="303" width="26" height="26" class="visible"/>
+<rect x="99" y="303" width="26" height="26" class="visible"/>
+<rect x="127" y="303" width="26" height="26" class="visible"/>
+<rect x="155" y="303" width="26" height="26" class="visible"/>
+<rect x="183" y="303" width="26" height="26" class="visible"/>
+<rect x="211" y="303" width="26" height="26" class="visible"/>
+<rect x="239" y="303" width="26" height="26" class="hidden"/>
+<rect x="267" y="303" width="26" height="26" class="hidden"/>
+<text x="58" y="348" text-anchor="end" class="small">q5</text>
+<text x="224" y="182" text-anchor="middle" class="small">k5</text>
+<rect x="71" y="331" width="26" height="26" class="visible"/>
+<rect x="99" y="331" width="26" height="26" class="visible"/>
+<rect x="127" y="331" width="26" height="26" class="visible"/>
+<rect x="155" y="331" width="26" height="26" class="visible"/>
+<rect x="183" y="331" width="26" height="26" class="visible"/>
+<rect x="211" y="331" width="26" height="26" class="visible"/>
+<rect x="239" y="331" width="26" height="26" class="hidden"/>
+<rect x="267" y="331" width="26" height="26" class="hidden"/>
+<text x="58" y="376" text-anchor="end" class="small">q6</text>
+<text x="252" y="182" text-anchor="middle" class="small">k6</text>
+<rect x="71" y="359" width="26" height="26" class="visible"/>
+<rect x="99" y="359" width="26" height="26" class="visible"/>
+<rect x="127" y="359" width="26" height="26" class="visible"/>
+<rect x="155" y="359" width="26" height="26" class="visible"/>
+<rect x="183" y="359" width="26" height="26" class="visible"/>
+<rect x="211" y="359" width="26" height="26" class="visible"/>
+<rect x="239" y="359" width="26" height="26" class="visible"/>
+<rect x="267" y="359" width="26" height="26" class="visible"/>
+<text x="58" y="404" text-anchor="end" class="small">q7</text>
+<text x="280" y="182" text-anchor="middle" class="small">k7</text>
+<rect x="71" y="387" width="26" height="26" class="visible"/>
+<rect x="99" y="387" width="26" height="26" class="visible"/>
+<rect x="127" y="387" width="26" height="26" class="visible"/>
+<rect x="155" y="387" width="26" height="26" class="visible"/>
+<rect x="183" y="387" width="26" height="26" class="visible"/>
+<rect x="211" y="387" width="26" height="26" class="visible"/>
+<rect x="239" y="387" width="26" height="26" class="visible"/>
+<rect x="267" y="387" width="26" height="26" class="visible"/>
+<rect x="404" y="188" width="316" height="304" class="panel"/>
+<text x="562" y="214" text-anchor="middle" class="label">Interval encoding rule</text>
+<text x="428" y="246" class="label">all rows</text>
+<text x="428" y="268" class="formula">[0, min(next_block, S))</text>
+<text x="428" y="464" class="small">Output row stores up to four half-open intervals.</text>
+<text x="428" y="484" class="small">Unused intervals are encoded as empty [x,x).</text>
+</svg>

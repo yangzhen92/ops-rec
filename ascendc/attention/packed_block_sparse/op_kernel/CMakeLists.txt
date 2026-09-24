@@ -1,0 +1,5 @@
+set(_KERNEL_TARGET "${VENDOR_NAME}_kernels")
+npu_op_kernel_options(${_KERNEL_TARGET} ALL OPTIONS "--cce-long-call=true" ${OPS_REC_SOC_CXX_DEFS})
+npu_op_kernel_sources(${_KERNEL_TARGET} KERNEL_DIR ./)
+npu_op_kernel_library(${_KERNEL_TARGET} SRC_BASE ${CMAKE_CURRENT_SOURCE_DIR}/ TILING_LIBRARY cust_optiling)
+npu_op_package_add(${VENDOR_NAME} LIBRARY ${_KERNEL_TARGET})

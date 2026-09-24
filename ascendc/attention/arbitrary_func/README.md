@@ -6,6 +6,7 @@
 
 - [build_hstu_mask_arbitrary_func](#build_hstu_mask_arbitrary_func)：HSTU 掩码，按 ctx / history / target 三段划分
 - [build_sla_mask_arbitrary_func](#build_sla_mask_arbitrary_func)：SLA 掩码，按 history / target 两段划分
+- [11 个完全独立的掩码算子](./docs/torch_build_named_masks.md)：各自拥有 OpDef、tiling、kernel、Torch API 与逐 batch 配置测试
 
 ---
 
@@ -167,3 +168,42 @@ SIMT 内核由 `op_kernel/build_sla_mask_arbitrary_func_kernel.h` 的 `SimtBuild
 - [torch 调用示例](./examples/torch/test_torch_arbitrary_func_sla_mask.py)
 - [aclnn 接口文档](./docs/aclnn_build_sla_mask_arbitrary_func.md)
 - [torch 接口文档](./docs/torch_build_sla_mask_arbitrary_func.md)
+
+---
+
+# build_gist_mask_arbitrary_func
+
+## 功能说明
+
+根据 gist-cache 序列结构构造 arbitrary function 掩码编码。每个 batch 独立传入
+`pre_doc_lens`、`gist_starts`、`gist_ends`，对应局部坐标：
+
+- `pre_doc=[0,P)`
+- `doc=[P,G0)`
+- `gist=[G0,G1)`
+- `query=[G1,S)`
+
+可见性规则：
+
+- pre_doc token：按 causal 只看 `pre_doc` 前缀
+- doc token：看 `pre_doc` 和 doc 内 causal 前缀
+- gist token：看 `pre_doc + doc + gist` 的 causal 前缀，用于吸收 doc 信息
+- query token：看 `pre_doc + gist + query` 的 causal 前缀，不直接看原始 doc
+
+对应接口：
+
+- aclnn 接口：`aclnnBuildGistMaskArbitraryFunc`
+- torch 接口：`ops_rec.ascendc.attention.build_gist_mask_arbitrary_func`
+
+## 参数说明
+
+| 参数名 | 输入/输出 | 参数类型 | 数据类型 | 数据格式 | shape | 说明 |
+|--------|---------|---------|---------|---------|-------|------|
+| offsets | 输入 | Tensor | INT32 | ND | [batch_size+1] | 每序列起始偏移 |
+| pre_doc_lens | 输入 | Tensor | INT32 | ND | [batch_size] | 每序列 P |
+| gist_starts | 输入 | Tensor | INT32 | ND | [batch_size] | 每序列 G0 |
+| gist_ends | 输入 | Tensor | INT32 | ND | [batch_size] | 每序列 G1 |
+| total_seqlen | 输入 | int | - | - | - | 所有序列长度之和 |
+| output | 输出 | Tensor | INT32 | ND | [1, 1, total_seqlen, n_func] | af 编码输出；单区间 mask 为 2，双区间 mask 为 4 |
+
+示意图：[build_gist_mask_arbitrary_func示意图.svg](./docs/build_gist_mask_arbitrary_func示意图.svg)

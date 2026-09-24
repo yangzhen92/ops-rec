@@ -38,9 +38,7 @@ def expected_dense(config):
         start = config["offsets"][batch]
         for query in range(length):
             for key in range(length):
-                dense[start + query, start + key] = (
-                    key <= query < length - config["target_lens"][batch]
-                ) or (
+                dense[start + query, start + key] = (key <= query < length - config["target_lens"][batch]) or (
                     query >= length - config["target_lens"][batch]
                     and (
                         key < length - config["target_lens"][batch]

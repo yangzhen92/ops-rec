@@ -174,6 +174,13 @@ def _so_name(variant: str) -> str:
     return f"ops_rec_atlas_{suffix}.so"
 
 
+def _preload_adapter_deps() -> None:
+    try:
+        import torch_npu  # noqa: F401
+    except Exception as exc:
+        logging.warning("ops_rec: import torch_npu failed: %s", exc)
+
+
 def _load_custom_so(variant: str, no_throw: bool = False):
     # 加载对应 variant 的 ops_rec_atlas_<variant>.so (torch 适配层).
     pkg_dir = os.path.dirname(os.path.abspath(__file__))
@@ -189,6 +196,7 @@ def _load_custom_so(variant: str, no_throw: bool = False):
     try:
         import torch
 
+        _preload_adapter_deps()
         torch.ops.load_library(so_path)
     except Exception as exc:
         if no_throw:

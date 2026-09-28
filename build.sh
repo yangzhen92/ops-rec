@@ -175,8 +175,8 @@ init_common_cmake_args() {
         "-DCMAKE_CXX_FLAGS=-fstack-protector-strong"
         "-DCMAKE_EXE_LINKER_FLAGS=-Wl,-z,relro -Wl,-z,now -Wl,-s"
         "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,relro -Wl,-z,now -Wl,-s"
-        "-DCMAKE_SKIP_BUILD_RPATH=FALSE"
-        "-DCMAKE_SKIP_INSTALL_RPATH=FALSE"
+        "-DCMAKE_SKIP_BUILD_RPATH=TRUE"
+        "-DCMAKE_SKIP_INSTALL_RPATH=TRUE"
     )
     CMAKEOP_ADAPTER=(
         "-DPython3_EXECUTABLE=${pyexe}"

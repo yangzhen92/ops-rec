@@ -14,16 +14,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-# pylint: disable=logging-fstring-interpolation, duplicate-code
-# pylint: disable=logging-not-lazy
-# pylint: disable=duplicate-code
 import os
 import glob
 import argparse
 import logging
 
 import pandas as pd
-
 
 # 配置 logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -43,9 +39,9 @@ args = parser.parse_args()
 # 在指定目录中递归查找所有op_summary_*.csv文件
 csv_pattern = os.path.join(args.input_dir, '**', 'op_summary_*.csv')
 csv_files = glob.glob(csv_pattern, recursive=True)
-logger.info(f"在目录 {args.input_dir} 中找到 {len(csv_files)} 个CSV文件:")
+logger.info("在目录 %s 中找到 %d 个CSV文件:", args.input_dir, len(csv_files))
 for f in csv_files:
-    logger.info(f"  - {os.path.relpath(f, args.input_dir)}")
+    logger.info("  - %s", os.path.relpath(f, args.input_dir))
 
 # 读取所有CSV文件并合并
 dfs = []
@@ -53,21 +49,21 @@ for csv_file in csv_files:
     try:
         df = pd.read_csv(csv_file, low_memory=False)
         dfs.append(df)
-        logger.info(f"已加载: {os.path.basename(csv_file)}, {len(df)} 行")
+        logger.info("已加载: %s, %d 行", os.path.basename(csv_file), len(df))
     except Exception as e:
-        logger.error(f"加载 {csv_file} 失败: {e}")
+        logger.error("加载 %s 失败: %s", csv_file, e)
 
 if not dfs:
     raise RuntimeError("没有找到任何CSV文件")
 
 # 合并所有数据
 all_data = pd.concat(dfs, ignore_index=True)
-logger.info(f"\n总共加载了 {len(all_data)} 行数据")
+logger.info("\n总共加载了 %d 行数据", len(all_data))
 
 # 筛选目标算子的记录
 target_ops = args.target_ops
 filtered = all_data[all_data['Op Name'].isin(target_ops)]
-logger.info(f"筛选出 Op Name 为 {target_ops} 的记录: {len(filtered)} 行")
+logger.info("筛选出 Op Name 为 %s 的记录: %d 行", target_ops, len(filtered))
 
 if len(filtered) == 0:
     raise RuntimeError("没有找到目标算子")
@@ -93,15 +89,15 @@ result = result.sort_values(['Op Name', 'Task Start Time(us)'])
 # 保存结果到临时CSV（不含表头追加模式）
 TMP_OUTPUT = "tmp_benchmark_with Perf.csv"
 result.to_csv(TMP_OUTPUT, index=False)
-logger.info(f"\n临时结果已保存到: {TMP_OUTPUT}")
-logger.info(f"共 {len(result)} 条记录")
+logger.info("\n临时结果已保存到: %s", TMP_OUTPUT)
+logger.info("共 %d 条记录", len(result))
 
 # 读取原始tmp_benchmark.csv获取用例输入
 if os.path.exists(TMP_BENCHMARK_CSV):
     input_df = pd.read_csv(TMP_BENCHMARK_CSV)
-    logger.info(f"原始用例输入记录: {len(input_df)} 行")
+    logger.info("原始用例输入记录: %d 行", len(input_df))
 else:
-    logger.warning(f"找不到临时文件 {TMP_BENCHMARK_CSV}")
+    logger.warning("找不到临时文件 %s", TMP_BENCHMARK_CSV)
     input_df = pd.DataFrame()
 
 # 验证行数一致性
@@ -112,7 +108,7 @@ if len(input_df) > 0:
         raise ValueError(
             f"行数不一致: perf_stats去重后有 {result_count} 条记录, 而tmp_benchmark.csv有 {input_count} 条记录"
         )
-    logger.info(f"行数校验通过: 两者都有 {input_count} 条记录")
+    logger.info("行数校验通过: 两者都有 %d 条记录", input_count)
 
 # 合并结果: 将Input Shapes和Task Duration追加到原始输入数据
 if len(input_df) > 0 and len(result) > 0:
@@ -126,20 +122,20 @@ if len(input_df) > 0 and len(result) > 0:
     # 保存最终结果
     output_path = args.output
     merged_df.to_csv(output_path, index=False)
-    logger.info(f"\n最终结果已保存到: {output_path}")
-    logger.info(f"共 {len(merged_df)} 条记录")
+    logger.info("\n最终结果已保存到: %s", output_path)
+    logger.info("共 %d 条记录", len(merged_df))
 
     # 显示结果预览
     logger.info("\n结果预览:")
-    logger.info("\n" + merged_df.to_string(index=False))
+    logger.info("\n%s", merged_df.to_string(index=False))
 else:
     # 如果没有输入数据，只保存perf结果
     output_path = args.output
     result.to_csv(output_path, index=False)
-    logger.info(f"\n结果已保存到: {output_path}")
-    logger.info(f"共 {len(result)} 条记录")
+    logger.info("\n结果已保存到: %s", output_path)
+    logger.info("共 %d 条记录", len(result))
     logger.info("\n结果预览:")
-    logger.info("\n" + result.to_string(index=False))
+    logger.info("\n%s", result.to_string(index=False))
 
 # 清理临时文件
 if os.path.exists(TMP_OUTPUT):

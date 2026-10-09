@@ -92,7 +92,7 @@ repos:
         name: clang-tidy
         entry: clang-tidy
         language: system
-        files: .(h|hpp|cpp|cc|cxx|c)$
+        files: \.(h|hpp|cpp|cc|cxx|c)$
         args:
           - --config-file=.clang-tidy
           - --quiet

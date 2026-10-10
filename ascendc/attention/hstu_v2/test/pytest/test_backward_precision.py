@@ -1,4 +1,4 @@
-"""Parameterized HSTU V2 backward precision for the three supported call chains."""
+"""Parameterized HSTU V2 backward precision: feature matrix, user cases, and graph mode."""
 
 import os
 from dataclasses import replace
@@ -13,6 +13,8 @@ from utils.feature_matrix import (
     NO_MASK,
     PLAN,
     PIPELINES,
+    _hstu_parameters,
+    _make_case_data,
     assert_matrix_coverage,
     assert_ragged_coverage,
     create_backends,
@@ -20,6 +22,17 @@ from utils.feature_matrix import (
     pytest_params,
     ragged_precision_cases,
     run_precision_case,
+    user_case_precision_cases,
+)
+from utils.graph_mode import (
+    ALPHA,
+    GRAPH_CAUSAL_VARIANT_PARAMS,
+    GRAPH_CONTEXT_VALUE,
+    GRAPH_PARAMS,
+    GRAPH_TARGET_GROUP_SIZE,
+    MASK_TYPE_CAUSAL,
+    SCALE,
+    run_compiled,
 )
 
 DEVICE_ID = int(os.getenv("ASCEND_DEVICE_ID", "0"))
@@ -108,3 +121,69 @@ def test_backward_precision_matrix_coverage():
     assert len(PARAMS) * len(PIPELINES) == 150
     assert len(RAGGED_PARAMS) * len(PIPELINES) == 85
     assert sum(case.max_seq_len > 2048 for case in CASES) == 6
+
+
+# 官方 user_case 用例矩阵，走 builtin causal 路径。
+USER_CASES = user_case_precision_cases()
+
+
+def _user_case_id(case):
+    return (
+        f"uc-bwd-{case.case_id:03d}-b{case.batch_size}-h{case.head_num}-"
+        f"q{case.max_seq_len}-k{case.resolved_max_seq_len_k}-"
+        f"d{case.head_dim}-dv{case.resolved_head_dim_v}-{case.dtype_name}-rab{int(case.has_rab)}"
+    )
+
+
+UC_PARAMS = [pytest.param(case, id=_user_case_id(case)) for case in USER_CASES]
+
+
+# 官方 74 例 user_case 矩阵，builtin causal 路径。
+@pytest.mark.parametrize("case", UC_PARAMS)
+def test_user_case_backward_precision(case, backends):
+    _assert_case(case, BUILTIN, backends)
+
+
+# 图模式：编译反向（autograd）vs PyTorch golden，no-mask 分支。
+@pytest.mark.graph
+@pytest.mark.parametrize("case", GRAPH_PARAMS)
+def test_graph_backward_precision(case, backends):
+    _, native, validator = backends
+    data = _make_case_data(case)
+    grad, q, k, v, rab, _, offsets_q, offsets_k = data
+    _, gradients = run_compiled(case, data)
+    rab_grad = gradients[3].cpu() if rab is not None else None
+    actual = (gradients[0].cpu(), gradients[1].cpu(), gradients[2].cpu(), rab_grad)
+    native_kernel = native.kernel(
+        ALPHA, SCALE, case.has_rab, case.max_seq_len, case.resolved_max_seq_len_k, offsets_q, offsets_k
+    )
+    expected = native_kernel.backward(grad, q, k, v, rab, None)
+    passed, detail = validator.backward_verify(actual, expected)
+    assert passed, detail
+
+
+# 图模式：builtin causal 分支；context-target 变体额外把非空可选张量喂进被追踪的图。
+@pytest.mark.graph
+@pytest.mark.parametrize("case,with_context_target", GRAPH_CAUSAL_VARIANT_PARAMS)
+def test_graph_causal_backward_precision(case, with_context_target, backends):
+    _, native, validator = backends
+    if with_context_target:
+        context_value = min(GRAPH_CONTEXT_VALUE, case.max_seq_len // 2)
+        case = replace(
+            case,
+            num_context=context_value,
+            num_target=context_value,
+            target_group_size=GRAPH_TARGET_GROUP_SIZE,
+        )
+    data = _make_case_data(case)
+    grad, q, k, v, rab, dense_mask, offsets_q, offsets_k = data
+    context, target = _hstu_parameters(case, f"npu:{DEVICE_ID}")
+    _, gradients = run_compiled(case, data, MASK_TYPE_CAUSAL, 0, context, target)
+    rab_grad = gradients[3].cpu() if rab is not None else None
+    actual = (gradients[0].cpu(), gradients[1].cpu(), gradients[2].cpu(), rab_grad)
+    native_kernel = native.kernel(
+        ALPHA, SCALE, case.has_rab, case.max_seq_len, case.resolved_max_seq_len_k, offsets_q, offsets_k
+    )
+    expected = native_kernel.backward(grad, q, k, v, rab, dense_mask)
+    passed, detail = validator.backward_verify(actual, expected)
+    assert passed, detail

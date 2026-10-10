@@ -29,7 +29,6 @@ RAB_OPTIONS = (False, True)
 DTYPES = (torch.float16, torch.bfloat16)
 MATRIX_SEED = 20260922
 PRECISION_CONFIGS = 30
-BENCHMARK_CONFIGS = 12
 
 
 @dataclass(frozen=True)
@@ -268,10 +267,6 @@ def ragged_precision_cases():
     ]
 
 
-def benchmark_cases():
-    return _select_cases(BENCHMARK_CONFIGS)
-
-
 def case_id(case, prefix):
     return (
         f"{prefix}{case.case_id:03d}-b{case.batch_size}-h{case.head_num}-"
@@ -476,31 +471,6 @@ def run_precision_case(
     del data, fused, native, actual, expected
     torch.npu.empty_cache()
     return passed, detail
-
-
-def run_benchmark_case(direction, case, pipeline, fused_backend, device, warmup=2, repeats=5):
-    data = _make_case_data(case)
-    *_, offsets_q, offsets_k = data
-    fused = fused_backend.kernel(
-        0.5, 1 / 1024, case.has_rab, case.max_seq_len, case.resolved_max_seq_len_k, offsets_q, offsets_k
-    )
-
-    def invoke():
-        return _run_fused(direction, case, pipeline, fused, data, device)
-
-    for _ in range(warmup):
-        invoke()
-    torch.npu.synchronize()
-    start = torch.npu.Event(enable_timing=True)
-    end = torch.npu.Event(enable_timing=True)
-    start.record()
-    for _ in range(repeats):
-        invoke()
-    end.record()
-    torch.npu.synchronize()
-    elapsed_ms = start.elapsed_time(end) / repeats
-    torch.npu.empty_cache()
-    return float(elapsed_ms)
 
 
 def assert_matrix_coverage(cases):

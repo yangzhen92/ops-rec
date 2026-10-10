@@ -17,7 +17,7 @@ ONLY_DIRECTIONS=${HSTU_BENCHMARK_DIRECTIONS:-"forward backward"}
 run_profile() {
     local direction=$1
     local mode=$2
-    local test_file="${SCRIPT_DIR}/test_${direction}_user_case_benchmark.py"
+    local test_file="${SCRIPT_DIR}/test_${direction}_benchmark.py"
     local profile_dir="${OUTPUT_DIR}/profiles/${direction}_${mode}"
     local record="${OUTPUT_DIR}/records/${direction}_${mode}.jsonl"
     local log="${OUTPUT_DIR}/logs/${direction}_${mode}.log"

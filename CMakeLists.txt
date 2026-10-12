@@ -181,6 +181,13 @@ set(_OPS_REC_SOC_DEFS
 # 每个插件的 op_api 库依赖由源码自行声明：torch_extension/<op>_plugin.cpp 顶部
 # #define OPS_REC_CUST_VENDORS "vendor1,vendor2"，EXEC_NPU_CMD 运行时按 ',' 逗号分隔逐个 vendor
 set(OPS_REC_TORCH_PLUGIN_SRCS "")
+if(NPU_CHIP_ATLAS_950)
+file(GLOB_RECURSE _attn_plan_extension_srcs
+    "${CMAKE_CURRENT_SOURCE_DIR}/ascendc/attention/attn_plan/torch_extension/*.cpp")
+file(GLOB_RECURSE _attn_plan_host_srcs
+    "${CMAKE_CURRENT_SOURCE_DIR}/ascendc/attention/attn_plan/host/*.cpp")
+list(APPEND OPS_REC_TORCH_PLUGIN_SRCS ${_attn_plan_extension_srcs} ${_attn_plan_host_srcs})
+endif()
 foreach(_op IN LISTS OPS_REC_VENDORS)
     ops_rec_find_op_dir("${_op}" _op_dir)
     if(NOT _op_dir)

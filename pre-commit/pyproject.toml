@@ -76,6 +76,9 @@ disable = [
     # 所有保护成员访问警告
     "protected-access",
 
+    # pytest fixture 与测试函数参数同名是官方惯用法
+    "redefined-outer-name",
+
     # 所有风格优化建议
     "no-else-raise",
     "no-else-return",

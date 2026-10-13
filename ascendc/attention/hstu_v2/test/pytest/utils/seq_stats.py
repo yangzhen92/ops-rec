@@ -14,8 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-# pylint: disable=logging-fstring-interpolation, duplicate-code
-# pylint: disable=duplicate-code
 from typing import Dict, Any, Union, List
 
 

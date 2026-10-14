@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 ============================================================================== */
 
 /**
- • @file fast_silu_score.hpp
+ • @file fast_silu_infer.hpp
 
  • @brief SiLU (Swish) 激活函数得分计算实现
 
@@ -27,35 +27,7 @@ See the License for the specific language governing permissions and
 
 #include "../../../catlass_hstu/epilogue/regbase/common.h"
 
-namespace catlass::Epilogue::RegBase {
-
-/**
- • @brief Sigmoid 激活函数
-
- • @tparam RegType 寄存器类型
-
- • @param dst 目标寄存器，存储计算结果
-
- • @param src 源寄存器，输入值
-
- • @param ones 常量寄存器，值为 1.0
-
- • @param maskReg 掩码寄存器
-
- • @description 实现 sigmoid(x) = 1 / (1 + exp(-x)) 函数
-
- •              数学公式: y = 1 / (1 + exp(-x)) = sigmoid(x)
-
- */
-// y = 1 / (1 + exp(-x))
-template <typename RegType>
-__simd_callee__ inline void Sigmoid(RegType& dst, RegType& src, RegType& ones, RegType& zeros,
-                                    AscendC::MicroAPI::MaskReg& maskReg)
-{
-    AscendC::MicroAPI::ExpSub(dst, zeros, src, maskReg);  // dst = exp(0 - dst)
-    AscendC::MicroAPI::Add(dst, ones, dst, maskReg);      // dst = 1 + dst
-    AscendC::MicroAPI::Div(dst, ones, dst, maskReg);      // dst = 1 / dst
-}
+namespace Catlass::Epilogue::RegBase {
 
 /**
  • @brief 加上相对位置注意力偏置 (RAB)
@@ -181,12 +153,12 @@ __simd_callee__ inline void MulMask(RegType& dst, RegType& src, __ubuf__ Type* u
 
  */
 template <typename Type, typename AccType, bool HAS_RAB, bool HAS_MASK, typename RegType>
-__simd_callee__ inline void SiluScore(__ubuf__ AccType* ubSPtr, __ubuf__ Type* ubRabPtr, __ubuf__ Type* ubMaskPtr,
-                                      __ubuf__ Type* ubSiluScorePtr, RegType& vregA, RegType& vregZ, RegType& vregS,
-                                      RegType& vregOnes, RegType& vregZeros, RegType& vregAlpha, RegType& vregScale,
+__simd_callee__ inline void SiluScoreForward(__ubuf__ AccType* ubSPtr, __ubuf__ Type* ubRabPtr, __ubuf__ Type* ubMaskPtr,
+                                      __ubuf__ Type* ubSiluScorePtr, RegType& vregScore, RegType& vregDenom, RegType& vregSilu,
+                                      RegType& vregOnes, RegType& vregZeros, AccType alpha,
                                       AscendC::MicroAPI::MaskReg& maskReg)
 {
-    AscendC::MicroAPI::LoadAlign(vregA, ubSPtr);
+    AscendC::MicroAPI::LoadAlign(vregScore, ubSPtr);
 
     if constexpr (HAS_RAB) {
         RegType vregRab;
@@ -195,24 +167,15 @@ __simd_callee__ inline void SiluScore(__ubuf__ AccType* ubSPtr, __ubuf__ Type* u
         } else {
             AscendC::MicroAPI::LoadAlign(vregRab, ubRabPtr);
         }
-        AscendC::MicroAPI::Add(vregA, vregA, vregRab, maskReg);  // A = S + Rab
+        AscendC::MicroAPI::Add(vregScore, vregScore, vregRab, maskReg);
     }
-
-    AscendC::MicroAPI::Mul(vregA, vregA, vregAlpha, maskReg);  // A = A * alpha
-
-    Sigmoid(vregZ, vregA, vregOnes, vregZeros, maskReg);  // Z = Sigmoid(A)
-
-    if constexpr (HAS_MASK) {
-        MulMask<Type, AccType>(vregZ, vregZ, ubMaskPtr, maskReg);  // Z = Z * mask
-    }
-
-    AscendC::MicroAPI::Mul(vregS, vregZ, vregA, maskReg);      // S = A * Z
-    AscendC::MicroAPI::Mul(vregS, vregS, vregScale, maskReg);  // S = S * scale
+    AscendC::MicroAPI::Muls(vregScore, vregScore, alpha, maskReg);
+    SiluCore(vregScore, vregDenom, vregSilu, vregOnes, vregZeros, maskReg);
 
     if constexpr (!std::is_same<Type, AccType>::value) {
-        CastDownStore<Type, AccType>(ubSiluScorePtr, vregS, maskReg);
+        CastDownStore<Type, AccType>(ubSiluScorePtr, vregSilu, maskReg);
     } else {
-        AscendC::MicroAPI::StoreAlign(ubSiluScorePtr, vregS, maskReg);
+        AscendC::MicroAPI::StoreAlign(ubSiluScorePtr, vregSilu, maskReg);
     }
 }
 
@@ -249,34 +212,225 @@ __simd_callee__ inline void SiluScore(__ubuf__ AccType* ubSPtr, __ubuf__ Type* u
 
  */
 template <typename Type, typename AccType, bool HAS_RAB, bool HAS_MASK>
-__simd_vf__ inline void FastSiluScoreVf(__ubuf__ AccType* ubSPtr, __ubuf__ Type* ubRabPtr, __ubuf__ Type* ubMaskPtr,
+__simd_vf__ inline void FastSiluScoreForwardVf(__ubuf__ AccType* ubSPtr, __ubuf__ Type* ubRabPtr, __ubuf__ Type* ubMaskPtr,
                                         __ubuf__ Type* ubSiluScorePtr, AccType alpha, AccType scale, uint32_t count,
                                         uint32_t repeatTimes)
 {
     constexpr uint32_t oneRepElm = static_cast<uint32_t>(AscendC::GetVecLen() / sizeof(AccType));
 
-    AscendC::MicroAPI::RegTensor<AccType> vregA;
-    AscendC::MicroAPI::RegTensor<AccType> vregZ;
-    AscendC::MicroAPI::RegTensor<AccType> vregS;
+    AscendC::MicroAPI::RegTensor<AccType> vregScore;
+    AscendC::MicroAPI::RegTensor<AccType> vregDenom;
+    AscendC::MicroAPI::RegTensor<AccType> vregSilu;
     AscendC::MicroAPI::RegTensor<AccType> vregOnes;
     AscendC::MicroAPI::RegTensor<AccType> vregZeros;
-    AscendC::MicroAPI::RegTensor<AccType> vregAlpha;
-    AscendC::MicroAPI::RegTensor<AccType> vregScale;
     AscendC::MicroAPI::MaskReg maskReg;
 
     AscendC::MicroAPI::Duplicate(vregOnes, 1.0f);
     AscendC::MicroAPI::Duplicate(vregZeros, 0.0f);
-    AscendC::MicroAPI::Duplicate(vregAlpha, alpha);
-    AscendC::MicroAPI::Duplicate(vregScale, scale);
 
     for (uint16_t i = 0; i < repeatTimes; ++i) {
         // maskReg 必须在每次迭代前重算：Sigmoid 内 Div 等指令会消费/改写 mask 寄存器，
         // 循环外只算一次会导致后续迭代 mask 错误（3dba5595 精度回归根因）
         maskReg = AscendC::MicroAPI::UpdateMask<AccType>(count);
-        SiluScore<Type, AccType, HAS_RAB, HAS_MASK>(ubSPtr + i * oneRepElm, ubRabPtr + i * oneRepElm,
-                                                    ubMaskPtr + i * oneRepElm, ubSiluScorePtr + i * oneRepElm, vregA,
-                                                    vregZ, vregS, vregOnes, vregZeros, vregAlpha, vregScale, maskReg);
+        SiluScoreForward<Type, AccType, HAS_RAB, HAS_MASK>(
+            ubSPtr + i * oneRepElm, ubRabPtr + i * oneRepElm, ubMaskPtr + i * oneRepElm,
+            ubSiluScorePtr + i * oneRepElm, vregScore, vregDenom, vregSilu, vregOnes, vregZeros, alpha, maskReg);
     }
 }
 
-}  // namespace catlass::Epilogue::RegBase
+template <typename Type, typename AccType, bool HAS_RAB>
+__simd_vf__ inline void FastSiluScorePackedVf(
+    __ubuf__ AccType* ubSPtr, __ubuf__ Type* ubRabPtr, __ubuf__ Type* ubSiluScorePtr,
+    __ubuf__ uint32_t* ubPackedMaskPtr, AccType alpha, AccType scale, uint32_t rows, uint32_t cols,
+    uint32_t maskWordsPerRow)
+{
+    using namespace AscendC::MicroAPI;
+    constexpr uint32_t ONE_REP_ELM = AscendC::GetVecLen() / sizeof(AccType);
+    RegTensor<AccType> score,denom,silu,ones,zeros,alphaReg;
+    RegTensor<Type> outputZeros;
+    MaskReg sourceMask;
+    MaskReg fullMask = CreateMask<AccType, MaskPattern::ALL>();
+    MaskReg outputMask = CreateMask<Type, MaskPattern::ALL>();
+    Duplicate(ones, static_cast<AccType>(1)); Duplicate(zeros, static_cast<AccType>(0));
+    Duplicate(alphaReg, alpha); Duplicate(outputZeros, static_cast<Type>(0));
+    for (uint16_t row=0; row<rows; ++row) {
+        const uint32_t rowOffset=row*cols;
+        const uint32_t repeatTimes = (cols + ONE_REP_ELM - 1) / ONE_REP_ELM;
+        StoreAlign(ubSiluScorePtr + rowOffset, outputZeros, outputMask);
+        for (uint16_t repeat=0; repeat<repeatTimes; ++repeat) {
+            const uint32_t valueOffset=rowOffset+repeat*ONE_REP_ELM;
+            LoadAlign(score, ubSPtr + valueOffset);
+            if constexpr (HAS_RAB) {
+                RegTensor<AccType> rab;
+                fullMask = CreateMask<AccType, MaskPattern::ALL>();
+                if constexpr (!std::is_same<Type, AccType>::value) {
+                    CastUpLoad<AccType, Type>(rab, ubRabPtr + valueOffset, fullMask);
+                } else {
+                    LoadAlign(rab, ubRabPtr + valueOffset);
+                }
+                fullMask = CreateMask<AccType, MaskPattern::ALL>();
+                Add(score, score, rab, fullMask);
+            }
+            fullMask = CreateMask<AccType, MaskPattern::ALL>(); Mul(score, score, alphaReg, fullMask);
+            fullMask = CreateMask<AccType, MaskPattern::ALL>(); SiluCore(score, denom, silu, ones, zeros, fullMask);
+            LoadAlign<uint32_t, MaskDist::DIST_US>(
+                sourceMask, ubPackedMaskPtr + row * maskWordsPerRow + repeat * 8);
+            MaskUnPack(sourceMask, sourceMask);
+            Select(silu, silu, zeros, sourceMask);
+            uint32_t valid = cols - repeat * ONE_REP_ELM;
+            if (valid > ONE_REP_ELM) valid = ONE_REP_ELM;
+            fullMask = UpdateMask<AccType>(valid);
+            if constexpr (!std::is_same<Type, AccType>::value) {
+                CastDownStore<Type, AccType>(ubSiluScorePtr + valueOffset, silu, fullMask);
+            } else {
+                StoreAlign(ubSiluScorePtr + valueOffset, silu, fullMask);
+            }
+        }
+    }
+}
+
+template <typename Type, typename AccType, bool HAS_RAB>
+__simd_vf__ inline void FastSiluScoreCausalVf(
+    __ubuf__ AccType* ubSPtr, __ubuf__ Type* ubRabPtr, __ubuf__ Type* ubSiluScorePtr,
+    AccType alpha, AccType scale, uint32_t rows, uint32_t cols, int32_t qBase, int32_t kBase,
+    int32_t seqlenQ, int32_t seqlenK, int32_t numContext, int32_t numTarget, int32_t targetGroupSize)
+{
+    using namespace AscendC::MicroAPI;
+    constexpr uint32_t ONE_REP_ELM = AscendC::GetVecLen() / sizeof(AccType);
+    RegTensor<AccType> a, z, s, ones, zeros, alphaReg;
+    RegTensor<int32_t> colsReg;
+    MaskReg validMask;
+    MaskReg scoreMask;
+    Duplicate(ones, static_cast<AccType>(1));
+    Duplicate(zeros, static_cast<AccType>(0));
+    Duplicate(alphaReg, alpha);
+
+    for (uint16_t row = 0; row < rows; ++row) {
+        const int32_t globalQ = qBase + row;
+        const int32_t historyEnd = globalQ + seqlenK - seqlenQ;
+        const bool contextRow = numContext > 0 && globalQ < numContext;
+        const bool targetRow = numTarget > 0 && targetGroupSize > 0 && globalQ >= seqlenQ - numTarget;
+        for (uint16_t repeat = 0; repeat < (cols + ONE_REP_ELM - 1) / ONE_REP_ELM; ++repeat) {
+            const uint32_t valueOffset = row * cols + repeat * ONE_REP_ELM;
+            uint32_t valid = cols - repeat * ONE_REP_ELM;
+            if (valid > ONE_REP_ELM) valid = ONE_REP_ELM;
+            validMask = UpdateMask<AccType>(valid);
+            LoadAlign(a, ubSPtr + valueOffset);
+            if constexpr (HAS_RAB) {
+                RegTensor<AccType> rab;
+                if constexpr (!std::is_same<Type, AccType>::value) {
+                    CastUpLoad<AccType, Type>(rab, ubRabPtr + valueOffset, validMask);
+                } else {
+                    LoadAlign(rab, ubRabPtr + valueOffset);
+                }
+                Add(a, a, rab, validMask);
+            }
+            Mul(a, a, alphaReg, validMask);
+            ExpSub(z, zeros, a, validMask);
+            Add(z, ones, z, validMask);
+            Div(z, ones, z, validMask);
+            Mul(s, z, a, validMask);
+
+            const int32_t colStart = kBase + repeat * ONE_REP_ELM;
+            Arange(colsReg, colStart);
+            Compares<int32_t, AscendC::CMPMODE::LE>(scoreMask, colsReg, historyEnd, validMask);
+            if (contextRow) {
+                MaskReg contextMask;
+                const int32_t historyWidth = seqlenK - numTarget;
+                Compares<int32_t, AscendC::CMPMODE::LT>(contextMask, colsReg, historyWidth, validMask);
+                Or(scoreMask, scoreMask, contextMask, validMask);
+            }
+            if (targetRow) {
+                const int32_t targetBase = seqlenK - numTarget;
+                const int32_t group = (globalQ - (seqlenQ - numTarget)) / targetGroupSize;
+                const int32_t groupBegin = targetBase + group * targetGroupSize;
+                const int32_t groupEnd = groupBegin + targetGroupSize - 1;
+                MaskReg historyRegion;
+                MaskReg groupMask;
+                MaskReg upperMask;
+                Compares<int32_t, AscendC::CMPMODE::LT>(historyRegion, colsReg, targetBase, validMask);
+                And(historyRegion, historyRegion, scoreMask, validMask);
+                Compares<int32_t, AscendC::CMPMODE::GE>(groupMask, colsReg, groupBegin, validMask);
+                Compares<int32_t, AscendC::CMPMODE::LE>(upperMask, colsReg, groupEnd < historyEnd ? groupEnd : historyEnd,
+                                               validMask);
+                And(groupMask, groupMask, upperMask, validMask);
+                Or(scoreMask, historyRegion, groupMask, validMask);
+            }
+            Select(s, s, zeros, scoreMask);
+            if constexpr (!std::is_same<Type, AccType>::value) {
+                CastDownStore<Type, AccType>(ubSiluScorePtr + valueOffset, s, validMask);
+            } else {
+                StoreAlign(ubSiluScorePtr + valueOffset, s, validMask);
+            }
+        }
+    }
+}
+
+template <typename Type, typename AccType, bool HAS_RAB>
+__simd_vf__ inline void FastSiluScoreLocalVf(
+    __ubuf__ AccType* ubSPtr, __ubuf__ Type* ubRabPtr, __ubuf__ Type* ubSiluScorePtr,
+    AccType alpha, AccType scale, uint32_t rows, uint32_t cols, int32_t qBase, int32_t kBase,
+    int32_t seqlenQ, int32_t seqlenK, int32_t windowSizeLeft, int32_t windowSizeRight,
+    int32_t numContext, int32_t numTarget, int32_t targetGroupSize)
+{
+    using namespace AscendC::MicroAPI;
+    constexpr uint32_t ONE_REP_ELM = AscendC::GetVecLen() / sizeof(AccType);
+    RegTensor<AccType> a, z, s, ones, zeros, alphaReg;
+    RegTensor<int32_t> colsReg;
+    MaskReg validMask, lowerMask, upperMask, scoreMask, contextMask, outsideTargetMask, targetLowerMask, targetUpperMask;
+    Duplicate(ones, static_cast<AccType>(1));
+    Duplicate(zeros, static_cast<AccType>(0));
+    Duplicate(alphaReg, alpha);
+    const int32_t delta = seqlenK - seqlenQ;
+    for (uint16_t row = 0; row < rows; ++row) {
+        const int32_t center = qBase + row + delta;
+        const int32_t lower = windowSizeLeft < 0 ? 0 : center - windowSizeLeft;
+        const int32_t upper = windowSizeRight < 0 ? seqlenK - 1 : center + windowSizeRight;
+        const int32_t globalQ = qBase + row;
+        const bool contextRow = numContext > 0 && globalQ < numContext;
+        const bool targetRow = numTarget > 0 && targetGroupSize > 0 && globalQ >= seqlenQ - numTarget;
+        for (uint16_t repeat = 0; repeat < (cols + ONE_REP_ELM - 1) / ONE_REP_ELM; ++repeat) {
+            const uint32_t valueOffset = row * cols + repeat * ONE_REP_ELM;
+            uint32_t valid = cols - repeat * ONE_REP_ELM;
+            if (valid > ONE_REP_ELM) valid = ONE_REP_ELM;
+            validMask = UpdateMask<AccType>(valid);
+            LoadAlign(a, ubSPtr + valueOffset);
+            if constexpr (HAS_RAB) {
+                RegTensor<AccType> rab;
+                if constexpr (!std::is_same<Type, AccType>::value) CastUpLoad<AccType, Type>(rab, ubRabPtr + valueOffset, validMask);
+                else LoadAlign(rab, ubRabPtr + valueOffset);
+                Add(a, a, rab, validMask);
+            }
+            Mul(a, a, alphaReg, validMask);
+            ExpSub(z, zeros, a, validMask);
+            Add(z, ones, z, validMask);
+            Div(z, ones, z, validMask);
+            Mul(s, z, a, validMask);
+            Arange(colsReg, kBase + repeat * ONE_REP_ELM);
+            Compares<int32_t, AscendC::CMPMODE::GE>(lowerMask, colsReg, lower, validMask);
+            Compares<int32_t, AscendC::CMPMODE::LE>(upperMask, colsReg, upper, validMask);
+            And(scoreMask, lowerMask, upperMask, validMask);
+            if (contextRow) {
+                Compares<int32_t, AscendC::CMPMODE::LT>(contextMask, colsReg, seqlenK - numTarget, validMask);
+                Or(scoreMask, scoreMask, contextMask, validMask);
+            }
+            if (targetRow) {
+                const int32_t targetBase = seqlenK - numTarget;
+                const int32_t targetRowIndex = globalQ - (seqlenQ - numTarget);
+                const int32_t groupBegin = targetBase + targetRowIndex / targetGroupSize * targetGroupSize;
+                const int32_t groupEnd = targetBase + targetRowIndex;
+                Compares<int32_t, AscendC::CMPMODE::LT>(outsideTargetMask, colsReg, targetBase, validMask);
+                And(scoreMask, scoreMask, outsideTargetMask, validMask);
+                Compares<int32_t, AscendC::CMPMODE::GE>(targetLowerMask, colsReg, groupBegin, validMask);
+                Compares<int32_t, AscendC::CMPMODE::LE>(targetUpperMask, colsReg, groupEnd, validMask);
+                And(targetLowerMask, targetLowerMask, targetUpperMask, validMask);
+                Or(scoreMask, scoreMask, targetLowerMask, validMask);
+            }
+            Select(s, s, zeros, scoreMask);
+            if constexpr (!std::is_same<Type, AccType>::value) CastDownStore<Type, AccType>(ubSiluScorePtr + valueOffset, s, validMask);
+            else StoreAlign(ubSiluScorePtr + valueOffset, s, validMask);
+        }
+    }
+}
+
+}  // namespace Catlass::Epilogue::RegBase

@@ -23,8 +23,19 @@ See the License for the specific language governing permissions and
 #include "hstu_backward_v2_define.h"
 #include "hstu_backward_v2_tiling.h"
 #include "../op_kernel/catlass_hstu/kernel/bwd/backward_kernel_tiling.hpp"
+#include "../common/hstu_tile_size.h"
 
 namespace optiling {
+static ops_rec::hstu::CoreMemSize GetCoreMemSize(platform_ascendc::PlatformAscendC& platform)
+{
+    ops_rec::hstu::CoreMemSize mem;
+    platform.GetCoreMemSize(platform_ascendc::CoreMemType::L0_A, mem.l0aBytes);
+    platform.GetCoreMemSize(platform_ascendc::CoreMemType::L0_B, mem.l0bBytes);
+    platform.GetCoreMemSize(platform_ascendc::CoreMemType::L0_C, mem.l0cBytes);
+    platform.GetCoreMemSize(platform_ascendc::CoreMemType::L1, mem.l1Bytes);
+    platform.GetCoreMemSize(platform_ascendc::CoreMemType::UB, mem.ubBytes);
+    return mem;
+}
 
 /**
  * @brief 解析输入张量的 Shape 信息
@@ -98,12 +109,15 @@ static bool ParseAttr(gert::TilingContext* context, HstuBackwardV2TilingData& ti
 
     const auto* alpha = attrs->GetAttrPointer<float>(static_cast<size_t>(ATTR_INDEX::ALPHA));
     OPS_CHECK_PTR_NULL(alpha, return false);
+    OPS_CHECK(*alpha <= 0.0f, OPS_LOG_E("", "tiling failed alpha must be greater than 0.\n"), return false);
 
     const auto* winLeft = attrs->GetAttrPointer<int32_t>(static_cast<size_t>(ATTR_INDEX::WINDOW_SIZE_LEFT));
     OPS_CHECK_PTR_NULL(winLeft, return false);
 
     const auto* winRight = attrs->GetAttrPointer<int32_t>(static_cast<size_t>(ATTR_INDEX::WINDOW_SIZE_RIGHT));
     OPS_CHECK_PTR_NULL(winRight, return false);
+    const auto* deterministic = attrs->GetAttrPointer<bool>(static_cast<size_t>(ATTR_INDEX::DETERMINISTIC));
+    OPS_CHECK_PTR_NULL(deterministic, return false);
 
     // window_size 语义校验：left/right 均可为 -1（无限），right=0 表示因果。
     OPS_CHECK(*winLeft < -1, OPS_LOG_E("", "tiling failed window_size_left must be >= -1.\n"), return false);
@@ -132,27 +146,85 @@ static bool TilingKeySet(gert::TilingContext* context, HstuBackwardV2TilingData&
     const auto* numContext = context->GetInputTensor(static_cast<size_t>(IN_INDEX::NUM_CONTEXT));
     const auto* numTarget = context->GetInputTensor(static_cast<size_t>(IN_INDEX::NUM_TARGET));
     const auto* rab = context->GetInputTensor(static_cast<size_t>(IN_INDEX::RAB));
+    const auto* deterministic = context->GetAttrs()->GetAttrPointer<bool>(static_cast<size_t>(ATTR_INDEX::DETERMINISTIC));
+    OPS_CHECK_PTR_NULL(deterministic, false);
     auto winLeft = tilingData.get_windowSizeLeft();
     auto winRight = tilingData.get_windowSizeRight();
 
-    bool isCausal = (winLeft == -1 && winRight == 0);
-    bool isContext = (nullptr != numContext);
-    bool isTarget = (nullptr != numTarget);
-    // 暂不支持Local mask\Arbitrary mask
-    bool isLocal = false;
-    bool isArbitrary = false;
-
-    bool hasRab = (nullptr != rab);
-
+    bool isLocal = (winLeft >= 0 || winRight > 0);
+    auto maskCnt = context->GetDynamicInputTensor(static_cast<size_t>(IN_INDEX::SPARSE_INFO), 0);
+    auto rowBounds = context->GetDynamicInputTensor(static_cast<size_t>(IN_INDEX::SPARSE_INFO), 1);
+    auto descriptor = context->GetDynamicInputTensor(static_cast<size_t>(IN_INDEX::SPARSE_INFO), 6);
+    auto directTag = context->GetDynamicInputTensor(static_cast<size_t>(IN_INDEX::SPARSE_INFO), 7);
+    auto bitmap = context->GetDynamicInputTensor(static_cast<size_t>(IN_INDEX::SPARSE_INFO), 8);
+    const bool isArbitrary = maskCnt != nullptr && maskCnt->GetShapeSize() > 0;
+    isLocal = isLocal && !isArbitrary;
+    const bool isCausal = !isArbitrary && !isLocal && (winLeft == -1 && winRight == 0);
+    const bool isContext = !isArbitrary && numContext != nullptr;
+    const bool isTarget = !isArbitrary && numTarget != nullptr;
     auto dimQK = tilingData.get_dimQK();
     auto dimGV = tilingData.get_dimGV();
-
-    uint32_t tilingDim = 128;              // 128 means dim
-    if ((dimQK > 128) || (dimGV > 128)) {  // 128 means dim
-        tilingDim = 256;                   // 256 means dim
+    auto platform = platform_ascendc::PlatformAscendC(context->GetPlatformInfo());
+    const uint32_t coreNum = static_cast<uint32_t>(platform.GetCoreNumAic());
+    auto runtimeTile = ops_rec::hstu::GetBwdRuntimeTile(
+        tilingData.get_maxSeqLenQ(), tilingData.get_maxSeqLenK(), tilingData.get_batch(), tilingData.get_heads(),
+        dimQK, dimGV, coreNum, GetCoreMemSize(platform), true);
+    tilingData.set_blockM(runtimeTile.l1.m);
+    tilingData.set_blockN(runtimeTile.l1.n);
+    uint32_t maskHeads = 0;
+    if (isArbitrary) {
+        for (int i = 0; i < 9; ++i) {
+            OPS_CHECK(context->GetDynamicInputTensor(static_cast<size_t>(IN_INDEX::SPARSE_INFO), i) == nullptr,
+                      OPS_LOG_E("", "backward sparse_info requires nine packed tensors.\n"), return false);
+        }
+        OPS_CHECK(directTag->GetStorageShape().GetDimNum() != 1,
+                  OPS_LOG_E("", "backward sparse_info must use direct descriptors.\n"), return false);
+        const auto& countShape = maskCnt->GetStorageShape();
+        OPS_CHECK(countShape.GetDimNum() != 3 || countShape.GetDim(0) != tilingData.get_batch(),
+                  OPS_LOG_E("", "backward packed count geometry mismatch.\n"), return false);
+        maskHeads = static_cast<uint32_t>(countShape.GetDim(1));
+        OPS_CHECK(maskHeads != 1 && maskHeads != tilingData.get_heads(),
+                  OPS_LOG_E("", "backward packed heads must be 1 or equal to Q heads.\n"), return false);
+        const auto tile = runtimeTile.l1;
+        const uint64_t maxBlkCntQ =
+            (static_cast<uint64_t>(tilingData.get_maxSeqLenQ()) + tile.m - 1) / tile.m;
+        const uint64_t maxBlkCntK =
+            (static_cast<uint64_t>(tilingData.get_maxSeqLenK()) + tile.n - 1) / tile.n;
+        const uint64_t outerRows = static_cast<uint64_t>(tilingData.get_batch()) * maskHeads * maxBlkCntK;
+        const uint64_t bitmapWordsPerRow = tile.n / 32U;
+        OPS_CHECK(static_cast<uint64_t>(descriptor->GetShapeSize()) < outerRows * maxBlkCntQ,
+                  OPS_LOG_E("", "backward descriptor is too small.\n"), return false);
+        OPS_CHECK(static_cast<uint64_t>(bitmap->GetShapeSize()) <
+                      outerRows * maxBlkCntQ * tile.m * bitmapWordsPerRow,
+                  OPS_LOG_E("", "backward bitmap is too small.\n"), return false);
+        OPS_CHECK(static_cast<uint64_t>(rowBounds->GetShapeSize()) < outerRows * 2,
+                  OPS_LOG_E("", "backward row_bounds is too small.\n"), return false);
     }
+    tilingData.set_maskHeads(maskHeads);
 
-    ASCENDC_TPL_SEL_PARAM(context, hasRab, isLocal, isCausal, isContext, isTarget, isArbitrary, tilingDim);
+    bool hasRab = (nullptr != rab);
+    uint32_t rabHeads = 0;
+    if (hasRab) {
+        const auto& rabShape = rab->GetStorageShape();
+        OPS_CHECK(rabShape.GetDimNum() != 4, OPS_LOG_E("", "backward RAB must be 4D.\n"), return false);
+        rabHeads = static_cast<uint32_t>(rabShape.GetDim(static_cast<size_t>(DIM_INDEX::ONE)));
+        OPS_CHECK(rabHeads != 1 && rabHeads != tilingData.get_heads(),
+                  OPS_LOG_E("", "backward RAB heads must be 1 or equal to Q heads.\n"), return false);
+        OPS_CHECK(rabShape.GetDim(static_cast<size_t>(DIM_INDEX::ZERO)) != tilingData.get_batch() ||
+                      rabShape.GetDim(static_cast<size_t>(DIM_INDEX::TWO)) != tilingData.get_maxSeqLenQ() ||
+                      rabShape.GetDim(static_cast<size_t>(DIM_INDEX::THREE)) != tilingData.get_maxSeqLenK(),
+                  OPS_LOG_E("", "backward RAB geometry mismatch.\n"), return false);
+    }
+    tilingData.set_rabHeads(rabHeads);
+
+    const uint32_t tilingDim = ops_rec::hstu::GetBwdTileSize(std::max(dimQK, dimGV)).k;
+    const uint64_t outerTasks = static_cast<uint64_t>(tilingData.get_batch()) * tilingData.get_heads() *
+        ((tilingData.get_maxSeqLenK() + tilingData.get_blockN() - 1U) / tilingData.get_blockN());
+    const uint64_t innerBlocks =
+        (tilingData.get_maxSeqLenQ() + tilingData.get_blockM() - 1U) / tilingData.get_blockM();
+    const bool enableStreamK = !*deterministic && outerTasks < coreNum && innerBlocks > 1U;
+    ASCENDC_TPL_SEL_PARAM(context, hasRab, isLocal, isCausal, isContext, isTarget, isArbitrary,
+                          enableStreamK, tilingDim);
     return true;
 }
 
@@ -164,13 +236,8 @@ static bool TilingKeySet(gert::TilingContext* context, HstuBackwardV2TilingData&
  */
 static void ShareMemorySet(gert::TilingContext* context, HstuBackwardV2TilingData& tilingData)
 {
-    auto dimQK = tilingData.get_dimQK();
-    auto dimGV = tilingData.get_dimGV();
-
-    uint32_t BLOCK_N = 128;                // 128 means dim
-    if ((dimQK > 128) || (dimGV > 128)) {  // 128 means dim
-        BLOCK_N = 64;                      // 64 means block n
-    }
+    // Backward's outer K-row loop advances by N.
+    const uint32_t BLOCK_N = tilingData.get_blockN();
 
     auto totalKSeqLens = tilingData.get_batch() * tilingData.get_heads() * tilingData.get_maxSeqLenK();
     auto totalKBlockCnt = (totalKSeqLens + BLOCK_N - 1) / BLOCK_N;
@@ -201,6 +268,23 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
 
     auto ascendPlatform = platform_ascendc::PlatformAscendC(context->GetPlatformInfo());
     size_t coreNum = ascendPlatform.GetCoreNumAic();
+    const auto* metadata = context->GetInputTensor(static_cast<size_t>(IN_INDEX::METADATA));
+    const auto* deterministic = context->GetAttrs()->GetAttrPointer<bool>(static_cast<size_t>(ATTR_INDEX::DETERMINISTIC));
+    OPS_CHECK_PTR_NULL(deterministic, return ge::GRAPH_FAILED);
+    const size_t outerTasks = static_cast<size_t>(tilingData.get_batch()) * tilingData.get_heads() *
+        ((tilingData.get_maxSeqLenK() + tilingData.get_blockN() - 1U) / tilingData.get_blockN());
+    const size_t innerBlocks = (tilingData.get_maxSeqLenQ() + tilingData.get_blockM() - 1U) /
+                               tilingData.get_blockM();
+    if (!*deterministic && outerTasks < coreNum && innerBlocks > 1U) {
+        // Keep the complete topology used to generate Stream-K metadata.
+        // Non-empty records can be sparse in core-id space when the pair-task
+        // count is smaller than the device core count.
+    } else if (metadata == nullptr) {
+        const size_t outerBlocks = static_cast<size_t>(tilingData.get_batch()) * tilingData.get_heads() *
+                                   ((tilingData.get_maxSeqLenK() + tilingData.get_blockN() - 1U) /
+                                    tilingData.get_blockN());
+        coreNum = std::max<size_t>(1U, std::min(coreNum, outerBlocks));
+    }
     context->SetBlockDim(coreNum);
 
     OPS_LOG_E_IF_NULL("RawTilingData", context->GetRawTilingData(), return ge::GRAPH_FAILED);
@@ -259,31 +343,13 @@ static ge::graphStatus InferShapeGrad(gert::InferShapeContext* context)
  */
 static ge::graphStatus InferShapeRabGrad(gert::InferShapeContext* context)
 {
-    const gert::Shape* qShape = context->GetInputShape(static_cast<size_t>(IN_INDEX::Q));
-    OPS_CHECK_PTR_NULL(qShape, return ge::GRAPH_FAILED);
-
-    const auto* attrs = context->GetAttrs();
-    OPS_CHECK_PTR_NULL(attrs, return ge::GRAPH_FAILED);
-
-    const auto* maxSeqQ = attrs->GetAttrPointer<int32_t>(static_cast<size_t>(ATTR_INDEX::MAX_SEQLEN_Q));
-    OPS_CHECK_PTR_NULL(maxSeqQ, return ge::GRAPH_FAILED);
-
-    const auto* maxSeqK = attrs->GetAttrPointer<int32_t>(static_cast<size_t>(ATTR_INDEX::MAX_SEQLEN_K));
-    OPS_CHECK_PTR_NULL(maxSeqK, return ge::GRAPH_FAILED);
-
-    const auto* seqOffsetShape = context->GetInputShape(static_cast<size_t>(IN_INDEX::SEQ_OFFSET_Q));
-    OPS_CHECK_PTR_NULL(seqOffsetShape, return ge::GRAPH_FAILED);
-
-    auto batch = seqOffsetShape->GetDim(static_cast<size_t>(DIM_INDEX::ZERO)) - 1;
+    const gert::Shape* rabShape = context->GetInputShape(static_cast<size_t>(IN_INDEX::RAB));
+    OPS_CHECK_PTR_NULL(rabShape, return ge::GRAPH_FAILED);
 
     auto* rabGradShape = context->GetOutputShape(static_cast<size_t>(OUT_INDEX::RAB_GRAD));
     OPS_CHECK_PTR_NULL(rabGradShape, return ge::GRAPH_FAILED);
 
-    rabGradShape->SetDimNum(4);  // 4 means dim num
-    rabGradShape->SetDim(static_cast<size_t>(DIM_INDEX::ZERO), batch);
-    rabGradShape->SetDim(static_cast<size_t>(DIM_INDEX::ONE), qShape->GetDim(static_cast<size_t>(DIM_INDEX::ONE)));
-    rabGradShape->SetDim(static_cast<size_t>(DIM_INDEX::TWO), *maxSeqQ);
-    rabGradShape->SetDim(static_cast<size_t>(DIM_INDEX::THREE), *maxSeqK);
+    *rabGradShape = *rabShape;
 
     return ge::GRAPH_SUCCESS;
 }
@@ -370,7 +436,18 @@ public:
             .ParamType(OPTIONAL)
             .Follow("seq_offset_q", FollowType::DTYPE)
             .FormatList({ge::FORMAT_ND});
-        this->Input("q_share").ParamType(OPTIONAL).DataType({ge::DT_FLOAT, ge::DT_FLOAT}).FormatList({ge::FORMAT_ND});
+        this->Input("q_share").ParamType(REQUIRED).DataType({ge::DT_FLOAT, ge::DT_FLOAT}).FormatList({ge::FORMAT_ND});
+        // 可选: flash_attn_metadata 分核输出(int32,HEAD+FA+FD 布局)。未传 → kernel 收到 nullptr →
+        // 旧设备现算分核(零回归)
+        this->Input("metadata").ParamType(OPTIONAL).DataType({ge::DT_INT32, ge::DT_INT32}).FormatList({ge::FORMAT_ND});
+        this->Input("k_grad_accum").ParamType(OPTIONAL).DataType({ge::DT_FLOAT, ge::DT_FLOAT}).FormatList({ge::FORMAT_ND});
+        this->Input("v_grad_accum").ParamType(OPTIONAL).DataType({ge::DT_FLOAT, ge::DT_FLOAT}).FormatList({ge::FORMAT_ND});
+        // 可选: direct packed sparse info (Dynamic/TensorList),固定 9 个 int32 tensor。
+        this->Input("sparse_info")
+            .ParamType(DYNAMIC)
+            .DataType({ge::DT_INT32, ge::DT_INT32})
+            .FormatList({ge::FORMAT_ND})
+            .UnknownShapeFormat({ge::FORMAT_ND, ge::FORMAT_ND});
         this->Output("q_grad").ParamType(REQUIRED).Follow("grad", FollowType::DTYPE).FormatList({ge::FORMAT_ND});
         this->Output("k_grad").ParamType(REQUIRED).Follow("grad", FollowType::DTYPE).FormatList({ge::FORMAT_ND});
         this->Output("v_grad").ParamType(REQUIRED).Follow("grad", FollowType::DTYPE).FormatList({ge::FORMAT_ND});
@@ -382,6 +459,7 @@ public:
         this->Attr("alpha").AttrType(OPTIONAL).Float(1.0);
         this->Attr("window_size_left").Int(-1);
         this->Attr("window_size_right").Int(-1);
+        this->Attr("deterministic").AttrType(OPTIONAL).Bool(true);
 
         OpAICoreConfig aicore_config;
         aicore_config.DynamicCompileStaticFlag(true)
@@ -395,6 +473,5 @@ public:
         this->AICore().AddConfig("ascend950", aicore_config);
     }
 };
-
 OP_ADD(HstuBackwardV2);
 }  // namespace ops

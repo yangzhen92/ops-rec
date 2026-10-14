@@ -27,35 +27,7 @@ See the License for the specific language governing permissions and
 
 #include "../../../catlass_hstu/epilogue/regbase/common.h"
 
-namespace catlass::Epilogue::RegBase {
-
-/**
- • @brief Sigmoid 激活函数
-
- • @tparam RegType 寄存器类型
-
- • @param dst 目标寄存器，存储计算结果
-
- • @param src 源寄存器，输入值
-
- • @param ones 常量寄存器，值为 1.0
-
- • @param maskReg 掩码寄存器
-
- • @description 实现 sigmoid(x) = 1 / (1 + exp(-x)) 函数
-
- •              数学公式: y = 1 / (1 + exp(-x)) = sigmoid(x)
-
- */
-// y = 1 / (1 + exp(-x))
-template <typename RegType>
-__simd_callee__ inline void Sigmoid(RegType& dst, RegType& src, RegType& ones, RegType& zeros,
-                                    AscendC::MicroAPI::MaskReg& maskReg)
-{
-    AscendC::MicroAPI::ExpSub(dst, zeros, src, maskReg);  // dst = exp(0 - dst)
-    AscendC::MicroAPI::Add(dst, ones, dst, maskReg);      // dst = 1 + dst
-    AscendC::MicroAPI::Div(dst, ones, dst, maskReg);      // dst = 1 / dst
-}
+namespace Catlass::Epilogue::RegBase {
 
 /**
  • @brief 加上相对位置注意力偏置 (RAB)和掩码（MASK）
@@ -165,23 +137,21 @@ __simd_callee__ inline void AddFusedRab(RegType& dst, RegType& src, __ubuf__ Typ
 
  */
 template <typename Type, typename AccType, bool HAS_RAB, bool NEED_MASK, typename RegType>
-__simd_callee__ inline void SiluScore(__ubuf__ AccType* ubSPtr, __ubuf__ Type* ubRabPtr, __ubuf__ Type* ubMaskPtr,
-                                      __ubuf__ Type* ubSiluScorePtr, RegType& vregA, RegType& vregZ, RegType& vregT,
-                                      RegType& vregS, RegType& vregOnes, RegType& vregZeros, AccType alpha,
+__simd_callee__ inline void SiluScoreBackward(__ubuf__ AccType* ubSPtr, __ubuf__ Type* ubRabPtr,
+                                      __ubuf__ Type* ubMaskPtr,
+                                      __ubuf__ Type* ubSiluScorePtr, RegType& vregScore, RegType& vregDenom, RegType& vregTmp,
+                                      RegType& vregSilu, RegType& vregOnes, RegType& vregZeros, AccType alpha,
                                       AscendC::MicroAPI::MaskReg& maskReg)
 {
-    AscendC::MicroAPI::LoadAlign(vregA, ubSPtr);
+    AscendC::MicroAPI::LoadAlign(vregScore, ubSPtr);
     // A = A + (Rab + Mask) * alpha
-    AddFusedRab<Type, AccType, HAS_RAB, NEED_MASK>(vregA, vregZ, ubRabPtr, ubMaskPtr, alpha, maskReg);
-
-    Sigmoid(vregZ, vregA, vregOnes, vregZeros, maskReg);  // Z = Sigmoid(A)
-
-    AscendC::MicroAPI::Mul(vregS, vregZ, vregA, maskReg);  // S = A * Z
+    AddFusedRab<Type, AccType, HAS_RAB, NEED_MASK>(vregScore, vregTmp, ubRabPtr, ubMaskPtr, alpha, maskReg);
+    SiluCore(vregScore, vregDenom, vregSilu, vregOnes, vregZeros, maskReg);
 
     if constexpr (!std::is_same<Type, AccType>::value) {
-        CastDownStore<Type, AccType>(ubSiluScorePtr, vregS, maskReg);
+        CastDownStore<Type, AccType>(ubSiluScorePtr, vregSilu, maskReg);
     } else {
-        AscendC::MicroAPI::StoreAlign(ubSiluScorePtr, vregS, maskReg);
+        AscendC::MicroAPI::StoreAlign(ubSiluScorePtr, vregSilu, maskReg);
     }
 }
 
@@ -216,16 +186,16 @@ __simd_callee__ inline void SiluScore(__ubuf__ AccType* ubSPtr, __ubuf__ Type* u
 
  */
 template <typename Type, typename AccType, bool HAS_RAB>
-__simd_vf__ inline void FastSiluScoreVf(__ubuf__ AccType* ubSPtr, __ubuf__ Type* ubRabPtr, __ubuf__ Type* ubMaskPtr,
-                                        __ubuf__ Type* ubSiluScorePtr, AccType alpha, AccType scale, uint32_t count,
+__simd_vf__ inline void FastSiluScoreBackwardVf(__ubuf__ AccType* ubSPtr, __ubuf__ Type* ubRabPtr, __ubuf__ Type* ubMaskPtr,
+                                        __ubuf__ Type* ubSiluScorePtr, AccType alpha, uint32_t count,
                                         uint32_t repeatTimes)
 {
     constexpr uint32_t oneRepElm = static_cast<uint32_t>(AscendC::GetVecLen() / sizeof(AccType));
 
-    AscendC::MicroAPI::RegTensor<AccType> vregA;
-    AscendC::MicroAPI::RegTensor<AccType> vregZ;
-    AscendC::MicroAPI::RegTensor<AccType> vregT;
-    AscendC::MicroAPI::RegTensor<AccType> vregS;
+    AscendC::MicroAPI::RegTensor<AccType> vregScore;
+    AscendC::MicroAPI::RegTensor<AccType> vregDenom;
+    AscendC::MicroAPI::RegTensor<AccType> vregTmp;
+    AscendC::MicroAPI::RegTensor<AccType> vregSilu;
     AscendC::MicroAPI::RegTensor<AccType> vregOnes;
     AscendC::MicroAPI::RegTensor<AccType> vregZeros;
     AscendC::MicroAPI::MaskReg maskReg;
@@ -235,10 +205,11 @@ __simd_vf__ inline void FastSiluScoreVf(__ubuf__ AccType* ubSPtr, __ubuf__ Type*
     for (uint16_t i = 0; i < repeatTimes; ++i) {
         maskReg = AscendC::MicroAPI::UpdateMask<AccType>(count);
 
-        SiluScore<Type, AccType, HAS_RAB>(ubSPtr + i * oneRepElm, ubRabPtr + i * oneRepElm, ubMaskPtr + i * oneRepElm,
-                                          ubSiluScorePtr + i * oneRepElm, vregA, vregZ, vregT, vregS, vregOnes,
-                                          vregZeros, alpha, maskReg);
+        SiluScoreBackward<Type, AccType, HAS_RAB, false>(
+            ubSPtr + i * oneRepElm, ubRabPtr + i * oneRepElm, ubMaskPtr + i * oneRepElm,
+            ubSiluScorePtr + i * oneRepElm, vregScore, vregDenom, vregTmp, vregSilu, vregOnes, vregZeros, alpha,
+            maskReg);
     }
 }
 
-}  // namespace catlass::Epilogue::RegBase
+}  // namespace Catlass::Epilogue::RegBase

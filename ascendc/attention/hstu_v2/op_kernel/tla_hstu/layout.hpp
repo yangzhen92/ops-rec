@@ -45,13 +45,13 @@ struct isL0czN {
 
 template <class Layout>
 struct isL0czN<
-    Layout, std::enable_if_t<Layout::depth == 2 && Layout::rank == 2>,  // 2 means depth and rank
+    Layout, std::enable_if_t<Layout::depth == 2 && Layout::rank == 2>,    // 2 means depth and rank
     std::enable_if_t<rank_v<decltype(shape<0>(Layout{}))> == 2 && rank_v<decltype(shape<1>(Layout{}))> == 2>> {
     static bool const value =
         (shape<0, 0>(Layout{}) == Catlass::C0_NUM_PER_FRACTAL && shape<1, 0>(Layout{}) == Catlass::C0_NUM_PER_FRACTAL &&
          stride<0, 0>(Layout{}) == Catlass::C0_NUM_PER_FRACTAL && stride<1, 0>(Layout{}) == 1);
 };
 
-}  // namespace detail
+}
 
-}  // namespace tla
+}

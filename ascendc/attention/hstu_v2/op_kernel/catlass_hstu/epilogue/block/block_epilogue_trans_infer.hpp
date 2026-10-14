@@ -14,11 +14,11 @@ See the License for the specific language governing permissions and
 ============================================================================== */
 
 /**
- • @file block_epilogue_trans_out.hpp
+ • @file block_epilogue_trans_infer.hpp
 
  • @brief HSTU Epilogue 输出转置 Block 实现
 
- • @description 提供数据从 UB 转存到 GM 的操作，支持 UB_TO_GM 和 GM_TO_GM 两种转置模式
+ • @description 提供数据从 UB 转存到 GM 的操作
 
  •              用于将计算结果从 Unified Buffer 写回到 Global Memory
 
@@ -32,18 +32,35 @@ See the License for the specific language governing permissions and
 #include "catlass/matrix_coord.hpp"
 #include "tla/tensor.hpp"
 #include "tla/layout.hpp"
+#include "../../gemm/block/buffer_position.hpp"
 
 namespace Catlass::Epilogue::Block {
+
+template <class ArchTag, class L0TileShape, class Element, class Accumulator>
+struct ForwardTransEpilogueBuffer {
+    static constexpr uint32_t PHYSICAL_M = tla::get<0>(L0TileShape{});
+    static constexpr uint32_t PHYSICAL_N = tla::get<1>(L0TileShape{});
+    static constexpr uint32_t L0_MN = tla::get<0>(L0TileShape{}) * tla::get<1>(L0TileShape{});
+    static constexpr uint32_t L0_MK = tla::get<0>(L0TileShape{}) * tla::get<2>(L0TileShape{});
+    using Score = Gemm::Block::detail::BufferPosition<Element, L0_MK / 2U, 0, 2>;
+    using Prob = Gemm::Block::detail::BufferPosition<Accumulator, L0_MN / 2U, Score::lowerBound, 3>;
+    using Rab = Gemm::Block::detail::BufferPosition<Element, L0_MN / 2U, Prob::lowerBound, 2>;
+    using TransOutScratch = Gemm::Block::detail::BufferPosition<Element, L0_MK / 2U, Rab::lowerBound>;
+    using TransIn = Gemm::Block::detail::BufferPosition<Accumulator, L0_MK / 2U, TransOutScratch::lowerBound, 2>;
+    static constexpr uint32_t TRANS_IN_CNT = 2U;
+    static constexpr uint32_t TRANS_IN[2] = {TransIn::template Get<0>(), TransIn::template Get<1>()};
+    static constexpr uint32_t TRANS_OUT = TransOutScratch::template Get<0>();
+    static_assert(TransIn::lowerBound <= ArchTag::UB_SIZE, "forward transpose layout exceeds UB capacity");
+};
 
 /**
  • @brief 转置类型枚举
 
- • @description UB_TO_GM: 从 UB 写回 GM; GM_TO_GM: GM 到 GM 的数据搬运
+ • @description UB_TO_GM: 从 UB 写回 GM
 
  */
 enum class TransTag : uint8_t {
-    UB_TO_GM = 0,
-    GM_TO_GM
+    UB_TO_GM = 0
 };
 
 /**
@@ -81,13 +98,21 @@ public:
     static constexpr uint32_t ELE_NUM_PER_C0 = Catlass::BYTE_PER_C0 / sizeof(Element);
 
     CATLASS_DEVICE
-    BlockEpilogueTransOut(uint32_t cubeFlag, uint32_t transEventId, Arch::Resource<ArchTag>& resource)
+    BlockEpilogueTransOut(uint32_t cubeFlag, uint32_t transEventId, Arch::Resource<ArchTag>& resource,
+                          ElementAccumulator scale_, uint32_t blockM, uint32_t blockN,
+                          uint32_t dimQk, uint32_t dimV)
     {
+        Gemm::Block::detail::ForwardRuntimeBufferLayout<Element, ElementAccumulator> layout(
+            blockM, blockN, dimQk, dimV);
+        const bool useStaticLayout = blockM == TileBuffer::PHYSICAL_M && blockN == TileBuffer::PHYSICAL_N;
         this->cubeReady = Arch::CrossCoreFlag(cubeFlag);
         this->transEventId = transEventId;
-        this->ubTransOut = resource.ubBuf.template GetBufferByByte<Element>(TileBuffer::TRANS_OUT);
+        this->scale = scale_;
+        this->ubTransOut = resource.ubBuf.template GetBufferByByte<Element>(
+            useStaticLayout ? TileBuffer::TRANS_OUT : layout.transOut);
         for (uint32_t i = 0; i < TileBuffer::TRANS_IN_CNT; i++) {
-            this->ubTransIn[i] = resource.ubBuf.template GetBufferByByte<ElementAccumulator>(TileBuffer::TRANS_IN[i]);
+            const uint32_t offset = useStaticLayout ? TileBuffer::TRANS_IN[i] : layout.transIn[i];
+            this->ubTransIn[i] = resource.ubBuf.template GetBufferByByte<ElementAccumulator>(offset);
         }
     }
 
@@ -119,7 +144,7 @@ public:
 
         AscendC::WaitFlag<AscendC::HardEvent::MTE3_V>(transEventId);
 
-        AscendC::Cast(ubTransOut, ubTransIn[transInSlot], AscendC::RoundMode::CAST_RINT, elementsPerCore);
+        ScaleAndCast(elementsPerCore, transInSlot);
 
         AscendC::SetFlag<AscendC::HardEvent::V_MTE3>(transEventId);
         AscendC::WaitFlag<AscendC::HardEvent::V_MTE3>(transEventId);
@@ -130,8 +155,36 @@ public:
     }
 
 private:
+    CATLASS_DEVICE void ScaleAndCast(uint32_t count, uint32_t transInSlot)
+    {
+        auto repeatTimes = CeilDiv(count, AscendC::GetVecLen() / sizeof(ElementAccumulator));
+        auto src = (__ubuf__ ElementAccumulator*)ubTransIn[transInSlot].GetPhyAddr();
+        auto dst = (__ubuf__ Element*)ubTransOut.GetPhyAddr();
+        AscendC::VF_CALL<ScaleAndCastVf>(src, dst, scale, count, repeatTimes);
+    }
+
+    __simd_vf__ static inline void ScaleAndCastVf(__ubuf__ ElementAccumulator* src, __ubuf__ Element* dst,
+                                                  ElementAccumulator scale, uint32_t count, uint32_t repeatTimes)
+    {
+        constexpr uint32_t ONE_REP_ELM = AscendC::GetVecLen() / sizeof(ElementAccumulator);
+        AscendC::MicroAPI::RegTensor<ElementAccumulator> value;
+        AscendC::MicroAPI::MaskReg mask;
+        for (uint16_t i = 0; i < repeatTimes; ++i) {
+            mask = AscendC::MicroAPI::UpdateMask<ElementAccumulator>(count);
+            AscendC::MicroAPI::LoadAlign(value, src + i * ONE_REP_ELM);
+            AscendC::MicroAPI::Muls(value, value, scale, mask);
+            if constexpr (!std::is_same<Element, ElementAccumulator>::value) {
+                Catlass::Epilogue::RegBase::CastDownStore<Element, ElementAccumulator>(
+                    dst + i * ONE_REP_ELM, value, mask);
+            } else {
+                AscendC::MicroAPI::StoreAlign(dst + i * ONE_REP_ELM, value, mask);
+            }
+        }
+    }
+
     Arch::CrossCoreFlag cubeReady;
     uint32_t transEventId;
+    ElementAccumulator scale{static_cast<ElementAccumulator>(1)};
 
     AscendC::LocalTensor<ElementAccumulator> ubTransIn[TileBuffer::TRANS_IN_CNT];
     AscendC::LocalTensor<Element> ubTransOut;

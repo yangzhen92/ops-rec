@@ -27,7 +27,7 @@ See the License for the specific language governing permissions and
 
 #include "../../../catlass_hstu/epilogue/regbase/common.h"
 
-namespace catlass::Epilogue::RegBase {
+namespace Catlass::Epilogue::RegBase {
 
 /**
  • @brief RAB 梯度向量化快速计算函数
@@ -54,8 +54,8 @@ namespace catlass::Epilogue::RegBase {
 
  */
 template <typename Type, typename AccType, typename GrabType>
-__simd_vf__ inline void FastRabGradVf(__ubuf__ AccType* ubGSPtr, __ubuf__ GrabType* ubGRabPartPtr,
-                                      __ubuf__ Type* ubGRabPtr, uint32_t count, uint32_t repeatTimes)
+__simd_vf__ inline void FastRabGradVf(__ubuf__ AccType *ubGSPtr, __ubuf__ GrabType *ubGRabPartPtr,
+                                      __ubuf__ Type *ubGRabPtr, uint32_t count, uint32_t repeatTimes)
 {
     constexpr uint32_t oneRepElm = static_cast<uint32_t>(AscendC::GetVecLen() / sizeof(AccType));
 
@@ -84,4 +84,4 @@ __simd_vf__ inline void FastRabGradVf(__ubuf__ AccType* ubGSPtr, __ubuf__ GrabTy
     }
 }
 
-}  // namespace catlass::Epilogue::RegBase
+}

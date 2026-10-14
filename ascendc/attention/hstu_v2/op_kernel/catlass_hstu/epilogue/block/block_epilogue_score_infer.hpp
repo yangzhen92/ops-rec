@@ -24,11 +24,41 @@ See the License for the specific language governing permissions and
 #include "tla/layout.hpp"
 
 #include "../../../catlass_hstu/epilogue/regbase/fast_silu_infer.hpp"
+#include "../../gemm/block/buffer_position.hpp"
 
 namespace Catlass::Epilogue::Block {
 
+template <class ArchTag, class L1TileShape, class L0TileShape, class Element, class Accumulator, uint32_t Stages>
+struct ForwardScoreEpilogueBuffer {
+    static constexpr uint32_t STAGES = 3U;
+    static constexpr uint32_t AIV_PER_AIC = 2U;
+    static constexpr uint32_t L1_MK = tla::get<0>(L1TileShape{}) * tla::get<2>(L1TileShape{});
+    static constexpr uint32_t L0_MN = tla::get<0>(L0TileShape{}) * tla::get<1>(L0TileShape{});
+    static constexpr uint32_t L0_NK = tla::get<1>(L0TileShape{}) * tla::get<2>(L0TileShape{});
+    static constexpr uint32_t L0_MK = tla::get<0>(L0TileShape{}) * tla::get<2>(L0TileShape{});
+    using Query = Gemm::Block::detail::BufferPosition<Element, L1_MK, 0, Stages>;
+    using Key = Gemm::Block::detail::BufferPosition<Element, L0_NK, Query::lowerBound, Stages>;
+    using Value = Gemm::Block::detail::BufferPosition<Element, L0_NK, Key::lowerBound, Stages>;
+    using L1Prob = Gemm::Block::detail::BufferPosition<Element, L0_MN, Value::lowerBound, STAGES>;
+    using Score = Gemm::Block::detail::BufferPosition<Element, L0_MK / AIV_PER_AIC, 0, 2>;
+    using Prob = Gemm::Block::detail::BufferPosition<Accumulator, L0_MN / AIV_PER_AIC, Score::lowerBound, STAGES>;
+    using Rab = Gemm::Block::detail::BufferPosition<Element, L0_MN / AIV_PER_AIC, Prob::lowerBound, 2>;
+    using TransOut = Gemm::Block::detail::BufferPosition<Element, L0_MK / AIV_PER_AIC, Rab::lowerBound>;
+    using TransIn = Gemm::Block::detail::BufferPosition<Accumulator, L0_MK / AIV_PER_AIC, TransOut::lowerBound, 2>;
+    static constexpr uint32_t SCORE[3] = {Score::template Get<0>(), Score::template Get<1>(), Score::template Get<0>()};
+    static constexpr uint32_t RAB[2] = {Rab::template Get<0>(), Rab::template Get<1>()};
+    static constexpr uint32_t PROB[STAGES] = {Prob::template Get<0>(), Prob::template Get<1>(), Prob::template Get<2>()};
+    static constexpr uint32_t DST[STAGES] = {L1Prob::template Get<0>(), L1Prob::template Get<1>(),
+                                             L1Prob::template Get<2>()};
+    static constexpr uint32_t PACKED_MASK = TransIn::lowerBound;
+    static_assert(L1Prob::lowerBound <= ArchTag::L1_SIZE, "forward score L1 layout exceeds capacity");
+    static_assert(PACKED_MASK + tla::get<0>(L0TileShape{}) / AIV_PER_AIC * 64U <= ArchTag::UB_SIZE,
+                  "forward packed-mask layout exceeds UB capacity");
+};
+
 template <class ArchTag_, class Element_, class ElementAccumulator_, class TileBuffer_, class L0TileShape_,
-          bool HAS_RAB_ = false, bool HAS_MASK_ = false>
+          bool HAS_RAB_ = false, bool HAS_MASK_ = false, bool IS_LOCAL_ = false, bool IS_CAUSAL_ = false,
+          bool IS_ARBITRARY_ = false>
 struct BlockEpilogueScore {
 public:
     using ArchTag = ArchTag_;
@@ -42,6 +72,9 @@ public:
 
     static constexpr bool HAS_RAB = HAS_RAB_;
     static constexpr bool HAS_MASK = HAS_MASK_;
+    static constexpr bool IS_LOCAL = IS_LOCAL_;
+    static constexpr bool IS_CAUSAL = IS_CAUSAL_;
+    static constexpr bool IS_ARBITRARY = IS_ARBITRARY_;
     static constexpr uint32_t SCORE_BUF_CNT = HAS_RAB ? 2 : 3;  // UB score pingpong depth: 3-way in non-RAB
 
     static constexpr uint32_t RAB_MTE2_V_ID[3] = {EVENT_ID6, EVENT_ID7, EVENT_ID6};
@@ -53,27 +86,44 @@ public:
     CATLASS_DEVICE
     BlockEpilogueScore(uint32_t const (&QK_CROSS_EVENT_ID_)[PROB_STAGES],
                        uint32_t const (&PV_CROSS_EVENT_ID_)[PROB_STAGES], Arch::Resource<ArchTag>& resource,
-                       float alpha_ = 1.0f, float scale_ = 1.0f)
+                       float alpha_ = 1.0f, float scale_ = 1.0f, uint32_t blockM = L0_TILE_M,
+                       uint32_t blockN = L0_TILE_N, uint32_t dimQk = tla::get<2>(L0TileShape{}),
+                       uint32_t dimV = tla::get<2>(L0TileShape{}))
     {
+        Gemm::Block::detail::ForwardRuntimeBufferLayout<Element, ElementAccumulator> layout(
+            blockM, blockN, dimQk, dimV);
+        const bool useStaticLayout = blockM == tla::get<0>(L0TileShape{}) &&
+                                     blockN == tla::get<1>(L0TileShape{});
         alpha = alpha_;
         scale = scale_;
-        ubScoreTensor[0] = resource.ubBuf.template GetBufferByByte<Element>(TileBuffer::SCORE[0]);
-        ubScoreTensor[1] = resource.ubBuf.template GetBufferByByte<Element>(TileBuffer::SCORE[1]);
+        ubScoreTensor[0] = resource.ubBuf.template GetBufferByByte<Element>(
+            useStaticLayout ? TileBuffer::SCORE[0] : layout.score[0]);
+        ubScoreTensor[1] = resource.ubBuf.template GetBufferByByte<Element>(
+            useStaticLayout ? TileBuffer::SCORE[1] : layout.score[1]);
         if constexpr (!HAS_RAB) {
-            ubScoreTensor[2] = resource.ubBuf.template GetBufferByByte<Element>(TileBuffer::SCORE[2]);
+            ubScoreTensor[2] = resource.ubBuf.template GetBufferByByte<Element>(
+                useStaticLayout ? TileBuffer::SCORE[2] : layout.score[2]);
         }
         for (uint32_t i = 0; i < PROB_STAGES; i++) {
-            ubProbTensor[i] = resource.ubBuf.template GetBufferByByte<ElementAccumulator>(TileBuffer::PROB[i]);
+            const uint32_t offset = useStaticLayout ? TileBuffer::PROB[i] : layout.prob[i];
+            ubProbTensor[i] = resource.ubBuf.template GetBufferByByte<ElementAccumulator>(offset);
         }
 
-        ubRabTensor[0] = resource.ubBuf.template GetBufferByByte<Element>(TileBuffer::RAB[0]);
-        ubRabTensor[1] = resource.ubBuf.template GetBufferByByte<Element>(TileBuffer::RAB[1]);
+        ubRabTensor[0] = resource.ubBuf.template GetBufferByByte<Element>(
+            useStaticLayout ? TileBuffer::RAB[0] : layout.rab[0]);
+        ubRabTensor[1] = resource.ubBuf.template GetBufferByByte<Element>(
+            useStaticLayout ? TileBuffer::RAB[1] : layout.rab[1]);
         if constexpr (!HAS_RAB) {
-            ubRabTensor[2] = resource.ubBuf.template GetBufferByByte<Element>(TileBuffer::RAB[0]);  // dummy, never used
+            ubRabTensor[2] = resource.ubBuf.template GetBufferByByte<Element>(layout.rab[0]);  // dummy, never used
         }
 
         for (uint32_t i = 0; i < PROB_STAGES; i++) {
-            dstTensor[i] = resource.l1Buf.template GetBufferByByte<Element>(TileBuffer::DST[i]);
+            const uint32_t offset = useStaticLayout ? TileBuffer::DST[i] : layout.l1.prob[i];
+            dstTensor[i] = resource.l1Buf.template GetBufferByByte<Element>(offset);
+        }
+        if constexpr (HAS_MASK) {
+            ubPackedMaskTensor = resource.ubBuf.template GetBufferByByte<int32_t>(
+                useStaticLayout ? TileBuffer::PACKED_MASK : layout.packedMask);
         }
 
         for (uint32_t i = 0; i < PROB_STAGES; i++) {
@@ -89,34 +139,59 @@ public:
 
         AscendC::SetFlag<AscendC::HardEvent::V_MTE2>(RAB_MTE2_V_ID[0]);
         AscendC::SetFlag<AscendC::HardEvent::V_MTE2>(RAB_MTE2_V_ID[1]);
+        if constexpr (IS_ARBITRARY) {
+            AscendC::SetFlag<AscendC::HardEvent::V_MTE2>(EVENT_ID2);
+        }
     }
 
-    template <class TensorSrc, class Coord, class Shape>
+    template <class TensorSrc, class Coord, class Shape, class Predictor>
     CATLASS_DEVICE void operator()(TensorSrc& tensorRab, Coord const& coord, Shape const& shape, Coord const& coordNext,
-                                   Shape const& shapeNext, bool hasNext)
+                                   Shape const& shapeNext, bool hasNext, Predictor& predictor)
     {
         // SPLIT_M: 每 AIC 的 AIV 子核各处理一半行
         auto mReal = CeilDiv<TileBuffer::AIV_PER_AIC>(tla::get<0>(shape));
         auto nReal = tla::get<1>(shape);
 
         if constexpr (!HAS_RAB) {
-            mReal = CeilDiv<TileBuffer::AIV_PER_AIC>(RoundUp<ELEM_PER_BLOCK>(tla::get<0>(shape)));
+            // The NZ no-mask path stores a C0-padded M extent. RowMajor mask
+            // paths keep the logical split: rounding M here shifts AIV1's
+            // causal qBase / packed-bitmap row on non-C0-aligned tails.
+            if constexpr (!HAS_MASK) {
+                mReal = CeilDiv<TileBuffer::AIV_PER_AIC>(RoundUp<ELEM_PER_BLOCK>(tla::get<0>(shape)));
+            }
             nReal = RoundUp<ELEM_PER_BLOCK>(nReal);
         }
 
         uint32_t slot = UBFlag % PROB_STAGES;
         AscendC::CrossCoreWaitFlag<0x2, PIPE_V>(QKcubeReady[slot].id);
 
-        ComputeBlock(mReal, nReal, 0, tensorRab, coordNext, shapeNext, hasNext);
+        auto coordHalf = tla::Add(coord, tla::MakeCoord(0, 0, 0, AscendC::GetSubBlockIdx() * mReal));
+        bool usePackedMask = false;
+        if constexpr (IS_ARBITRARY) {
+            usePackedMask = predictor.needMask;
+            if (usePackedMask) {
+                AscendC::WaitFlag<AscendC::HardEvent::V_MTE2>(EVENT_ID2);
+                predictor.CopyPackedMask(ubPackedMaskTensor, coordHalf, mReal);
+                AscendC::SetFlag<AscendC::HardEvent::MTE2_V>(EVENT_ID2);
+            }
+        }
+        if constexpr (IS_ARBITRARY) {
+            if (usePackedMask) {
+                AscendC::WaitFlag<AscendC::HardEvent::MTE2_V>(EVENT_ID2);
+            }
+        }
+        ComputeBlock(mReal, nReal, 0, tensorRab, coord, coordNext, shapeNext, hasNext, usePackedMask,
+                     predictor.needMask, predictor);
         AscendC::CrossCoreSetFlag<0x2, PIPE_MTE3>(PVcubeReady[slot].id);
         UBFlag++;
 
         rabidx = UBFlag % SCORE_BUF_CNT;
     }
 
-    template <class TensorSrc, class Coord, class Shape>
+    template <class TensorSrc, class Coord, class Shape, class Predictor>
     CATLASS_DEVICE void ComputeBlock(uint32_t mReal, uint32_t nSize, uint32_t blockIdx, TensorSrc& tensorRab,
-                                     Coord const& coordNext, Shape const& shapeNext, bool hasNext)
+                                     Coord const& coord, Coord const& coordNext, Shape const& shapeNext, bool hasNext,
+                                     bool usePackedMask, bool needCausalMask, Predictor& predictor)
     {
         auto count = RoundUp<ELEM_PER_BLOCK>(mReal) * RoundUp<ELEM_PER_BLOCK>(nSize);
 
@@ -141,9 +216,54 @@ public:
         }
 
         AscendC::WaitFlag<AscendC::HardEvent::MTE3_V>(scoreEventId);
-
-        AscendC::VF_CALL<catlass::Epilogue::RegBase::FastSiluScoreVf<Element, ElementAccumulator, HAS_RAB, HAS_MASK>>(
-            ubProbPtr, ubRabPtr, ubRabPtr, ubSPtr, alpha, scale, count, repeatTimes);
+        if constexpr (IS_LOCAL) {
+            if (needCausalMask) {
+                auto p = predictor.params;
+                const int32_t qBase = static_cast<int32_t>(tla::get<3>(coord)) +
+                                      static_cast<int32_t>(AscendC::GetSubBlockIdx() * mReal);
+                const int32_t kBase = static_cast<int32_t>(tla::get<2>(coord));
+                AscendC::VF_CALL<Catlass::Epilogue::RegBase::FastSiluScoreLocalVf<
+                    Element, ElementAccumulator, HAS_RAB>>(
+                    ubProbPtr, ubRabPtr, ubSPtr, alpha, scale, mReal, RoundUp<ELEM_PER_BLOCK>(nSize), qBase, kBase,
+                    p.seqlenQ, p.seqlenK, predictor.windowSizeLeft, predictor.windowSizeRight, p.numContext,
+                    p.numTarget, p.targetGroupSize);
+            } else {
+                AscendC::VF_CALL<
+                    Catlass::Epilogue::RegBase::FastSiluScoreForwardVf<Element, ElementAccumulator, HAS_RAB, false>>(
+                    ubProbPtr, ubRabPtr, ubRabPtr, ubSPtr, alpha, scale, count, repeatTimes);
+            }
+        } else if constexpr (IS_CAUSAL) {
+            if (needCausalMask) {
+                auto p = predictor.params;
+                const int32_t qBase = static_cast<int32_t>(tla::get<3>(coord)) +
+                                      static_cast<int32_t>(AscendC::GetSubBlockIdx() * mReal);
+                const int32_t kBase = static_cast<int32_t>(tla::get<2>(coord));
+                AscendC::VF_CALL<Catlass::Epilogue::RegBase::FastSiluScoreCausalVf<
+                    Element, ElementAccumulator, HAS_RAB>>(
+                    ubProbPtr, ubRabPtr, ubSPtr, alpha, scale, mReal, RoundUp<ELEM_PER_BLOCK>(nSize), qBase, kBase,
+                    p.seqlenQ, p.seqlenK, p.numContext, p.numTarget, p.targetGroupSize);
+            } else {
+                AscendC::VF_CALL<
+                    Catlass::Epilogue::RegBase::FastSiluScoreForwardVf<Element, ElementAccumulator, HAS_RAB, false>>(
+                    ubProbPtr, ubRabPtr, ubRabPtr, ubSPtr, alpha, scale, count, repeatTimes);
+            }
+        } else if constexpr (HAS_MASK) {
+            if (usePackedMask) {
+                auto packedPtr = (__ubuf__ uint32_t*)ubPackedMaskTensor.GetPhyAddr();
+                AscendC::VF_CALL<
+                    Catlass::Epilogue::RegBase::FastSiluScorePackedVf<Element, ElementAccumulator, HAS_RAB>>(
+                    ubProbPtr, ubRabPtr, ubSPtr, packedPtr, alpha, scale, mReal,
+                    RoundUp<ELEM_PER_BLOCK>(nSize), predictor.GetPackedMaskStrideWords());
+                AscendC::SetFlag<AscendC::HardEvent::V_MTE2>(EVENT_ID2);
+            } else {
+                AscendC::VF_CALL<
+                    Catlass::Epilogue::RegBase::FastSiluScoreForwardVf<Element, ElementAccumulator, HAS_RAB, false>>(
+                    ubProbPtr, ubRabPtr, ubRabPtr, ubSPtr, alpha, scale, count, repeatTimes);
+            }
+        } else {
+            AscendC::VF_CALL<Catlass::Epilogue::RegBase::FastSiluScoreForwardVf<Element, ElementAccumulator, HAS_RAB, false>>(
+                ubProbPtr, ubRabPtr, ubRabPtr, ubSPtr, alpha, scale, count, repeatTimes);
+        }
 
         AscendC::SetFlag<AscendC::HardEvent::V_MTE3>(scoreEventId);
         AscendC::WaitFlag<AscendC::HardEvent::V_MTE3>(scoreEventId);
@@ -213,7 +333,10 @@ public:
         auto coreId = AscendC::GetSubBlockIdx();
         auto blockCountTotal = tla::get<0>(shape);
 
-        auto blockLenTotal = tla::get<1>(shape) > L0_TILE_N ? L0_TILE_N : tla::get<1>(shape);
+        // Runtime blockN can be wider than the historical physical tile. RAB
+        // is laid out contiguously by row, so copy the whole logical tile in
+        // one strided DMA instead of leaving the upper columns uninitialized.
+        auto blockLenTotal = tla::get<1>(shape);
         auto halfBlockCount = RoundUp(blockCountTotal, 2) / 2;
 
         auto rabCoord = tla::MakeCoord(tla::get<0>(coord), tla::get<1>(coord), tla::get<3>(coord), tla::get<2>(coord));
@@ -251,6 +374,7 @@ private:
     AscendC::LocalTensor<Element> ubRabTensor[3];
     AscendC::LocalTensor<ElementAccumulator> ubProbTensor[PROB_STAGES];
     AscendC::LocalTensor<Element> dstTensor[PROB_STAGES];
+    AscendC::LocalTensor<int32_t> ubPackedMaskTensor;
 
     float alpha{1.0f};
     float scale{1.0f};

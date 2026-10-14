@@ -18,11 +18,12 @@ See the License for the specific language governing permissions and
  * @brief HSTU 交替分块调度器 — 提高 L2 Cache 跨核共享率
  *
  * @description
- * 与 RowBlockScheduler (连续分块) 不同，本调度器将 Q 行块 (rowBlock) 在各核
- * 之间以 round-robin 方式交替分配:
+ * 与 OuterBlockScheduler (连续分块) 不同，本调度器将 Q 行块 (rowBlock) 在各核
+ * 之间以 round-robin 方式交替分配。SERPENTINE 打开时，奇数轮反向遍历，
+ * 将 causal 场景中后段的重行块与前段的轻行块配对到同一核:
  *
- *   Core 0: rowBlock [0, N, 2N, ...]
- *   Core 1: rowBlock [1, N+1, 2N+1, ...]
+ *   even round: Core i -> roundBegin + i
+ *   odd round:  Core i -> roundEnd - 1 - i
  *   ...
  *
  */
@@ -33,22 +34,32 @@ See the License for the specific language governing permissions and
 #include "catlass/detail/alignment.hpp"
 #include "catlass/gemm_coord.hpp"
 #include "catlass/matrix_coord.hpp"
+#include "../../../../common/hstu_schedule_policy.h"
 
 namespace Catlass::Gemm::Block {
 
-template <class ElementOffset_, uint32_t BLOCK_M, uint32_t BLOCK_N>
-class InterleavedRowBlockScheduler {
+template <class ElementOffset_, uint32_t BLOCK_M, uint32_t BLOCK_N, bool SERPENTINE = false>
+class InterleavedOuterBlockScheduler {
 public:
     using ElementOffset = ElementOffset_;
 
     CATLASS_DEVICE
-    InterleavedRowBlockScheduler(uint32_t batchSize, uint32_t headNum, GM_ADDR seqOffsetM, GM_ADDR seqOffsetN)
+    InterleavedOuterBlockScheduler(uint32_t batchSize, uint32_t headNum, GM_ADDR seqOffsetM, GM_ADDR seqOffsetN,
+                                 uint32_t runtimeBlockM = BLOCK_M, uint32_t runtimeBlockN = BLOCK_N)
     {
         this->batchSize = batchSize;
         this->headNum = headNum;
+        this->blockM = runtimeBlockM;
+        this->blockN = runtimeBlockN;
 
         this->seqOffsetM.SetGlobalBuffer((__gm__ ElementOffset*)seqOffsetM);
         this->seqOffsetN.SetGlobalBuffer((__gm__ ElementOffset*)seqOffsetN);
+    }
+
+    CATLASS_DEVICE
+    void EnableSingleOuterBlockFastPath(bool enable)
+    {
+        useSingleOuterBlockFastPath = enable;
     }
 
     CATLASS_DEVICE
@@ -62,14 +73,18 @@ public:
         }
         uint32_t coreNum = AscendC::GetBlockNum();
 
-        if (this->batchSize == 1) {
+        if (useSingleOuterBlockFastPath) {
+            ShortSequenceSplit(coreId, coreNum);
+        } else if (this->batchSize == 1) {
             SingleBatchRoundRobin(coreId, coreNum);
         } else {
             MultiBatchRoundRobin(coreId, coreNum);
         }
 
         if (this->blockCnt > 0) {
-            LocateBlock(currentFlatBlockId);
+            if (!useSingleOuterBlockFastPath) {
+                LocateBlock(currentFlatBlockId);
+            }
             Update();
         }
     }
@@ -108,20 +123,59 @@ public:
     }
 
     CATLASS_DEVICE
-    InterleavedRowBlockScheduler& operator++()
+    InterleavedOuterBlockScheduler& operator++()
     {
         this->blockCnt--;
         if (this->blockCnt == 0) {
             return *this;
         }
+        if (useSingleOuterBlockFastPath) {
+            currentFlatBlockId += coreStride;
+            LocateShortSequenceBlock(currentFlatBlockId);
+            Update();
+            return *this;
+        }
 
-        currentFlatBlockId += coreStride;
-        AdvanceByStride(coreStride);
+        if constexpr (SERPENTINE) {
+            ++roundId;
+            uint32_t roundBegin = roundId * coreStride;
+            uint32_t roundEnd = Min(roundBegin + coreStride, totalFlatBlocks);
+            currentFlatBlockId = (roundId & 1U) == 0U ? roundBegin + coreId : roundEnd - 1U - coreId;
+            LocateBlock(currentFlatBlockId);
+        } else {
+            currentFlatBlockId += coreStride;
+            AdvanceByStride(coreStride);
+        }
         Update();
         return *this;
     }
 
 private:
+    CATLASS_DEVICE
+    void ShortSequenceSplit(uint32_t coreId, uint32_t coreNum)
+    {
+        totalFlatBlocks = batchSize * headNum;
+        currentFlatBlockId = coreId;
+        coreStride = coreNum;
+        blockCnt = coreId < totalFlatBlocks ?
+            (totalFlatBlocks - coreId + coreNum - 1U) / coreNum : 0U;
+        this->coreId = coreId;
+        if (blockCnt != 0U) {
+            LocateShortSequenceBlock(currentFlatBlockId);
+        }
+    }
+
+    CATLASS_DEVICE
+    void LocateShortSequenceBlock(uint32_t flatId)
+    {
+        batchId = flatId / headNum;
+        headId = flatId - batchId * headNum;
+        headBlockId = 0U;
+        headBlockCnt = 1U;
+        batchBaseOffset = seqOffsetM.GetValue(batchId);
+        currentSeqLen = seqOffsetM.GetValue(batchId + 1U) - batchBaseOffset;
+    }
+
     CATLASS_DEVICE
     void SingleBatchRoundRobin(uint32_t coreId, uint32_t coreNum)
     {
@@ -131,7 +185,7 @@ private:
             return;
         }
 
-        this->headBlockCnt = CeilDiv<BLOCK_M>(currentSeqLen);
+        this->headBlockCnt = (currentSeqLen + blockM - 1) / blockM;
         totalFlatBlocks = this->headBlockCnt * this->headNum;
         coreStride = coreNum;
 
@@ -142,6 +196,7 @@ private:
 
         currentFlatBlockId = coreId;
         this->blockCnt = (totalFlatBlocks - coreId + coreNum - 1) / coreNum;
+        this->coreId = coreId;
 
         this->batchId = 0;
         this->batchBaseOffset = seqOffsetM.GetValue(0);
@@ -153,7 +208,7 @@ private:
         totalFlatBlocks = 0;
         for (uint32_t b = 0; b < batchSize; ++b) {
             uint32_t seqLen = seqOffsetM.GetValue(b + 1) - seqOffsetM.GetValue(b);
-            uint32_t hbc = CeilDiv<BLOCK_M>(seqLen);
+            uint32_t hbc = (seqLen + blockM - 1) / blockM;
             totalFlatBlocks += hbc * headNum;
         }
 
@@ -171,6 +226,7 @@ private:
         }
 
         this->blockCnt = (totalFlatBlocks - coreId + coreNum - 1) / coreNum;
+        this->coreId = coreId;
     }
 
     CATLASS_DEVICE
@@ -180,7 +236,7 @@ private:
         for (uint32_t b = 0; b < batchSize; ++b) {
             this->batchBaseOffset = seqOffsetM.GetValue(b);
             this->currentSeqLen = seqOffsetM.GetValue(b + 1) - seqOffsetM.GetValue(b);
-            uint32_t hbc = CeilDiv<BLOCK_M>(this->currentSeqLen);
+            uint32_t hbc = (this->currentSeqLen + blockM - 1) / blockM;
             uint32_t batchBlocks = hbc * headNum;
 
             if (remaining < batchBlocks) {
@@ -212,13 +268,12 @@ private:
         }
 
         stride -= remainingInBatch + 1;
-        ;
         batchId++;
 
         while (batchId < batchSize) {
             batchBaseOffset = seqOffsetM.GetValue(batchId);
             currentSeqLen = seqOffsetM.GetValue(batchId + 1) - seqOffsetM.GetValue(batchId);
-            headBlockCnt = CeilDiv<BLOCK_M>(currentSeqLen);
+            headBlockCnt = (currentSeqLen + blockM - 1) / blockM;
 
             if (headBlockCnt == 0) {
                 batchId++;
@@ -248,11 +303,11 @@ private:
             return;
         }
 
-        auto seqOffset = headBlockId * BLOCK_M;
+        auto seqOffset = headBlockId * blockM;
         blockOffset = (batchBaseOffset + seqOffset) * headNum + headId;
         auto remainingSeq = currentSeqLen - seqOffset;
-        auto isTail = (remainingSeq < BLOCK_M);
-        blockSize = BLOCK_M + isTail * (remainingSeq - BLOCK_M);
+        auto isTail = (remainingSeq < blockM);
+        blockSize = blockM + isTail * (remainingSeq - blockM);
     }
 
     uint32_t blockSize{0};
@@ -270,6 +325,11 @@ private:
     uint32_t currentFlatBlockId{0};
     uint32_t totalFlatBlocks{0};
     uint32_t coreStride{0};
+    uint32_t coreId{0};
+    uint32_t roundId{0};
+    bool useSingleOuterBlockFastPath{false};
+    uint32_t blockM{BLOCK_M};
+    uint32_t blockN{BLOCK_N};
 
     AscendC::GlobalTensor<ElementOffset> seqOffsetM;
     AscendC::GlobalTensor<ElementOffset> seqOffsetN;

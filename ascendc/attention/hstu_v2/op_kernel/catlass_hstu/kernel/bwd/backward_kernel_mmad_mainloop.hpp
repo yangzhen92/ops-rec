@@ -23,12 +23,15 @@ See the License for the specific language governing permissions and
  */
 
 #pragma once
-
+#include "../scheduler_setup.hpp"
+#include "kernel_operator_list_tensor_intf.h"
 #include "catlass/detail/macros.hpp"
 #include "catlass/arch/cross_core_sync.hpp"
 #include "catlass/gemm/gemm_type.hpp"
 #include "catlass/layout/layout.hpp"
 #include "../../../catlass_hstu/kernel/mask/predictor_builder.hpp"
+#include "../../../catlass_hstu/gemm/block/l1_block_reuse_cache.hpp"
+#include "../../../catlass_hstu/gemm/block/metadata_row_block_scheduler.hpp"
 
 namespace Catlass::Kernel {
 
@@ -56,7 +59,7 @@ namespace Catlass::Kernel {
  */
 template <class BlockMmadQK_, class BlockMmadGV_, class BlockMmadVGrad_, class BlockMmadKGrad_, class BlockMmadQGrad_,
           class QBlockScheduler_, class KBlockScheduler_, typename ElementOffset, bool IS_LOCAL, bool IS_CAUSAL,
-          bool IS_CONTEXT, bool IS_TARGET, bool IS_ARBITRARY, class Predictor>
+          bool IS_CONTEXT, bool IS_TARGET, bool IS_ARBITRARY, class Predictor, bool ENABLE_STREAM_K = false>
 struct BackwardMmadMainloop {
     using BlockMmadQK = BlockMmadQK_;
     using BlockMmadGV = BlockMmadGV_;
@@ -66,12 +69,17 @@ struct BackwardMmadMainloop {
     using QBlockScheduler = QBlockScheduler_;
     using KBlockScheduler = KBlockScheduler_;
     using L1TileShape = typename BlockMmadQK::L1TileShape;
+    using L0TileShape = typename BlockMmadQK::L0TileShape;
     using ArchTag = typename BlockMmadQK::ArchTag;
     using ElementQ = typename BlockMmadQK::ElementA;
     using ElementK = typename BlockMmadQK::ElementB;
     using ElementG = typename BlockMmadGV::ElementA;
     using ElementV = typename BlockMmadGV::ElementB;
     using ElementACC = typename BlockMmadGV::ElementAccumulator;
+
+    static constexpr uint32_t MIN_REUSE_DIM = 32;
+    static constexpr uint32_t L0_TILE_K = tla::get<2>(L0TileShape{});
+    static constexpr uint32_t MAX_L1_REUSE_BLOCKS = L0_TILE_K / MIN_REUSE_DIM;
 
     static constexpr uint32_t EVENT_V_ID = EVENT_ID0;
     static constexpr uint32_t EVENT_GRAD0_ID = EVENT_ID1;
@@ -99,9 +107,10 @@ struct BackwardMmadMainloop {
     static constexpr uint32_t GRAB_READY_ID = 3;
     static constexpr uint32_t TRANS_READY_ID = 4;
     static constexpr uint32_t V_TRANS_READY_ID = TRANS_READY_ID;
-    static constexpr uint32_t K_TRANS_READY_ID = AscendC::SYNC_FLAG_ID_MAX + V_TRANS_READY_ID;
+    static constexpr uint32_t K_TRANS_READY_ID = 6;
     static constexpr uint32_t Q_TRANS_READY_ID = 5;
-    static constexpr uint32_t TRANS_UB_FREE_ID = 7;  // Trans完成搬运 的事件 ID
+    static constexpr uint32_t V_TRANS_UB_FREE_ID = 7;
+    static constexpr uint32_t K_TRANS_UB_FREE_ID = 8;
 
     struct Params {
         GM_ADDR ptrGrad;
@@ -111,15 +120,21 @@ struct BackwardMmadMainloop {
         GM_ADDR ptrSeqOffsetQ;
         GM_ADDR ptrSeqOffsetK;
         GM_ADDR ptrQShare;
+        GM_ADDR ptrKGradAccum;
+        GM_ADDR ptrVGradAccum;
         GM_ADDR ptrNumContext;
         GM_ADDR ptrNumTarget;
+        GM_ADDR ptrMetadata;       // 可选: flash_attn_metadata 分核输出;nullptr → 旧设备现算路径
+        GM_ADDR ptrSparseInfo;     // 可选: direct packed sparse info (TensorList), 9 个 int32 tensor
 
         CATLASS_DEVICE
         Params() {}
 
         CATLASS_DEVICE
         Params(GM_ADDR ptrGrad_, GM_ADDR ptrQ_, GM_ADDR ptrK_, GM_ADDR ptrV_, GM_ADDR ptrSeqOffsetQ_,
-               GM_ADDR ptrSeqOffsetK_, GM_ADDR ptrQShare_, GM_ADDR ptrNumContext_, GM_ADDR ptrNumTarget_)
+               GM_ADDR ptrSeqOffsetK_, GM_ADDR ptrQShare_, GM_ADDR ptrKGradAccum_, GM_ADDR ptrVGradAccum_,
+               GM_ADDR ptrNumContext_, GM_ADDR ptrNumTarget_,
+               GM_ADDR ptrMetadata_ = nullptr, GM_ADDR ptrSparseInfo_ = nullptr)
             : ptrGrad(ptrGrad_),
               ptrQ(ptrQ_),
               ptrK(ptrK_),
@@ -127,8 +142,12 @@ struct BackwardMmadMainloop {
               ptrSeqOffsetQ(ptrSeqOffsetQ_),
               ptrSeqOffsetK(ptrSeqOffsetK_),
               ptrQShare(ptrQShare_),
+              ptrKGradAccum(ptrKGradAccum_),
+              ptrVGradAccum(ptrVGradAccum_),
               ptrNumContext(ptrNumContext_),
-              ptrNumTarget(ptrNumTarget_)
+              ptrNumTarget(ptrNumTarget_),
+              ptrMetadata(ptrMetadata_),
+              ptrSparseInfo(ptrSparseInfo_)
         {
         }
     };
@@ -136,16 +155,24 @@ struct BackwardMmadMainloop {
     CATLASS_DEVICE
     BackwardMmadMainloop(GM_ADDR ptrTiling_)
     {
+        ptrTiling = ptrTiling_;
         GET_TILING_DATA(tilingData, ptrTiling_);
         batch = tilingData.batch;
         heads = tilingData.heads;
         dimQK = tilingData.dimQK;
         dimGV = tilingData.dimGV;
+        maxSeqLenQ = tilingData.maxSeqLenQ;
+        maxSeqLenK = tilingData.maxSeqLenK;
         totalSeqLenQ = tilingData.totalSeqLenQ;
         totalSeqLenK = tilingData.totalSeqLenK;
         targetGroupSize = tilingData.targetGroupSize;
+        windowSizeLeft = tilingData.windowSizeLeft;
+        windowSizeRight = tilingData.windowSizeRight;
         alpha = tilingData.alpha;
         scale = tilingData.scale;
+        maskHeads = tilingData.maskHeads;
+        blockM = tilingData.blockM;
+        blockN = tilingData.blockN;
     }
 
     struct PipeEventGuard {
@@ -194,14 +221,12 @@ struct BackwardMmadMainloop {
         gGrad.SetGlobalBuffer((__gm__ ElementG*)params.ptrGrad);
         gV.SetGlobalBuffer((__gm__ ElementV*)params.ptrV);
         gQShare.SetGlobalBuffer((__gm__ ElementACC*)params.ptrQShare);
-        gK.template SetL2CacheHint<AscendC::CacheRwMode::READ>(AscendC::CacheMode::CACHE_MODE_DISABLE);
-        gV.template SetL2CacheHint<AscendC::CacheRwMode::READ>(AscendC::CacheMode::CACHE_MODE_DISABLE);
-
-        if constexpr (IS_CONTEXT) {
-            gNumContext.SetGlobalBuffer((__gm__ ElementOffset*)params.ptrNumContext);
-        }
-        if constexpr (IS_TARGET) {
-            gNumTarget.SetGlobalBuffer((__gm__ ElementOffset*)params.ptrNumTarget);
+        if constexpr (IS_ARBITRARY) {
+            gK.template SetL2CacheHint<AscendC::CacheRwMode::READ>(AscendC::CacheMode::CACHE_MODE_DISABLE);
+            gV.template SetL2CacheHint<AscendC::CacheRwMode::READ>(AscendC::CacheMode::CACHE_MODE_DISABLE);
+        } else {
+            gK.template SetL2CacheHint<AscendC::CacheRwMode::READ>(AscendC::CacheMode::CACHE_MODE_NORMAL);
+            gV.template SetL2CacheHint<AscendC::CacheRwMode::READ>(AscendC::CacheMode::CACHE_MODE_NORMAL);
         }
     }
 
@@ -211,6 +236,12 @@ struct BackwardMmadMainloop {
         auto layout =
             tla::MakeLayout(tla::MakeShape((int64_t)seqLen * heads, dim), tla::MakeStride(dim, tla::Int<1>{}));
         return tla::MakeTensor(gt, layout, Arch::PositionGM{});
+    }
+
+    CATLASS_DEVICE
+    uint32_t GetL1ReuseBlockCount(uint32_t dim) const
+    {
+        return (dim == 32 || dim == 64) ? L0_TILE_K / dim : 1;
     }
 
     CATLASS_DEVICE
@@ -233,30 +264,53 @@ struct BackwardMmadMainloop {
 
         BlockMmadQK blockMmadQK(resource, heads, dimQK, QK_READY_ID, EVENT_K_ID, {EVENT_Q0_ID, EVENT_Q1_ID});
         BlockMmadGV blockMmadGV(resource, heads, dimGV, GV_READY_ID, EVENT_V_ID, {EVENT_GRAD0_ID, EVENT_GRAD1_ID});
-        BlockMmadVGrad blockMmadVGrad(resource, PROB_READY_ID, V_TRANS_READY_ID, TRANS_UB_FREE_ID,
+        BlockMmadVGrad blockMmadVGrad(resource, PROB_READY_ID, V_TRANS_READY_ID, V_TRANS_UB_FREE_ID,
                                       {EVENT_GRAD0_ID, EVENT_GRAD1_ID});
-        BlockMmadKGrad blockMmadKGrad(resource, GRAB_READY_ID, K_TRANS_READY_ID, TRANS_UB_FREE_ID,
+        BlockMmadKGrad blockMmadKGrad(resource, GRAB_READY_ID, K_TRANS_READY_ID, K_TRANS_UB_FREE_ID,
                                       {EVENT_Q0_ID, EVENT_Q1_ID});
         BlockMmadQGrad blockMmadQGrad(resource);
 
         blockMmadQK.SetDeqScalar(alpha);
         blockMmadGV.SetDeqScalar(scale * alpha);
-        blockMmadVGrad.SetDeqScalar(scale);
 
-        QBlockScheduler qBlockScheduler(batch, heads, params.ptrSeqOffsetQ);
-        KBlockScheduler kBlockScheduler(batch, heads, params.ptrSeqOffsetK, params.ptrSeqOffsetQ);
+        QBlockScheduler qBlockScheduler(batch, heads, params.ptrSeqOffsetQ, blockN, blockM);
+        // 行(K)调度器: 经工厂构造。KBlockScheduler 为 OuterBlockScheduler 时忽略 metadata(旧路);
+        // 为 MetadataOuterBlockScheduler 时用 metadata 驱动(新路)。构造代码对两种类型统一。
+        KBlockScheduler kBlockScheduler = Gemm::Block::MakeRowScheduler<KBlockScheduler>(
+            batch, heads, params.ptrSeqOffsetK, params.ptrSeqOffsetQ, params.ptrMetadata, blockN, blockM);
         uint32_t pingPongFlag = 0;
         uint32_t l0bFlag = 0;
 
-        kBlockScheduler.Init();
+        InitializeBackwardSchedulers<IS_ARBITRARY, IS_LOCAL, IS_CAUSAL, IS_CONTEXT, IS_TARGET, BLOCK_M, BLOCK_N>(
+            qBlockScheduler, kBlockScheduler, params, maskHeads, maxSeqLenQ, maxSeqLenK, windowSizeLeft,
+            windowSizeRight, targetGroupSize, blockM, blockN);
         Predictor predictor;
+        predictor.Construct(this, params);
+        using L1ReuseCache = Gemm::Block::L1BlockReuseCache<MAX_L1_REUSE_BLOCKS>;
+        L1ReuseCache qReuseCache(GetL1ReuseBlockCount(dimQK));
+        L1ReuseCache gradReuseCache(GetL1ReuseBlockCount(dimGV));
+        bool streamKPartialActive = false;
         for (; kBlockScheduler.IsValid(); ++kBlockScheduler) {
+            if constexpr (ENABLE_STREAM_K) {
+                if (kBlockScheduler.IsFirstInOuter()) streamKPartialActive = false;
+            }
+            qBlockScheduler.Init(kBlockScheduler);
+            if constexpr (IS_ARBITRARY) {
+                if (!qBlockScheduler.IsValid()) {
+                    continue;
+                }
+            }
+            auto kMeta = kBlockScheduler.GetMeta();
+            auto batchId = static_cast<uint32_t>(tla::get<0>(kMeta));
+            auto headId = static_cast<uint32_t>(tla::get<1>(kMeta));
+            qReuseCache.UpdateContext(batchId, headId);
+            gradReuseCache.UpdateContext(batchId, headId);
+
             auto tK = kBlockScheduler.GetTile(tensorK);
             auto tV = kBlockScheduler.GetTile(tensorV);
             blockMmadQK.AcquireTensor(tK);
             blockMmadGV.AcquireTensor(tV);
 
-            qBlockScheduler.Init(kBlockScheduler);
             for (; qBlockScheduler.IsValid(); ++qBlockScheduler) {
                 auto meta = kBlockScheduler.GetMeta();
                 auto blockCoord = tla::MakeCoord(static_cast<uint32_t>(tla::get<0>(meta)),             // batchId
@@ -268,23 +322,49 @@ struct BackwardMmadMainloop {
                     predictor.MakeBlockPredParams(blockCoord, this, qBlockScheduler.GetSeqLens(),
                                                   kBlockScheduler.GetCurrentSeqLen(), qBlockScheduler.GetSwizzleDir());
                 predictor.Classifier(blockPredParams);
-                auto triggerSwizzle = qBlockScheduler.GetTriggerSwizzle();
+                // 跳过的 block 不需要查询 cache；for 循环仍会更新 Scheduler 的遍历位置。
                 if (predictor.IsSkip()) {
+                    if constexpr (IS_ARBITRARY) {
+                        // InnerBlockScheduler already advances to the next non-empty descriptor.
+                    }
                     continue;
                 }
+                auto qBlockId = qBlockScheduler.GetCacheBlockId();
+                auto triggerSwizzle = qBlockScheduler.GetTriggerSwizzle();
+                auto swizzlePosition = qBlockScheduler.GetSwizzlePosition();
+                auto qReuse = qReuseCache.Probe(qBlockId, triggerSwizzle, swizzlePosition);
+                auto gradReuse = gradReuseCache.Probe(qBlockId, triggerSwizzle, swizzlePosition);
                 auto tQ = qBlockScheduler.GetTile(tensorQ);
-                blockMmadQK(tQ, tK, pingPongFlag, l0bFlag, triggerSwizzle);
+                blockMmadQK(tQ, tK, pingPongFlag, l0bFlag, qReuse.canReuse, qReuse.slot);
+                qReuseCache.Commit(qReuse.slot, qBlockId);
 
                 auto tG = qBlockScheduler.GetTile(tensorGrad);
-                blockMmadGV(tG, tV, pingPongFlag, l0bFlag, triggerSwizzle);
+                blockMmadGV(tG, tV, pingPongFlag, l0bFlag, gradReuse.canReuse, gradReuse.slot);
+                gradReuseCache.Commit(gradReuse.slot, qBlockId);
 
                 GemmCoord blockQActualShape(tla::get<0>(tQ.shape()), tla::get<0>(tK.shape()), dimQK);
                 GemmCoord blockGActualShape(tla::get<0>(tQ.shape()), tla::get<0>(tK.shape()), dimGV);
 
-                auto isFirstQBlock = predictor.IsInnerLoopFirstQBlock(blockPredParams);
-                auto isLastQBlock = predictor.IsInnerLoopLastQBlock(blockPredParams);
-                blockMmadVGrad(blockGActualShape, pingPongFlag, l0bFlag, isFirstQBlock, isLastQBlock);
-                blockMmadKGrad(blockQActualShape, pingPongFlag, l0bFlag, isFirstQBlock, isLastQBlock);
+                auto isFirstQBlock = ENABLE_STREAM_K ? !streamKPartialActive
+                                                     : (qBlockScheduler.IsFirstSubBlock() &&
+                                                        predictor.IsInnerLoopFirstQBlock(blockPredParams));
+                bool isLastQBlock = qBlockScheduler.IsLastSubBlock() &&
+                                    predictor.IsInnerLoopLastQBlock(blockPredParams);
+                if constexpr (ENABLE_STREAM_K) {
+                    isLastQBlock = qBlockScheduler.IsLast();
+                    if constexpr (IS_CAUSAL && !IS_LOCAL && !IS_ARBITRARY) {
+                        isLastQBlock = isLastQBlock || predictor.IsInnerLoopLastQBlock(blockPredParams);
+                    }
+                }
+                if constexpr (ENABLE_STREAM_K) {
+                    const uint32_t rowOffset = headId * totalSeqLenK +
+                        static_cast<uint32_t>(tla::get<0>(tK.coord())) / heads;
+                    blockMmadVGrad.SetStreamKDestination(params.ptrVGradAccum, rowOffset);
+                    blockMmadKGrad.SetStreamKDestination(params.ptrKGradAccum, rowOffset);
+                }
+                blockMmadVGrad(blockGActualShape, pingPongFlag, l0bFlag, isFirstQBlock, isLastQBlock, gradReuse.slot);
+                blockMmadKGrad(blockQActualShape, pingPongFlag, l0bFlag, isFirstQBlock, isLastQBlock, qReuse.slot);
+                streamKPartialActive = !isLastQBlock;
 
                 auto tQS = qBlockScheduler.GetShareTile(tensorQShare, totalSeqLenQ);
                 blockMmadQGrad(tQS, blockQActualShape, pingPongFlag, l0bFlag);
@@ -299,18 +379,23 @@ struct BackwardMmadMainloop {
 
     Arch::Resource<ArchTag> resource;
 
-    AscendC::GlobalTensor<ElementOffset> gNumContext;
-    AscendC::GlobalTensor<ElementOffset> gNumTarget;
-
     uint32_t batch{0};
     uint32_t heads{0};
     uint32_t dimQK{0};
     uint32_t dimGV{0};
+    uint32_t maxSeqLenQ{0};
+    uint32_t maxSeqLenK{0};
     uint32_t totalSeqLenQ{0};
     uint32_t totalSeqLenK{0};
-    int32_t targetGroupSize{0};
+    uint32_t targetGroupSize{0};  // Target 分核使用的分组大小，与 Predictor 使用相同的 tiling 值。
+    uint32_t maskHeads{0};
+    int32_t windowSizeLeft{-1}, windowSizeRight{-1};
     ElementACC alpha{0.0f};
     ElementACC scale{0.0f};
+    uint32_t blockM{BLOCK_M}, blockN{BLOCK_N};
+
+    // Predictor 在 Construct 中从此地址解析 mask 参数；Mainloop 保留分核需要的 targetGroupSize。
+    GM_ADDR ptrTiling{nullptr};
 };
 
 }  // namespace Catlass::Kernel

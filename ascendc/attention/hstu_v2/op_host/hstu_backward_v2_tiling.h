@@ -56,6 +56,10 @@ TILING_DATA_FIELD_DEF(float, alpha);              ///< 注意力分数的缩放�
 TILING_DATA_FIELD_DEF(float, scale);              ///< 缩放因子
 TILING_DATA_FIELD_DEF(int32_t, windowSizeLeft);   ///< 注意力窗口左侧宽度（语义：-1 无限）
 TILING_DATA_FIELD_DEF(int32_t, windowSizeRight);  ///< 注意力窗口右侧宽度（语义：-1 无限，0 因果）
+TILING_DATA_FIELD_DEF(uint32_t, rabHeads);   ///< RAB 的 head 数；1 时向所有 attention heads 广播
+TILING_DATA_FIELD_DEF(uint32_t, maskHeads);  ///< sparse_info 的 head 数；1 时向所有 Q heads 广播
+TILING_DATA_FIELD_DEF(uint32_t, blockM);
+TILING_DATA_FIELD_DEF(uint32_t, blockN);
 END_TILING_DATA_DEF;
 
 /**

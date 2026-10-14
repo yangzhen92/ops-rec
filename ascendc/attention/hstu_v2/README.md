@@ -54,7 +54,7 @@ HSTU (Hierarchical Sparse Transformer Unit) Backward V2 算子的反向传播实
 
 - **seq_offset_k** (*Tensor*) – Key/Value 序列偏移量。形状: `[batchSize + 1]`，数据类型: `int32`
 
-- **rab** (*Tensor, optional*) – RAB。形状: `[batchSize, heads, maxSeqLenQ, maxSeqLenK]`，数据类型: `float16, bfloat16`。默认值: `None`
+- **rab** (*Tensor, optional*) – RAB。形状: `[batchSize, rabHeads, maxSeqLenQ, maxSeqLenK]`，其中 `rabHeads` 为 `1`（跨 attention head 广播）或 `heads`，数据类型: `float16, bfloat16`。默认值: `None`
 
 - **num_context** (*Tensor, optional*) – 每个 batch 的 Context 长度。形状: `[batchSize]`。默认值: `None`
 
@@ -83,13 +83,13 @@ HSTU (Hierarchical Sparse Transformer Unit) Backward V2 算子的反向传播实
     - `v`: `(totalSeqLenK, heads, dimGV)`
     - `seq_offset_q`: `(batchSize + 1)`
     - `seq_offset_k`: `(batchSize + 1)`
-    - `rab` (optional): `(batchSize, heads, maxSeqLenQ, maxSeqLenK)`
+    - `rab` (optional): `(batchSize, 1|heads, maxSeqLenQ, maxSeqLenK)`
 
 - **输出**: 4 个 Tensor 的元组
     - `qGrad`: `(totalSeqLenQ, heads, dimQK)`，dtype: `float16, bfloat16`
     - `kGrad`: `(totalSeqLenK, heads, dimQK)`，dtype: `float16, bfloat16`
     - `vGrad`: `(totalSeqLenK, heads, dimGV)`，dtype: `float16, bfloat16`
-    - `rabGrad`: `(batchSize, heads, maxSeqLenQ, maxSeqLenK)`，dtype: `float16, bfloat16`（仅当 `rab` 不为 None 时返回）
+    - `rabGrad`: 与 `rab` shape 相同，dtype: `float16, bfloat16`（仅当 `rab` 不为 None 时返回）
 
 ## 约束条件
 
@@ -99,7 +99,7 @@ HSTU (Hierarchical Sparse Transformer Unit) Backward V2 算子的反向传播实
 - 当 `num_context` 或 `num_target` 不为 None 时，`target_group_size` 必须为 `1` 或 `3`
 - `headQ` 必须等于 `headK`（当前仅支持 MHA，不支持 GQA）
 - `window_size_left` 和 `window_size_right` 必须 ≥ -1
-- 当前仅支持 `(-1, 0)`（causal mask）和 `(-1, -1)`（no mask）两种 `(window_size_left, window_size_right)` 组合
+- 支持 `(-1, 0)` causal、`(-1, -1)` no-mask，以及任一边为 `-1` 或非负整数的 local window
 - 当提供 `num_context` 或 `num_target` 时，必须使用 causal mask（`window_size_left=-1, window_size_right=0`）, 同时需满足num_context + num_target < max_seqlen_q
 
 ## mask 行为说明
@@ -110,6 +110,7 @@ HSTU (Hierarchical Sparse Transformer Unit) Backward V2 算子的反向传播实
 |-----------------|-------------------|----------|------|
 | -1 | 0 | causal mask（因果掩码） | 下三角掩码，每个 token 只能关注自身及之前的 token |
 | -1 | -1 | no mask（无掩码） | 不做任何 mask，每个 token 可关注所有 token |
+| >=0 | >=-1 | local window | query 仅关注左侧 `window_size_left` 和右侧 `window_size_right` 范围 |
 
 当使用 causal mask 时，可通过 `num_context` 和 `num_target` 进一步细分 mask 区域：
 
@@ -117,7 +118,7 @@ HSTU (Hierarchical Sparse Transformer Unit) Backward V2 算子的反向传播实
 - **target 区域**（`num_target` 指定长度）：分组注意力，group_size 由 `target_group_size` 控制
 - **其余区域**：标准 causal mask（下三角）
 
-注意：当前仅支持 causal mask 和 no mask 两种模式，不支持自定义 mask 张量输入。
+注意：`num_context`/`num_target` 仅用于 `(-1,0)` causal；任意 local window 不与它们组合。
 
 ## 调用示例
 

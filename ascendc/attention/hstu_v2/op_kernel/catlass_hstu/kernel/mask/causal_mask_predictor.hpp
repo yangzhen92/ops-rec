@@ -26,9 +26,11 @@ See the License for the specific language governing permissions and
 
 #pragma once
 
+#include "../../detail/target_block_range.hpp"
+
 namespace Catlass::Kernel::Mask {
 
-template <uint32_t BLOCK_M, uint32_t BLOCK_N>
+template <uint32_t BLOCK_M, uint32_t BLOCK_N, typename ElementOffset>
 struct CausalMaskPredictor {
     static constexpr uint8_t HAS_CONTEXT = 0x1;
     static constexpr uint8_t HAS_HISTORY = 0x2;
@@ -54,11 +56,31 @@ struct CausalMaskPredictor {
     };
 
     // =========================================================================
-    // 2. MakeBlockPredParams — static, 从 coord + kernel 构造参数
+    // 1.5. Construct — mainloop 侧 predictor 初始化
+    //   从 params 注入 gNumContext / gNumTarget GlobalTensor 引用。
+    //   与 Arbitrary/NoMask predictor 同构签名, mainloop 可统一调用
+    //   predictor.Construct(this, params) 而无需 if constexpr 分支。
+    // =========================================================================
+    template <typename Kernel>
+    CATLASS_DEVICE void Construct(Kernel* kernel, const typename Kernel::Params& params)
+    {
+        this->targetGroupSize = kernel->targetGroupSize;
+        blockM = kernel->blockM;
+        blockN = kernel->blockN;
+        if constexpr (Kernel::IS_CONTEXT_V) {
+            gNumContext.SetGlobalBuffer((__gm__ ElementOffset*)params.ptrNumContext);
+        }
+        if constexpr (Kernel::IS_TARGET_V) {
+            gNumTarget.SetGlobalBuffer((__gm__ ElementOffset*)params.ptrNumTarget);
+        }
+    }
+
+    // =========================================================================
+    // 2. MakeBlockPredParams — 从 coord + kernel 构造参数
     // =========================================================================
     template <typename Kernel, typename Coord>
-    CATLASS_DEVICE static BlockPredParams MakeBlockPredParams(Coord blockCoord, Kernel* kernel, uint32_t seqlenQ,
-                                                              uint32_t seqlenK, uint32_t swizzleDir)
+    CATLASS_DEVICE BlockPredParams MakeBlockPredParams(Coord blockCoord, Kernel* kernel, uint32_t seqlenQ,
+                                                       uint32_t seqlenK, uint32_t swizzleDir)
     {
         BlockPredParams bp;
 
@@ -71,16 +93,16 @@ struct CausalMaskPredictor {
         bp.seqlenQ = seqlenQ;
         bp.seqlenK = seqlenK;
         if constexpr (Kernel::IS_CONTEXT_V) {
-            bp.numContext = kernel->gNumContext.GetValue(b);
+            bp.numContext = this->gNumContext.GetValue(b);
         } else {
             bp.numContext = 0;
         }
         if constexpr (Kernel::IS_TARGET_V) {
-            bp.numTarget = kernel->gNumTarget.GetValue(b);
+            bp.numTarget = this->gNumTarget.GetValue(b);
         } else {
             bp.numTarget = 0;
         }
-        bp.targetGroupSize = kernel->targetGroupSize;
+        bp.targetGroupSize = this->targetGroupSize;
         bp.fusedMaskType = 0;
         bp.swizzleDir = swizzleDir;
         return bp;
@@ -91,40 +113,61 @@ struct CausalMaskPredictor {
     // =========================================================================
     struct MaskRegion {
         const BlockPredParams& p;
+        uint32_t blockM{BLOCK_M};
+        uint32_t blockN{BLOCK_N};
 
         CATLASS_DEVICE MaskRegion(const BlockPredParams& params) : p(params) {}
 
-        CATLASS_DEVICE static bool NeedContextMask(const BlockPredParams& p)
+        CATLASS_DEVICE bool NeedContextMask(const BlockPredParams& p) const
         {
             if (p.numContext <= 0)
                 return false;
-            const uint32_t numBlkQ = CeilDiv(p.numContext, BLOCK_M);
-            const uint32_t numBlkK = CeilDiv(p.seqlenK - p.numTarget, BLOCK_N);
+            const uint32_t numBlkQ = (p.numContext + blockM - 1U) / blockM;
+            const uint32_t numBlkK = (p.seqlenK - p.numTarget + blockN - 1U) / blockN;
             return (p.qSeqId < numBlkQ) && (p.kSeqId < numBlkK);
         }
 
-        CATLASS_DEVICE static void NeedHistoryMask(const BlockPredParams& p, bool& belowDig, bool& diagonal)
+        CATLASS_DEVICE bool IsOutOfRange(const BlockPredParams& p) const
         {
-            const int deltaQK = p.seqlenK - p.seqlenQ;
-            const int qBase = p.qSeqId * BLOCK_M + deltaQK;
-            const int rcol = qBase + BLOCK_M - 1;
-            const int rblk = rcol / BLOCK_N;
-            belowDig = (p.kSeqId <= rblk);
+            const uint64_t qBlockBegin = static_cast<uint64_t>(p.qSeqId) * blockM;
+            const uint64_t kBlockBegin = static_cast<uint64_t>(p.kSeqId) * blockN;
+            return qBlockBegin >= p.seqlenQ || kBlockBegin >= p.seqlenK;
+        }
+
+        CATLASS_DEVICE void NeedHistoryMask(const BlockPredParams& p, bool& belowDig, bool& diagonal) const
+        {
+            const int64_t deltaQK = static_cast<int64_t>(p.seqlenK) - static_cast<int64_t>(p.seqlenQ);
+            const int64_t qBase = static_cast<int64_t>(p.qSeqId) * blockM + deltaQK;
+            const int64_t rcol = qBase + blockM - 1;
+            const int64_t rblk = rcol / blockN;
+            const int64_t kBlockId = static_cast<int64_t>(p.kSeqId);
+            belowDig = (kBlockId <= rblk);
 
             if (!belowDig) {
                 diagonal = false;
                 return;
             }
-            const int lblk = qBase / BLOCK_N;
-            diagonal = (p.kSeqId >= lblk);
+            const int64_t lblk = qBase / blockN;
+            diagonal = (kBlockId >= lblk);
         }
 
-        CATLASS_DEVICE static bool NeedTargetMask(const BlockPredParams& p, bool trilMask)
+        CATLASS_DEVICE bool NeedTargetMask(const BlockPredParams& p, bool trilMask) const
         {
             if (p.numTarget <= 0 || p.targetGroupSize <= 0)
                 return false;
-            auto tbase = (p.seqlenK - p.numTarget) / BLOCK_N;
+            auto tbase = (p.seqlenK - p.numTarget) / blockN;
             return (tbase <= p.kSeqId) && trilMask;
+        }
+
+        CATLASS_DEVICE uint32_t GetTargetQBlockEnd(const BlockPredParams& p) const
+        {
+            return Catlass::Detail::GetTargetQBlockEndRuntime(p.kSeqId, p.seqlenQ, p.seqlenK, p.numTarget,
+                                                               p.numContext, p.targetGroupSize, blockM, blockN);
+        }
+
+        CATLASS_DEVICE bool IsTargetSkip(const BlockPredParams& p) const
+        {
+            return p.qSeqId >= GetTargetQBlockEnd(p);
         }
     };
 
@@ -134,15 +177,21 @@ struct CausalMaskPredictor {
     CATLASS_DEVICE void Classifier(BlockPredParams& bp)
     {
         MaskRegion region(bp);
-        const bool contextMask = MaskRegion::NeedContextMask(bp);
+        region.blockM = blockM;
+        region.blockN = blockN;
+        const bool contextMask = region.NeedContextMask(bp);
 
         bool belowDig, diagonal;
-        MaskRegion::NeedHistoryMask(bp, belowDig, diagonal);
+        region.NeedHistoryMask(bp, belowDig, diagonal);
         const bool trilMask = belowDig;
         const bool historyMask = diagonal;
 
-        const bool targetMask = MaskRegion::NeedTargetMask(bp, trilMask);
-        const bool needMask = trilMask ? (historyMask || targetMask) : contextMask;
+        const bool targetMask = region.NeedTargetMask(bp, trilMask);
+        // Forward keeps the fixed pipeline cadence even for a fully invisible
+        // tile, so such a tile must still take the direct-mask path and write
+        // zeros. Backward may additionally use IsSkip() to omit its work.
+        const bool fullyInvisible = !trilMask && !contextMask;
+        const bool needMask = fullyInvisible || (trilMask ? (historyMask || targetMask) : contextMask);
         if (contextMask) {
             bp.fusedMaskType |= HAS_CONTEXT;
         }
@@ -166,18 +215,31 @@ struct CausalMaskPredictor {
     // =========================================================================
     CATLASS_DEVICE bool IsSkip() const
     {
-        return !this->trilMask && !this->contextMask;
+        MaskRegion region(this->params);
+        region.blockM = blockM;
+        region.blockN = blockN;
+        return region.IsOutOfRange(this->params) || (!this->trilMask && !this->contextMask) ||
+               region.IsTargetSkip(this->params);
     }
+
+    CATLASS_DEVICE bool UsesDirectScoreMask() const
+    {
+        return false;
+    }
+
+    template <class Coord>
+    CATLASS_DEVICE void CopyPackedMask(AscendC::LocalTensor<int32_t>&, Coord const&, uint32_t) const
+    {}
 
     // =========================================================================
     // 4. ApplyMask — 写入 mask buffer
     // =========================================================================
     template <typename Elem, class Coord, class Shape>
-    CATLASS_DEVICE void ApplyMask(AscendC::LocalTensor<Elem>& mask, Coord const& coord, Shape const& shape,
+    CATLASS_DEVICE bool ApplyMask(AscendC::LocalTensor<Elem>& mask, Coord const& coord, Shape const& shape,
                                   uint32_t alignRows, uint32_t alignCols) const
     {
         if (!this->needMask) {
-            return;
+            return false;
         }
         int32_t rowCoord = static_cast<int32_t>(tla::get<2>(coord));
         int32_t colCoord = static_cast<int32_t>(tla::get<3>(coord));
@@ -198,6 +260,7 @@ struct CausalMaskPredictor {
             }
             ApplyTargetMask(mask, rowCoord, colCoord, mSize, nSize, alignRows, alignCols);
         }
+        return true;
     }
 
     CATLASS_DEVICE bool IsInnerLoopFirstQBlock(BlockPredParams& bp)
@@ -242,18 +305,19 @@ private:
     CATLASS_DEVICE void ApplyHistoryMask(AscendC::LocalTensor<Elem>& mask, int32_t rowCoord, int32_t colCoord,
                                          int32_t mSize, int32_t nSize, uint32_t alignRows, uint32_t alignCols) const
     {
-        int deltaQK = this->params.seqlenK - this->params.seqlenQ;
-        int startMaskWidth = deltaQK + rowCoord - colCoord;
+        int64_t deltaQK = static_cast<int64_t>(this->params.seqlenK) -
+                          static_cast<int64_t>(this->params.seqlenQ);
+        int64_t startMaskWidth = deltaQK + rowCoord - colCoord;
 
         int startMaskRow = 0;
         if (startMaskWidth < 0) {
-            startMaskRow = -startMaskWidth;
+            startMaskRow = static_cast<int>(-startMaskWidth);
             if (startMaskRow >= mSize) {
                 return;
             }
             startMaskWidth = 0;
         }
-        int thisIndexMask = startMaskWidth + 1;
+        int64_t thisIndexMask = startMaskWidth + 1;
         int endMaskRow = mSize;
         for (int i = startMaskRow; i < endMaskRow; i++) {
             thisIndexMask = thisIndexMask > nSize ? nSize : thisIndexMask;
@@ -293,16 +357,25 @@ private:
 
     CATLASS_DEVICE bool IsFirst(BlockPredParams& bp) const
     {
-        const uint32_t numBlockForContextMaskK = CeilDiv(bp.seqlenK - bp.numTarget, BLOCK_N);
+        const uint32_t numBlockForContextMaskK = (bp.seqlenK - bp.numTarget + blockN - 1U) / blockN;
         bool kIdNotInContext = (bp.numContext <= 0) || (bp.kSeqId >= numBlockForContextMaskK);
-        const uint32_t deltaBlock = CeilDiv(bp.seqlenK - bp.seqlenQ, BLOCK_N);
-        bool isDiagonal = (bp.kSeqId == bp.qSeqId * 2 + deltaBlock) || (bp.kSeqId == bp.qSeqId * 2 + deltaBlock + 1);
+        const int64_t delta = static_cast<int64_t>(bp.seqlenK) - static_cast<int64_t>(bp.seqlenQ);
+        const int64_t deltaBlock = delta <= 0 ? delta / static_cast<int64_t>(blockN)
+                                              : (delta + blockN - 1) / static_cast<int64_t>(blockN);
+        const uint32_t qToKBlockRatio = blockM / blockN;
+        const int64_t diagonalBegin = static_cast<int64_t>(bp.qSeqId) * qToKBlockRatio + deltaBlock;
+        const int64_t kBlockId = static_cast<int64_t>(bp.kSeqId);
+        bool isDiagonal = kBlockId >= diagonalBegin && kBlockId < diagonalBegin + qToKBlockRatio;
         return bp.qSeqId == 0 || (isDiagonal && kIdNotInContext);
     }
 
     CATLASS_DEVICE bool IsLast(BlockPredParams& bp) const
     {
-        return bp.qSeqId == CeilDiv(bp.seqlenQ, BLOCK_M) - 1;
+        MaskRegion region(bp);
+        region.blockM = blockM;
+        region.blockN = blockN;
+        const uint32_t qBlockEnd = region.GetTargetQBlockEnd(bp);
+        return qBlockEnd > 0 && bp.qSeqId == qBlockEnd - 1;
     }
 
 public:
@@ -315,6 +388,15 @@ public:
     bool trilMask = false;
     bool isFirstQBlock = false;
     bool isLastQBlock = false;
+
+    // mask 专用 GlobalTensor (由 Construct 从 params 注入)
+    AscendC::GlobalTensor<ElementOffset> gNumContext;
+    AscendC::GlobalTensor<ElementOffset> gNumTarget;
+
+    // mask 专用标量 (由 Construct 从 tiling 注入): target 分组大小
+    int32_t targetGroupSize{0};
+    uint32_t blockM{BLOCK_M};
+    uint32_t blockN{BLOCK_N};
 };
 
 }  // namespace Catlass::Kernel::Mask

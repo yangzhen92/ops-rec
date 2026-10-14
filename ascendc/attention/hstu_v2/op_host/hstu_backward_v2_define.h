@@ -45,6 +45,9 @@ enum class DIM_INDEX : uint32_t {
  * - SEQ_OFFSET_K: Key/Value 的序列偏移量
  * - NUM_CONTEXT: 上下文序列长度
  * - NUM_TARGET: 目标序列长度
+ * - Q_SHARE: Q 共享数据
+ * - METADATA: 可选 flash_attn_metadata 分核输出(int32);未传 → 旧设备现算分核
+ * - SPARSE_INFO: 可选 packed sparse info (Dynamic/TensorList),固定 9 个 int32 tensor
  */
 enum class IN_INDEX : uint32_t {
     GRAD = 0,
@@ -55,7 +58,12 @@ enum class IN_INDEX : uint32_t {
     SEQ_OFFSET_Q,
     SEQ_OFFSET_K,
     NUM_CONTEXT,
-    NUM_TARGET
+    NUM_TARGET,
+    Q_SHARE,
+    METADATA,   // 可选: flash_attn_metadata 分核输出(int32);未传 → 旧设备现算分核
+    K_GRAD_ACCUM,
+    V_GRAD_ACCUM,
+    SPARSE_INFO // 可选: direct packed sparse info (Dynamic/TensorList), 9 个 int32 tensor
 };
 
 /**
@@ -89,7 +97,8 @@ enum class ATTR_INDEX : uint32_t {
     TARGET_GROUP_SIZE,
     ALPHA,
     WINDOW_SIZE_LEFT,
-    WINDOW_SIZE_RIGHT
+    WINDOW_SIZE_RIGHT,
+    DETERMINISTIC
 };
 
 #endif

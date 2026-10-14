@@ -9,9 +9,9 @@ You may obtain a copy of the License at
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-        See the License for the specific language governing permissions and
+See the License for the specific language governing permissions and
         limitations under the License.
-==============================================================================*/
+============================================================================== */
 #define OPS_REC_CUST_VENDORS "hstu_v2"
 #include <cstdint>
 #include <string>
@@ -35,18 +35,22 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> hstu_backward_v2_impl
     const c10::optional<at::Tensor>& rab, const c10::optional<at::Tensor>& numContext,
     const c10::optional<at::Tensor>& numTarget, const c10::optional<double>& scale,
     const c10::optional<int64_t>& targetGroupSize, const c10::optional<double>& alpha, const int64_t windowSizeLeft,
-    const int64_t windowSizeRight)
+    const int64_t windowSizeRight, const c10::optional<at::Tensor>& metadata,
+    const c10::optional<tensor_list>& sparseInfo, const bool deterministic)
 {
     hstu_v2::HstuV2ParamChecker(grad, q, k, v, seqOffsetQ, seqOffsetK, maxSeqLenQ, maxSeqLenK, rab, numContext,
                                 numTarget, targetGroupSize, windowSizeLeft, windowSizeRight);
-    // param check (reuse from hstu_v2 namespace)
+
     auto _empty = at::Tensor();
     auto acRab = rab.value_or(at::Tensor());
     auto acNumContext =
         CheckOptionalTensorIsNotNone(numContext) ? numContext.value().to(seqOffsetQ.scalar_type()) : _empty;
     auto acNumTarget =
         CheckOptionalTensorIsNotNone(numTarget) ? numTarget.value().to(seqOffsetQ.scalar_type()) : _empty;
+    // metadata 为可选: 未传/None → 空 tensor → aclnn 视作 null → kernel nullptr → 旧设备现算分核(零回归)
+    auto acMetadata = CheckOptionalTensorIsNotNone(metadata) ? metadata.value().to(at::kInt) : _empty;
 
+    // op input
     auto inGrad = grad.contiguous();
     auto inQ = q.contiguous();
     auto inK = k.contiguous();
@@ -55,22 +59,42 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> hstu_backward_v2_impl
     auto inNumContext = acNumContext.contiguous();
     auto inNumTarget = acNumTarget.contiguous();
     auto inqShare = at::zeros_like(inQ, at::TensorOptions().dtype(at::kFloat));
+    auto inKGradAccum = deterministic ? at::Tensor()
+                                      : at::zeros({inK.size(1), inK.size(0), inK.size(2)},
+                                                  inK.options().dtype(at::kFloat));
+    auto inVGradAccum = deterministic ? at::Tensor()
+                                      : at::zeros({inV.size(1), inV.size(0), inV.size(2)},
+                                                  inV.options().dtype(at::kFloat));
+    auto inMetadata = acMetadata.defined() ? acMetadata.contiguous() : _empty;
+    tensor_list _empty_tensor_ls{at::empty({0}, inQ.options().dtype(at::kInt))};
+    tensor_list inSparseInfoVec = sparseInfo.value_or(_empty_tensor_ls);
+    TORCH_CHECK(!sparseInfo.has_value() || inSparseInfoVec.size() == 9,
+                "sparse_info must contain exactly nine packed tensors");
+    at::TensorList inSparseInfo = at::TensorList(inSparseInfoVec);
 
+    // op attr
     auto attrTargetGroupSize = targetGroupSize.value_or(1);
-    double attrScale = scale.value_or(1.0f / maxSeqLenQ);
+    double attrScale = scale.value_or(0.0);
+    if (attrScale == 0.0) {
+        attrScale = 1.0f / static_cast<double>(maxSeqLenQ);
+    }
     double attrAlpha = alpha.value_or(1.0);
+    TORCH_CHECK(attrAlpha > 0.0, "alpha must be greater than 0");
     int64_t attrWinLeft = windowSizeLeft;
     int64_t attrWinRight = windowSizeRight;
 
+    // op output
     auto outQGrad = at::empty_like(inQ);
     auto outKGrad = at::empty_like(inK);
     auto outVGrad = at::empty_like(inV);
     auto outRabGrad = inRab.defined() ? at::zeros_like(inRab) : at::Tensor();
 
-    EXEC_NPU_CMD(aclnnHstuBackwardV2, inGrad, inQ, inK, inV, inRab, seqOffsetQ, seqOffsetK, inNumContext, inNumTarget,
-                 inqShare, maxSeqLenQ, maxSeqLenK, attrScale, attrTargetGroupSize, attrAlpha, attrWinLeft, attrWinRight,
+    // op exec —— metadata 紧跟 inqShare(与 OpDef 输入顺序一致: ...q_share, metadata),置于所有 attr 之前
+    EXEC_NPU_CMD(aclnnHstuBackwardV2, inGrad, inQ, inK, inV, inRab, seqOffsetQ, seqOffsetK, inNumContext,
+                 inNumTarget, inqShare, inMetadata, inKGradAccum, inVGradAccum, inSparseInfo, maxSeqLenQ, maxSeqLenK,
+                 attrScale, attrTargetGroupSize, attrAlpha, attrWinLeft, attrWinRight, deterministic,
                  outQGrad, outKGrad, outVGrad, outRabGrad);
-
+    // op return
     return std::make_tuple(outQGrad, outKGrad, outVGrad, outRabGrad);
 }
 
@@ -91,7 +115,11 @@ TORCH_LIBRARY_FRAGMENT(ops_rec, m)
           "                   int? target_group_size=1, "
           "                   float? alpha=1.0, "
           "                   int window_size_left=-1, "
-          "                   int window_size_right=-1) -> (Tensor, Tensor, Tensor, Tensor)");
+          "                   int window_size_right=-1, "
+          "                   Tensor? metadata=None, "
+          "                   Tensor[]? sparse_info=None, "
+          "                   bool deterministic=True) "
+          " -> (Tensor, Tensor, Tensor, Tensor)");
 }
 
 TORCH_LIBRARY_IMPL(ops_rec, PrivateUse1, m)
@@ -99,35 +127,23 @@ TORCH_LIBRARY_IMPL(ops_rec, PrivateUse1, m)
     m.impl("hstu_backward_v2", TORCH_FN(hstu_backward_v2_impl_npu));
 }
 
-// Meta 实现：inductor 图模式（fake tensor 符号执行）需要算子具备 Meta kernel，
-// 否则 torch._dynamo 报 "Operator does not support running with fake tensors"。
-// 输出 shape 与真实实现对齐：qGrad=[totalSeqLenQ,heads,dimQK]、kGrad=[totalSeqLenK,heads,dimQK]、
-// vGrad=[totalSeqLenK,heads,dimGV]；rabGrad 仅在传入 rab 时返回（与真实实现 at::zeros_like 分支对齐，
-// 否则 fake tensor 推理拿到未定义 tensor 之外的同 shape 空张量会导致 shape 推导结果不一致）。
 namespace {
-
 std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> hstu_backward_v2_meta(
-    const at::Tensor& grad, const at::Tensor& q, const at::Tensor& k, const at::Tensor& v, const int64_t maxSeqLenQ,
-    const int64_t maxSeqLenK, const at::Tensor& seqOffsetQ, const at::Tensor& seqOffsetK,
-    const c10::optional<at::Tensor>& rab, const c10::optional<at::Tensor>& numContext,
-    const c10::optional<at::Tensor>& numTarget, const c10::optional<double>& scale,
-    const c10::optional<int64_t>& targetGroupSize, const c10::optional<double>& alpha, const int64_t windowSizeLeft,
-    const int64_t windowSizeRight)
+    const at::Tensor&, const at::Tensor& q, const at::Tensor& k, const at::Tensor& v, const int64_t,
+    const int64_t, const at::Tensor&, const at::Tensor&, const c10::optional<at::Tensor>& rab,
+    const c10::optional<at::Tensor>&, const c10::optional<at::Tensor>&, const c10::optional<double>&,
+    const c10::optional<int64_t>&, const c10::optional<double>&, const int64_t, const int64_t,
+    const c10::optional<at::Tensor>&, const c10::optional<tensor_list>&, const bool)
 {
-    auto outQGrad = at::empty_symint(q.sym_sizes(), q.options().device(c10::kMeta));
-    auto outKGrad = at::empty_symint(k.sym_sizes(), k.options().device(c10::kMeta));
-    auto outVGrad = at::empty_symint(v.sym_sizes(), v.options().device(c10::kMeta));
-
-    at::Tensor outRabGrad;
-    if (rab.has_value() && rab.value().defined()) {
-        outRabGrad = at::empty_symint(rab.value().sym_sizes(), rab.value().options().device(c10::kMeta));
-    } else {
-        outRabGrad = at::Tensor();
-    }
-    return std::make_tuple(outQGrad, outKGrad, outVGrad, outRabGrad);
+    auto qGrad = at::empty_symint(q.sym_sizes(), q.options().device(c10::kMeta));
+    auto kGrad = at::empty_symint(k.sym_sizes(), k.options().device(c10::kMeta));
+    auto vGrad = at::empty_symint(v.sym_sizes(), v.options().device(c10::kMeta));
+    auto rabGrad = rab.has_value() && rab->defined()
+                       ? at::empty_symint(rab->sym_sizes(), rab->options().device(c10::kMeta))
+                       : at::Tensor();
+    return std::make_tuple(qGrad, kGrad, vGrad, rabGrad);
 }
-
-}  // anonymous namespace
+}
 
 TORCH_LIBRARY_IMPL(ops_rec, Meta, m)
 {

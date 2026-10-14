@@ -156,7 +156,8 @@ struct CopyL0CToUBTla<
 
         // Fixpipe auxiliary arguments
         intriParams.quantPre = quantPre;
-        intriParams.deqScalar = static_cast<uint64_t>(*reinterpret_cast<int32_t*>(&deqScalar));
+        const uint32_t deqBits = __builtin_bit_cast(uint32_t, deqScalar);
+        intriParams.deqScalar = static_cast<uint64_t>(deqBits);
         intriParams.reluEn = reluEn;
         intriParams.unitFlag = unitFlag;
         intriParams.dualDstCtl = 0;
@@ -195,13 +196,18 @@ struct CopyL0CToUBTla<
 
         intriParams.nSize = tla::get<1>(dstTensor.shape());
         intriParams.mSize = RoundUp(tla::get<0>(dstTensor.shape()), 2);
-        intriParams.srcStride = tla::get<1, 1>(srcTensor.stride()) / tla::get<0, 0>(srcTensor.stride());
+        // In dual-destination split-M mode FixPipe consumes an NZ L0C tile.
+        // Its source stride is the even M extent aligned to one cube block.
+        intriParams.srcStride = RoundUp(intriParams.mSize, AscendC::BLOCK_CUBE);
         intriParams.dstStride = tla::get<0>(dstTensor.stride());
 
         intriParams.quantPre = quantPre;
         intriParams.reluEn = reluEn;
         intriParams.unitFlag = unitFlag;
-        intriParams.dualDstCtl = 1;
+        intriParams.dualDstCtl = 1;  // DUAL_DST_SPLIT_M
+        intriParams.params.ndNum = 1;
+        intriParams.params.srcNdStride = 0;
+        intriParams.params.dstNdStride = 0;
 
         auto dstOffset = dstTensor.layout()(dstTensor.coord());
         auto srcOffset = srcTensor.layout()(srcTensor.coord());
@@ -237,7 +243,10 @@ struct CopyL0CToUBTla<
 
         // Fixpipe layout information
         intriParams.nSize = tla::get<1>(dstTensor.shape());
-        intriParams.mSize = tla::get<0>(dstTensor.shape());
+        // Row-major FixPipe requires an even M extent.  The logical tail is
+        // still honoured by the Vector stage; rounding only controls how the
+        // L0C fragment is materialized in UB.
+        intriParams.mSize = RoundUp(tla::get<0>(dstTensor.shape()), 2);
         intriParams.srcStride = tla::get<1, 1>(srcTensor.stride()) / tla::get<0, 0>(srcTensor.stride());
         intriParams.dstStride = tla::get<0>(dstTensor.stride());
 
@@ -283,13 +292,14 @@ struct CopyL0CToUBTla<
 
         // Fixpipe layout information
         intriParams.nSize = tla::get<1>(dstTensor.shape());
-        intriParams.mSize = tla::get<0>(dstTensor.shape());
+        intriParams.mSize = RoundUp(tla::get<0>(dstTensor.shape()), 2);
         intriParams.srcStride = tla::get<1, 1>(srcTensor.stride()) / tla::get<0, 0>(srcTensor.stride());
         intriParams.dstStride = tla::get<0>(dstTensor.stride());
 
         // Fixpipe auxiliary arguments
         intriParams.quantPre = quantPre;
-        intriParams.deqScalar = static_cast<uint64_t>(*reinterpret_cast<int32_t*>(&deqScalar));
+        const uint32_t deqBits = __builtin_bit_cast(uint32_t, deqScalar);
+        intriParams.deqScalar = static_cast<uint64_t>(deqBits);
         intriParams.reluEn = reluEn;
         intriParams.unitFlag = unitFlag;
         intriParams.dualDstCtl = 0;

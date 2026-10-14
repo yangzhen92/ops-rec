@@ -57,10 +57,10 @@ struct TileCopyTNDTla<Arch::Ascend950,
     // Mehtods
 
     CATLASS_DEVICE
-    TileCopyTNDTla() {};
+    TileCopyTNDTla(){};
 
     template <class TensorDst, class TensorSrc>
-    CATLASS_DEVICE void operator()(TensorDst const& dstTensor, TensorSrc const& srcTensor, int64_t rows, int64_t cols,
+    CATLASS_DEVICE void operator()(TensorDst const &dstTensor, TensorSrc const &srcTensor, int64_t rows, int64_t cols,
                                    int64_t stride)
     {
         static_assert(
@@ -84,4 +84,4 @@ struct TileCopyTNDTla<Arch::Ascend950,
     }
 };
 
-}  // namespace Catlass::Gemm::Tile
+}

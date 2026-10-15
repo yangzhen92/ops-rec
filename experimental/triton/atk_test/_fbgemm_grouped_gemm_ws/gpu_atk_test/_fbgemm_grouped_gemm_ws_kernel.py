@@ -32,15 +32,14 @@
 """
 
 import inspect
+import sys
 import warnings
 from typing import Optional
 
-import sys
 import torch
-
-import triton
 import triton.language as tl
 
+import triton
 
 # Ascend NPU support
 try:
@@ -106,7 +105,7 @@ class TmaAutoTuneHelper:
 
         # Triton API 兼容性：新版本改名 fill_1d_tma_descriptor → fill_tma_descriptor
         utils = triton.runtime.driver.active.utils
-        if hasattr(utils, 'fill_1d_tma_descriptor'):
+        if hasattr(utils, "fill_1d_tma_descriptor"):
             self.fill_1d_tma_descriptor_inner = utils.fill_1d_tma_descriptor
             self.fill_2d_tma_descriptor_inner = utils.fill_2d_tma_descriptor
         else:
@@ -246,7 +245,8 @@ def _fbgemm_grouped_gemm(
                 )
 
             # Move across tiles
-            while iterated_tiles <= tidx < iterated_tiles + num_tiles:
+            # pylint: disable-next=chained-comparison
+            while tidx >= iterated_tiles and tidx < iterated_tiles + num_tiles:
                 gidx = tidx - iterated_tiles
                 # Split M first and N second.
                 tile_m_idx = gidx % num_m_tiles

@@ -23,15 +23,14 @@
 # ==============================================================================
 
 import inspect
+import sys
 import warnings
 from typing import Optional
 
-import sys
 import torch
-
-import triton
 import triton.language as tl
 
+import triton
 
 try:
     import torch_npu  # noqa: F401
@@ -79,7 +78,7 @@ class TmaAutoTuneHelper:
             )
 
         utils = triton.runtime.driver.active.utils
-        if hasattr(utils, 'fill_1d_tma_descriptor'):
+        if hasattr(utils, "fill_1d_tma_descriptor"):
             self.fill_1d_tma_descriptor_inner = utils.fill_1d_tma_descriptor
             self.fill_2d_tma_descriptor_inner = utils.fill_2d_tma_descriptor
         else:
@@ -211,7 +210,8 @@ def _fbgemm_grouped_gemm_fp8_rowwise(
                     block_shape=[BLOCK_SIZE_M, BLOCK_SIZE_N],
                 )
 
-            while iterated_tiles <= tidx < iterated_tiles + num_tiles:
+            # pylint: disable-next=chained-comparison
+            while tidx >= iterated_tiles and tidx < iterated_tiles + num_tiles:
                 gidx = tidx - iterated_tiles
                 tile_m_idx = gidx % num_m_tiles
                 tile_n_idx = gidx // num_m_tiles

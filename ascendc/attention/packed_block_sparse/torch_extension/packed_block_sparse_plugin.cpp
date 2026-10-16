@@ -103,6 +103,31 @@ tensor_list CreatePackedMeta(const Tensor& func, const Tensor& qOffsets, const T
 }
 }  // namespace
 
+// 供 attn_plan 直接调用的具名入口（全局作用域 => 外部链接）。
+// attn_plan/host/attn_plan.cpp 在文件顶部以如下签名声明并调用这两个符号，
+// 用于为 HSTU V2 的 arbitrary（packed sparse）路径生成 sparse_info：
+//
+//   ops_rec::attn_plan::TensorList create_fwd_packed_block_sparse_impl_npu(
+//       const Tensor& func, const Tensor& qOffsets, const Tensor& kvOffsets,
+//       int64_t maxSeqLenQ, int64_t maxSeqLenKv, int64_t qBlock, int64_t kvBlock);
+//
+// 二者必须是外部可见的定义（不能放进上面的匿名 namespace），否则
+// ops_rec_atlas_950.so 加载时会因符号未解析而失败。语义与 torch op
+// create_{fwd,bwd}_packed_block_sparse 完全一致，仅是一层薄包装。
+tensor_list create_fwd_packed_block_sparse_impl_npu(const Tensor& func, const Tensor& qOffsets, const Tensor& kvOffsets,
+                                                    int64_t maxSeqLenQ, int64_t maxSeqLenKv, int64_t qBlock,
+                                                    int64_t kvBlock)
+{
+    return CreatePacked<false>(func, qOffsets, kvOffsets, maxSeqLenQ, maxSeqLenKv, qBlock, kvBlock);
+}
+
+tensor_list create_bwd_packed_block_sparse_impl_npu(const Tensor& func, const Tensor& qOffsets, const Tensor& kvOffsets,
+                                                    int64_t maxSeqLenQ, int64_t maxSeqLenKv, int64_t qBlock,
+                                                    int64_t kvBlock)
+{
+    return CreatePacked<true>(func, qOffsets, kvOffsets, maxSeqLenQ, maxSeqLenKv, qBlock, kvBlock);
+}
+
 TORCH_LIBRARY_FRAGMENT(ops_rec, m)
 {
     m.def("create_fwd_packed_block_sparse(Tensor func_tensor, Tensor q_offsets, Tensor kv_offsets, "
@@ -114,8 +139,8 @@ TORCH_LIBRARY_FRAGMENT(ops_rec, m)
 }
 TORCH_LIBRARY_IMPL(ops_rec, PrivateUse1, m)
 {
-    m.impl("create_fwd_packed_block_sparse", &CreatePacked<false>);
-    m.impl("create_bwd_packed_block_sparse", &CreatePacked<true>);
+    m.impl("create_fwd_packed_block_sparse", &create_fwd_packed_block_sparse_impl_npu);
+    m.impl("create_bwd_packed_block_sparse", &create_bwd_packed_block_sparse_impl_npu);
 }
 TORCH_LIBRARY_IMPL(ops_rec, Meta, m)
 {

@@ -33,8 +33,8 @@ def build_causal_mask_arbitrary_func_cpu(offsets, total_seqlen):
     af = np.zeros((1, 1, total_seqlen, N_FUNC), dtype=np.int32)
     positions = np.arange(total_seqlen, dtype=np.int32)
     seq_id = np.searchsorted(offsets[1:] - 1, positions, side="left")
-    af[0, 0, :, 0] = offsets[seq_id]      # seq_start
-    af[0, 0, :, 1] = positions + 1        # global pos + 1（含自身）
+    af[0, 0, :, 0] = offsets[seq_id]  # seq_start
+    af[0, 0, :, 1] = positions + 1  # global pos + 1（含自身）
     return af
 
 
@@ -160,6 +160,7 @@ def test_causal_af_format(case_id):
 
 
 # ---------------- 原随机正确性测试（保留） ----------------
+
 
 def make_case(index):
     rng = random.Random(20260921 + index)

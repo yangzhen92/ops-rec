@@ -36,8 +36,8 @@ def build_causal_mask_arbitrary_func_mask_cpu(offsets, total_seqlen):
     af = np.zeros((1, 1, total_seqlen, 2), dtype=np.int32)
     positions = np.arange(total_seqlen, dtype=np.int32)
     seq_id = np.searchsorted(offsets[1:] - 1, positions, side="left")
-    af[0, 0, :, 0] = offsets[seq_id]      # seq_start
-    af[0, 0, :, 1] = positions + 1        # global pos + 1(含自身)
+    af[0, 0, :, 0] = offsets[seq_id]  # seq_start
+    af[0, 0, :, 1] = positions + 1  # global pos + 1(含自身)
     return af
 
 
@@ -46,9 +46,7 @@ def test_build_causal_mask_arbitrary_func_two_seq():
     offsets = np.array([0, 3, 5], dtype=np.int32)
     total_seqlen = 5
 
-    y = ops_rec.ascendc.attention.build_causal_mask_arbitrary_func(
-        torch.from_numpy(offsets).npu(), total_seqlen
-    )
+    y = ops_rec.ascendc.attention.build_causal_mask_arbitrary_func(torch.from_numpy(offsets).npu(), total_seqlen)
 
     y_np = y.cpu().numpy()
     cpu = build_causal_mask_arbitrary_func_mask_cpu(offsets, total_seqlen)
@@ -66,9 +64,7 @@ def test_build_causal_mask_arbitrary_func_multi_seq():
     offsets = np.array([0, 2, 4, 6], dtype=np.int32)
     total_seqlen = 6
 
-    y = ops_rec.ascendc.attention.build_causal_mask_arbitrary_func(
-        torch.from_numpy(offsets).npu(), total_seqlen
-    )
+    y = ops_rec.ascendc.attention.build_causal_mask_arbitrary_func(torch.from_numpy(offsets).npu(), total_seqlen)
 
     y_np = y.cpu().numpy()
     cpu = build_causal_mask_arbitrary_func_mask_cpu(offsets, total_seqlen)

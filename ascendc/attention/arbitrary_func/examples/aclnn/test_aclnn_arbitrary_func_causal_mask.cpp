@@ -101,7 +101,8 @@ int main()
     uint64_t workspaceSize = 0;
     aclOpExecutor* executor = nullptr;
     ret = aclnnBuildCausalMaskArbitraryFuncGetWorkspaceSize(offsets, totalSeqLen, out, &workspaceSize, &executor);
-    CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("aclnnBuildCausalMaskArbitraryFuncGetWorkspaceSize failed. ERROR: %d\n", ret);
+    CHECK_RET(ret == ACL_SUCCESS,
+              LOG_PRINT("aclnnBuildCausalMaskArbitraryFuncGetWorkspaceSize failed. ERROR: %d\n", ret);
               return ret);
 
     void* workspaceAddr = nullptr;

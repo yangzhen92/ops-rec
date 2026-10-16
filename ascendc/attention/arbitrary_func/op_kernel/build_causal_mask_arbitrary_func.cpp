@@ -1,5 +1,5 @@
 /* *
-* Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,6 @@ extern "C" __global__ __aicore__ void build_causal_mask_arbitrary_func(GM_ADDR o
     const uint32_t totalThreads = BuildCausalMaskArbitraryFunc::THREADS * AscendC::GetBlockNum();
     AscendC::Simt::VF_CALL<BuildCausalMaskArbitraryFunc::Build>(
         AscendC::Simt::Dim3{BuildCausalMaskArbitraryFunc::THREADS, 1, 1},
-        reinterpret_cast<__gm__ int32_t*>(arbitraryFunc), reinterpret_cast<const __gm__ int32_t*>(offsets),
-        totalSeqLen, batchSize, AscendC::GetBlockIdx(), totalThreads);
+        reinterpret_cast<__gm__ int32_t*>(arbitraryFunc), reinterpret_cast<const __gm__ int32_t*>(offsets), totalSeqLen,
+        batchSize, AscendC::GetBlockIdx(), totalThreads);
 }

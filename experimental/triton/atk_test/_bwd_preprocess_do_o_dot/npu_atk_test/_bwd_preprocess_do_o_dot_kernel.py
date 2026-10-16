@@ -20,6 +20,7 @@ import triton.language as tl
 
 @triton.autotune(
     configs=[
+        triton.Config({"BLOCK_T": 8, "multibuffer": True}),
         triton.Config({"BLOCK_T": 16, "multibuffer": True}),
         triton.Config({"BLOCK_T": 32, "multibuffer": True}),
         triton.Config({"BLOCK_T": 64, "multibuffer": True}),

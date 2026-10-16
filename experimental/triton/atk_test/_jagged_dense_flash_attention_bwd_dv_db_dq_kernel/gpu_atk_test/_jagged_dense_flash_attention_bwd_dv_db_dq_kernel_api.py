@@ -43,8 +43,8 @@ def get_device():
 class JaggedDenseFlashAttentionBwdDvDbDqApi(BaseApi):
     """_jagged_dense_flash_attention_bwd_dv_db_dq_kernel 算子的 API 封装"""
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, task_result):
+        super().__init__(task_result)
         # 实例属性声明：实际值由 init_by_input_data 填充
         self._device = None
         self._Q = None

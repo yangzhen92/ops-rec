@@ -47,7 +47,8 @@ struct ForwardScoreEpilogueBuffer {
     using TransIn = Gemm::Block::detail::BufferPosition<Accumulator, L0_MK / AIV_PER_AIC, TransOut::lowerBound, 2>;
     static constexpr uint32_t SCORE[3] = {Score::template Get<0>(), Score::template Get<1>(), Score::template Get<0>()};
     static constexpr uint32_t RAB[2] = {Rab::template Get<0>(), Rab::template Get<1>()};
-    static constexpr uint32_t PROB[STAGES] = {Prob::template Get<0>(), Prob::template Get<1>(), Prob::template Get<2>()};
+    static constexpr uint32_t PROB[STAGES] = {Prob::template Get<0>(), Prob::template Get<1>(),
+                                              Prob::template Get<2>()};
     static constexpr uint32_t DST[STAGES] = {L1Prob::template Get<0>(), L1Prob::template Get<1>(),
                                              L1Prob::template Get<2>()};
     static constexpr uint32_t PACKED_MASK = TransIn::lowerBound;
@@ -90,29 +91,28 @@ public:
                        uint32_t blockN = L0_TILE_N, uint32_t dimQk = tla::get<2>(L0TileShape{}),
                        uint32_t dimV = tla::get<2>(L0TileShape{}))
     {
-        Gemm::Block::detail::ForwardRuntimeBufferLayout<Element, ElementAccumulator> layout(
-            blockM, blockN, dimQk, dimV);
-        const bool useStaticLayout = blockM == tla::get<0>(L0TileShape{}) &&
-                                     blockN == tla::get<1>(L0TileShape{});
+        Gemm::Block::detail::ForwardRuntimeBufferLayout<Element, ElementAccumulator> layout(blockM, blockN, dimQk,
+                                                                                            dimV);
+        const bool useStaticLayout = blockM == tla::get<0>(L0TileShape{}) && blockN == tla::get<1>(L0TileShape{});
         alpha = alpha_;
         scale = scale_;
-        ubScoreTensor[0] = resource.ubBuf.template GetBufferByByte<Element>(
-            useStaticLayout ? TileBuffer::SCORE[0] : layout.score[0]);
-        ubScoreTensor[1] = resource.ubBuf.template GetBufferByByte<Element>(
-            useStaticLayout ? TileBuffer::SCORE[1] : layout.score[1]);
+        ubScoreTensor[0] =
+            resource.ubBuf.template GetBufferByByte<Element>(useStaticLayout ? TileBuffer::SCORE[0] : layout.score[0]);
+        ubScoreTensor[1] =
+            resource.ubBuf.template GetBufferByByte<Element>(useStaticLayout ? TileBuffer::SCORE[1] : layout.score[1]);
         if constexpr (!HAS_RAB) {
-            ubScoreTensor[2] = resource.ubBuf.template GetBufferByByte<Element>(
-                useStaticLayout ? TileBuffer::SCORE[2] : layout.score[2]);
+            ubScoreTensor[2] = resource.ubBuf.template GetBufferByByte<Element>(useStaticLayout ? TileBuffer::SCORE[2]
+                                                                                                : layout.score[2]);
         }
         for (uint32_t i = 0; i < PROB_STAGES; i++) {
             const uint32_t offset = useStaticLayout ? TileBuffer::PROB[i] : layout.prob[i];
             ubProbTensor[i] = resource.ubBuf.template GetBufferByByte<ElementAccumulator>(offset);
         }
 
-        ubRabTensor[0] = resource.ubBuf.template GetBufferByByte<Element>(
-            useStaticLayout ? TileBuffer::RAB[0] : layout.rab[0]);
-        ubRabTensor[1] = resource.ubBuf.template GetBufferByByte<Element>(
-            useStaticLayout ? TileBuffer::RAB[1] : layout.rab[1]);
+        ubRabTensor[0] =
+            resource.ubBuf.template GetBufferByByte<Element>(useStaticLayout ? TileBuffer::RAB[0] : layout.rab[0]);
+        ubRabTensor[1] =
+            resource.ubBuf.template GetBufferByByte<Element>(useStaticLayout ? TileBuffer::RAB[1] : layout.rab[1]);
         if constexpr (!HAS_RAB) {
             ubRabTensor[2] = resource.ubBuf.template GetBufferByByte<Element>(layout.rab[0]);  // dummy, never used
         }
@@ -219,11 +219,11 @@ public:
         if constexpr (IS_LOCAL) {
             if (needCausalMask) {
                 auto p = predictor.params;
-                const int32_t qBase = static_cast<int32_t>(tla::get<3>(coord)) +
-                                      static_cast<int32_t>(AscendC::GetSubBlockIdx() * mReal);
+                const int32_t qBase =
+                    static_cast<int32_t>(tla::get<3>(coord)) + static_cast<int32_t>(AscendC::GetSubBlockIdx() * mReal);
                 const int32_t kBase = static_cast<int32_t>(tla::get<2>(coord));
-                AscendC::VF_CALL<Catlass::Epilogue::RegBase::FastSiluScoreLocalVf<
-                    Element, ElementAccumulator, HAS_RAB>>(
+                AscendC::VF_CALL<
+                    Catlass::Epilogue::RegBase::FastSiluScoreLocalVf<Element, ElementAccumulator, HAS_RAB>>(
                     ubProbPtr, ubRabPtr, ubSPtr, alpha, scale, mReal, RoundUp<ELEM_PER_BLOCK>(nSize), qBase, kBase,
                     p.seqlenQ, p.seqlenK, predictor.windowSizeLeft, predictor.windowSizeRight, p.numContext,
                     p.numTarget, p.targetGroupSize);
@@ -235,11 +235,11 @@ public:
         } else if constexpr (IS_CAUSAL) {
             if (needCausalMask) {
                 auto p = predictor.params;
-                const int32_t qBase = static_cast<int32_t>(tla::get<3>(coord)) +
-                                      static_cast<int32_t>(AscendC::GetSubBlockIdx() * mReal);
+                const int32_t qBase =
+                    static_cast<int32_t>(tla::get<3>(coord)) + static_cast<int32_t>(AscendC::GetSubBlockIdx() * mReal);
                 const int32_t kBase = static_cast<int32_t>(tla::get<2>(coord));
-                AscendC::VF_CALL<Catlass::Epilogue::RegBase::FastSiluScoreCausalVf<
-                    Element, ElementAccumulator, HAS_RAB>>(
+                AscendC::VF_CALL<
+                    Catlass::Epilogue::RegBase::FastSiluScoreCausalVf<Element, ElementAccumulator, HAS_RAB>>(
                     ubProbPtr, ubRabPtr, ubSPtr, alpha, scale, mReal, RoundUp<ELEM_PER_BLOCK>(nSize), qBase, kBase,
                     p.seqlenQ, p.seqlenK, p.numContext, p.numTarget, p.targetGroupSize);
             } else {
@@ -252,8 +252,8 @@ public:
                 auto packedPtr = (__ubuf__ uint32_t*)ubPackedMaskTensor.GetPhyAddr();
                 AscendC::VF_CALL<
                     Catlass::Epilogue::RegBase::FastSiluScorePackedVf<Element, ElementAccumulator, HAS_RAB>>(
-                    ubProbPtr, ubRabPtr, ubSPtr, packedPtr, alpha, scale, mReal,
-                    RoundUp<ELEM_PER_BLOCK>(nSize), predictor.GetPackedMaskStrideWords());
+                    ubProbPtr, ubRabPtr, ubSPtr, packedPtr, alpha, scale, mReal, RoundUp<ELEM_PER_BLOCK>(nSize),
+                    predictor.GetPackedMaskStrideWords());
                 AscendC::SetFlag<AscendC::HardEvent::V_MTE2>(EVENT_ID2);
             } else {
                 AscendC::VF_CALL<
@@ -261,7 +261,8 @@ public:
                     ubProbPtr, ubRabPtr, ubRabPtr, ubSPtr, alpha, scale, count, repeatTimes);
             }
         } else {
-            AscendC::VF_CALL<Catlass::Epilogue::RegBase::FastSiluScoreForwardVf<Element, ElementAccumulator, HAS_RAB, false>>(
+            AscendC::VF_CALL<
+                Catlass::Epilogue::RegBase::FastSiluScoreForwardVf<Element, ElementAccumulator, HAS_RAB, false>>(
                 ubProbPtr, ubRabPtr, ubRabPtr, ubSPtr, alpha, scale, count, repeatTimes);
         }
 

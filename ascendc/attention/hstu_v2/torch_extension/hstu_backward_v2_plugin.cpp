@@ -59,12 +59,12 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> hstu_backward_v2_impl
     auto inNumContext = acNumContext.contiguous();
     auto inNumTarget = acNumTarget.contiguous();
     auto inqShare = at::zeros_like(inQ, at::TensorOptions().dtype(at::kFloat));
-    auto inKGradAccum = deterministic ? at::Tensor()
-                                      : at::zeros({inK.size(1), inK.size(0), inK.size(2)},
-                                                  inK.options().dtype(at::kFloat));
-    auto inVGradAccum = deterministic ? at::Tensor()
-                                      : at::zeros({inV.size(1), inV.size(0), inV.size(2)},
-                                                  inV.options().dtype(at::kFloat));
+    auto inKGradAccum = deterministic
+                            ? at::Tensor()
+                            : at::zeros({inK.size(1), inK.size(0), inK.size(2)}, inK.options().dtype(at::kFloat));
+    auto inVGradAccum = deterministic
+                            ? at::Tensor()
+                            : at::zeros({inV.size(1), inV.size(0), inV.size(2)}, inV.options().dtype(at::kFloat));
     auto inMetadata = acMetadata.defined() ? acMetadata.contiguous() : _empty;
     tensor_list _empty_tensor_ls{at::empty({0}, inQ.options().dtype(at::kInt))};
     tensor_list inSparseInfoVec = sparseInfo.value_or(_empty_tensor_ls);
@@ -90,10 +90,10 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> hstu_backward_v2_impl
     auto outRabGrad = inRab.defined() ? at::zeros_like(inRab) : at::Tensor();
 
     // op exec —— metadata 紧跟 inqShare(与 OpDef 输入顺序一致: ...q_share, metadata),置于所有 attr 之前
-    EXEC_NPU_CMD(aclnnHstuBackwardV2, inGrad, inQ, inK, inV, inRab, seqOffsetQ, seqOffsetK, inNumContext,
-                 inNumTarget, inqShare, inMetadata, inKGradAccum, inVGradAccum, inSparseInfo, maxSeqLenQ, maxSeqLenK,
-                 attrScale, attrTargetGroupSize, attrAlpha, attrWinLeft, attrWinRight, deterministic,
-                 outQGrad, outKGrad, outVGrad, outRabGrad);
+    EXEC_NPU_CMD(aclnnHstuBackwardV2, inGrad, inQ, inK, inV, inRab, seqOffsetQ, seqOffsetK, inNumContext, inNumTarget,
+                 inqShare, inMetadata, inKGradAccum, inVGradAccum, inSparseInfo, maxSeqLenQ, maxSeqLenK, attrScale,
+                 attrTargetGroupSize, attrAlpha, attrWinLeft, attrWinRight, deterministic, outQGrad, outKGrad, outVGrad,
+                 outRabGrad);
     // op return
     return std::make_tuple(outQGrad, outKGrad, outVGrad, outRabGrad);
 }
@@ -129,11 +129,11 @@ TORCH_LIBRARY_IMPL(ops_rec, PrivateUse1, m)
 
 namespace {
 std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> hstu_backward_v2_meta(
-    const at::Tensor&, const at::Tensor& q, const at::Tensor& k, const at::Tensor& v, const int64_t,
-    const int64_t, const at::Tensor&, const at::Tensor&, const c10::optional<at::Tensor>& rab,
-    const c10::optional<at::Tensor>&, const c10::optional<at::Tensor>&, const c10::optional<double>&,
-    const c10::optional<int64_t>&, const c10::optional<double>&, const int64_t, const int64_t,
-    const c10::optional<at::Tensor>&, const c10::optional<tensor_list>&, const bool)
+    const at::Tensor&, const at::Tensor& q, const at::Tensor& k, const at::Tensor& v, const int64_t, const int64_t,
+    const at::Tensor&, const at::Tensor&, const c10::optional<at::Tensor>& rab, const c10::optional<at::Tensor>&,
+    const c10::optional<at::Tensor>&, const c10::optional<double>&, const c10::optional<int64_t>&,
+    const c10::optional<double>&, const int64_t, const int64_t, const c10::optional<at::Tensor>&,
+    const c10::optional<tensor_list>&, const bool)
 {
     auto qGrad = at::empty_symint(q.sym_sizes(), q.options().device(c10::kMeta));
     auto kGrad = at::empty_symint(k.sym_sizes(), k.options().device(c10::kMeta));
@@ -143,7 +143,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> hstu_backward_v2_meta
                        : at::Tensor();
     return std::make_tuple(qGrad, kGrad, vGrad, rabGrad);
 }
-}
+}  // namespace
 
 TORCH_LIBRARY_IMPL(ops_rec, Meta, m)
 {

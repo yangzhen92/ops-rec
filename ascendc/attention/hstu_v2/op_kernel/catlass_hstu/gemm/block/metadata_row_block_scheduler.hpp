@@ -89,8 +89,7 @@ public:
      */
     CATLASS_DEVICE
     MetadataOuterBlockScheduler(uint32_t batchSize, uint32_t headNum, GM_ADDR seqOffsetM, GM_ADDR seqOffsetN,
-                              GM_ADDR metadata, uint32_t runtimeBlockM = BLOCK_M,
-                              uint32_t runtimeBlockN = BLOCK_N)
+                                GM_ADDR metadata, uint32_t runtimeBlockM = BLOCK_M, uint32_t runtimeBlockN = BLOCK_N)
     {
         this->batchSize = batchSize;
         this->headNum = headNum;
@@ -273,7 +272,8 @@ private:
     {
         using namespace flash_meta_layout;
         uint32_t metadataCoreNum = static_cast<uint32_t>(meta.GetValue(HEAD_DIRECT_AIC_CORE_NUM_INDEX));
-        if (metadataCoreNum == 0U) metadataCoreNum = AscendC::GetBlockNum();
+        if (metadataCoreNum == 0U)
+            metadataCoreNum = AscendC::GetBlockNum();
         uint32_t base = HEAD_METADATA_STRIDE + (sec * metadataCoreNum + coreId) * FA_METADATA_STRIDE;
         uint32_t bn2S = static_cast<uint32_t>(meta.GetValue(base + FA_BN2_START_INDEX));
         uint32_t mS = static_cast<uint32_t>(meta.GetValue(base + FA_M_START_INDEX));
@@ -397,8 +397,8 @@ struct RowSchedulerMaker {
 template <class E, uint32_t M, uint32_t N>
 struct RowSchedulerMaker<MetadataOuterBlockScheduler<E, M, N>> {
     using S = MetadataOuterBlockScheduler<E, M, N>;
-    CATLASS_DEVICE static S Make(uint32_t b, uint32_t h, GM_ADDR seqM, GM_ADDR seqN, GM_ADDR metadata,
-                                 uint32_t blockM, uint32_t blockN)
+    CATLASS_DEVICE static S Make(uint32_t b, uint32_t h, GM_ADDR seqM, GM_ADDR seqN, GM_ADDR metadata, uint32_t blockM,
+                                 uint32_t blockN)
     {
         return S(b, h, seqM, seqN, metadata, blockM, blockN);
     }
@@ -407,8 +407,8 @@ struct RowSchedulerMaker<MetadataOuterBlockScheduler<E, M, N>> {
 template <class E, uint32_t M, uint32_t N>
 struct RowSchedulerMaker<StreamKOuterBlockScheduler<E, M, N>> {
     using S = StreamKOuterBlockScheduler<E, M, N>;
-    CATLASS_DEVICE static S Make(uint32_t b, uint32_t h, GM_ADDR seqM, GM_ADDR seqN, GM_ADDR metadata,
-                                 uint32_t blockM, uint32_t blockN)
+    CATLASS_DEVICE static S Make(uint32_t b, uint32_t h, GM_ADDR seqM, GM_ADDR seqN, GM_ADDR metadata, uint32_t blockM,
+                                 uint32_t blockN)
     {
         return S(b, h, seqM, seqN, blockM, blockN, metadata);
     }
@@ -416,7 +416,7 @@ struct RowSchedulerMaker<StreamKOuterBlockScheduler<E, M, N>> {
 
 template <class Sched>
 CATLASS_DEVICE Sched MakeRowScheduler(uint32_t b, uint32_t h, GM_ADDR seqM, GM_ADDR seqN, GM_ADDR metadata,
-                                     uint32_t blockM, uint32_t blockN)
+                                      uint32_t blockM, uint32_t blockN)
 {
     return RowSchedulerMaker<Sched>::Make(b, h, seqM, seqN, metadata, blockM, blockN);
 }

@@ -41,8 +41,10 @@ struct BackwardKvTransEpilogueBuffer {
     using TransV = Gemm::Block::detail::BufferPosition<Accumulator, L0_NK / 2U, Score::lowerBound>;
     using TransOutBuffer = Gemm::Block::detail::BufferPosition<Element, L0_NK / 2U, TransV::lowerBound>;
     using Prob = Gemm::Block::detail::BufferPosition<Element, L0_MN, Score::lowerBound>;
-    using Grab = Gemm::Block::detail::BufferPosition<Element, L0_MN,
-        (TransOutBuffer::lowerBound > Prob::lowerBound ? TransOutBuffer::lowerBound : Prob::lowerBound)>;
+    using Grab =
+        Gemm::Block::detail::BufferPosition<Element, L0_MN,
+                                            (TransOutBuffer::lowerBound > Prob::lowerBound ? TransOutBuffer::lowerBound
+                                                                                           : Prob::lowerBound)>;
     using GrabPart = Gemm::Block::detail::BufferPosition<Element, L0_MN, Grab::lowerBound>;
     using Gs = Gemm::Block::detail::BufferPosition<Accumulator, L0_MN, GrabPart::lowerBound>;
     static constexpr uint32_t MASK_END = Gs::lowerBound + tla::get<0>(L0TileShape{}) * 64U;
@@ -60,10 +62,12 @@ struct BackwardQTransEpilogueBuffer {
     static constexpr uint32_t TILE_Q_GRAD_MAX_ELEM =
         RoundDown(ArchTag::UB_SIZE / Stages / (sizeof(Accumulator) + sizeof(Element)), ELEM_PER_C0);
     using TransIn = Gemm::Block::detail::BufferPosition<Accumulator, TILE_Q_GRAD_MAX_ELEM, 0, Stages>;
-    using TransOutBuffer = Gemm::Block::detail::BufferPosition<Element, TILE_Q_GRAD_MAX_ELEM, TransIn::lowerBound, Stages>;
+    using TransOutBuffer =
+        Gemm::Block::detail::BufferPosition<Element, TILE_Q_GRAD_MAX_ELEM, TransIn::lowerBound, Stages>;
     static constexpr uint32_t STAGES = Stages;
     static constexpr uint32_t TRANS_IN[Stages] = {TransIn::template Get<0>(), TransIn::template Get<1>()};
-    static constexpr uint32_t TRANS_OUT[Stages] = {TransOutBuffer::template Get<0>(), TransOutBuffer::template Get<1>()};
+    static constexpr uint32_t TRANS_OUT[Stages] = {TransOutBuffer::template Get<0>(),
+                                                   TransOutBuffer::template Get<1>()};
     static_assert(TransOutBuffer::lowerBound <= ArchTag::UB_SIZE, "backward Q transpose layout exceeds UB capacity");
 };
 
@@ -92,7 +96,8 @@ struct BlockEpilogueTransOut {
 };
 
 template <class ArchTag_, class TileBuffer_, class ElementAccumulator_, class Element_, bool HAS_RAB, bool SAME_AB>
-struct BlockEpilogueTransOut<ArchTag_, TileBuffer_, TransTag::UB_TO_GM, ElementAccumulator_, Element_, HAS_RAB, SAME_AB> {
+struct BlockEpilogueTransOut<ArchTag_, TileBuffer_, TransTag::UB_TO_GM, ElementAccumulator_, Element_, HAS_RAB,
+                             SAME_AB> {
 public:
     using ArchTag = ArchTag_;
     using ElementAccumulator = ElementAccumulator_;
@@ -126,9 +131,8 @@ public:
         auto cols = tla::get<1>(dstTensor.shape());
         auto rowsPerAiv = CeilDiv<2>(totalRows);
         auto rowOffset = AscendC::GetSubBlockIdx() * rowsPerAiv;
-        auto rows = rowOffset < totalRows
-                        ? (rowsPerAiv < totalRows - rowOffset ? rowsPerAiv : totalRows - rowOffset)
-                        : 0U;
+        auto rows =
+            rowOffset < totalRows ? (rowsPerAiv < totalRows - rowOffset ? rowsPerAiv : totalRows - rowOffset) : 0U;
         auto dstOffset = dstTensor.layout()(dstTensor.coord()) + rowOffset * stride;
 
         AscendC::DataCopyParams intriParams;
@@ -162,9 +166,8 @@ public:
         auto cols = tla::get<1>(dstTensor.shape());
         auto rowsPerAiv = CeilDiv<2>(totalRows);
         auto rowOffset = AscendC::GetSubBlockIdx() * rowsPerAiv;
-        auto rows = rowOffset < totalRows
-                        ? (rowsPerAiv < totalRows - rowOffset ? rowsPerAiv : totalRows - rowOffset)
-                        : 0U;
+        auto rows =
+            rowOffset < totalRows ? (rowsPerAiv < totalRows - rowOffset ? rowsPerAiv : totalRows - rowOffset) : 0U;
         if (rows == 0) {
             return;
         }
@@ -198,7 +201,7 @@ private:
 
     template <bool APPLY_SCALE>
     __simd_vf__ static inline void ConvertVf(__ubuf__ ElementAccumulator* src, __ubuf__ Element* dst,
-                                              ElementAccumulator scale, uint32_t count, uint32_t repeatTimes)
+                                             ElementAccumulator scale, uint32_t count, uint32_t repeatTimes)
     {
         constexpr uint32_t ONE_REP_ELM = AscendC::GetVecLen() / sizeof(ElementAccumulator);
         AscendC::MicroAPI::RegTensor<ElementAccumulator> value;
@@ -214,8 +217,8 @@ private:
                 AscendC::MicroAPI::Mul(value, value, scaleReg, mask);
             }
             if constexpr (!std::is_same<Element, ElementAccumulator>::value) {
-                Catlass::Epilogue::RegBase::CastDownStore<Element, ElementAccumulator>(
-                    dst + i * ONE_REP_ELM, value, mask);
+                Catlass::Epilogue::RegBase::CastDownStore<Element, ElementAccumulator>(dst + i * ONE_REP_ELM, value,
+                                                                                       mask);
             } else {
                 AscendC::MicroAPI::StoreAlign(dst + i * ONE_REP_ELM, value, mask);
             }

@@ -124,8 +124,8 @@ struct BackwardMmadMainloop {
         GM_ADDR ptrVGradAccum;
         GM_ADDR ptrNumContext;
         GM_ADDR ptrNumTarget;
-        GM_ADDR ptrMetadata;       // 可选: flash_attn_metadata 分核输出;nullptr → 旧设备现算路径
-        GM_ADDR ptrSparseInfo;     // 可选: direct packed sparse info (TensorList), 9 个 int32 tensor
+        GM_ADDR ptrMetadata;    // 可选: flash_attn_metadata 分核输出;nullptr → 旧设备现算路径
+        GM_ADDR ptrSparseInfo;  // 可选: direct packed sparse info (TensorList), 9 个 int32 tensor
 
         CATLASS_DEVICE
         Params() {}
@@ -133,8 +133,8 @@ struct BackwardMmadMainloop {
         CATLASS_DEVICE
         Params(GM_ADDR ptrGrad_, GM_ADDR ptrQ_, GM_ADDR ptrK_, GM_ADDR ptrV_, GM_ADDR ptrSeqOffsetQ_,
                GM_ADDR ptrSeqOffsetK_, GM_ADDR ptrQShare_, GM_ADDR ptrKGradAccum_, GM_ADDR ptrVGradAccum_,
-               GM_ADDR ptrNumContext_, GM_ADDR ptrNumTarget_,
-               GM_ADDR ptrMetadata_ = nullptr, GM_ADDR ptrSparseInfo_ = nullptr)
+               GM_ADDR ptrNumContext_, GM_ADDR ptrNumTarget_, GM_ADDR ptrMetadata_ = nullptr,
+               GM_ADDR ptrSparseInfo_ = nullptr)
             : ptrGrad(ptrGrad_),
               ptrQ(ptrQ_),
               ptrK(ptrK_),
@@ -292,7 +292,8 @@ struct BackwardMmadMainloop {
         bool streamKPartialActive = false;
         for (; kBlockScheduler.IsValid(); ++kBlockScheduler) {
             if constexpr (ENABLE_STREAM_K) {
-                if (kBlockScheduler.IsFirstInOuter()) streamKPartialActive = false;
+                if (kBlockScheduler.IsFirstInOuter())
+                    streamKPartialActive = false;
             }
             qBlockScheduler.Init(kBlockScheduler);
             if constexpr (IS_ARBITRARY) {
@@ -348,8 +349,8 @@ struct BackwardMmadMainloop {
                 auto isFirstQBlock = ENABLE_STREAM_K ? !streamKPartialActive
                                                      : (qBlockScheduler.IsFirstSubBlock() &&
                                                         predictor.IsInnerLoopFirstQBlock(blockPredParams));
-                bool isLastQBlock = qBlockScheduler.IsLastSubBlock() &&
-                                    predictor.IsInnerLoopLastQBlock(blockPredParams);
+                bool isLastQBlock =
+                    qBlockScheduler.IsLastSubBlock() && predictor.IsInnerLoopLastQBlock(blockPredParams);
                 if constexpr (ENABLE_STREAM_K) {
                     isLastQBlock = qBlockScheduler.IsLast();
                     if constexpr (IS_CAUSAL && !IS_LOCAL && !IS_ARBITRARY) {
@@ -357,8 +358,8 @@ struct BackwardMmadMainloop {
                     }
                 }
                 if constexpr (ENABLE_STREAM_K) {
-                    const uint32_t rowOffset = headId * totalSeqLenK +
-                        static_cast<uint32_t>(tla::get<0>(tK.coord())) / heads;
+                    const uint32_t rowOffset =
+                        headId * totalSeqLenK + static_cast<uint32_t>(tla::get<0>(tK.coord())) / heads;
                     blockMmadVGrad.SetStreamKDestination(params.ptrVGradAccum, rowOffset);
                     blockMmadKGrad.SetStreamKDestination(params.ptrKGradAccum, rowOffset);
                 }

@@ -49,12 +49,14 @@ struct ForwardPvMmadBuffer {
     static_assert(TransIn::lowerBound <= ArchTag::UB_SIZE, "forward PV UB layout exceeds capacity");
 };
 
-template <class ArchTag_, bool PAGED_CACHE_FLAG_, bool ENABLE_UNIT_FLAG_, bool STREAM_K_ATOMIC_, class L1TileShape_, class L0TileShape_,
-          class ElementA_, class ElementB_, class ElementC_, class TileBuffer_, class TileCopy_, class TileMmad_>
-struct BlockMmadTla<MmadHSTUPV<ArchTag_, PAGED_CACHE_FLAG_, ENABLE_UNIT_FLAG_, 0, false, false, STREAM_K_ATOMIC_>, L1TileShape_, L0TileShape_,
-                    ElementA_, ElementB_, ElementC_, TileBuffer_, TileCopy_, TileMmad_> {
+template <class ArchTag_, bool PAGED_CACHE_FLAG_, bool ENABLE_UNIT_FLAG_, bool STREAM_K_ATOMIC_, class L1TileShape_,
+          class L0TileShape_, class ElementA_, class ElementB_, class ElementC_, class TileBuffer_, class TileCopy_,
+          class TileMmad_>
+struct BlockMmadTla<MmadHSTUPV<ArchTag_, PAGED_CACHE_FLAG_, ENABLE_UNIT_FLAG_, 0, false, false, STREAM_K_ATOMIC_>,
+                    L1TileShape_, L0TileShape_, ElementA_, ElementB_, ElementC_, TileBuffer_, TileCopy_, TileMmad_> {
 public:
-    using DispatchPolicy = MmadHSTUPV<ArchTag_, PAGED_CACHE_FLAG_, ENABLE_UNIT_FLAG_, 0, false, false, STREAM_K_ATOMIC_>;
+    using DispatchPolicy =
+        MmadHSTUPV<ArchTag_, PAGED_CACHE_FLAG_, ENABLE_UNIT_FLAG_, 0, false, false, STREAM_K_ATOMIC_>;
     using ArchTag = typename DispatchPolicy::ArchTag;
     using ElementA = ElementA_;
     using ElementB = ElementB_;
@@ -78,12 +80,11 @@ public:
     CATLASS_DEVICE
     BlockMmadTla(Arch::Resource<ArchTag>& resource, uint32_t headNum, uint32_t headDim,
                  uint32_t const (&V_L1_EVENT_ID_)[2], uint32_t const (&CUBE_CROSS_EVENT_ID_)[PROB_STAGES],
-                 uint32_t L0_HANDOFF_ID_, uint32_t L0C_FIX_ID_, uint32_t transReadyId_,
-                 uint32_t blockM, uint32_t blockN, uint32_t dimQk)
+                 uint32_t L0_HANDOFF_ID_, uint32_t L0C_FIX_ID_, uint32_t transReadyId_, uint32_t blockM,
+                 uint32_t blockN, uint32_t dimQk)
     {
         detail::ForwardRuntimeBufferLayout<ElementA, ElementAccumulator> layout(blockM, blockN, dimQk, headDim);
-        const bool useStaticLayout = blockM == tla::get<0>(L1TileShape_{}) &&
-                                     blockN == tla::get<1>(L1TileShape_{});
+        const bool useStaticLayout = blockM == tla::get<0>(L1TileShape_{}) && blockN == tla::get<1>(L1TileShape_{});
         for (uint32_t i = 0; i < 2; i++) {
             const uint32_t offset = useStaticLayout ? TileBuffer::L1V[i] : layout.l1.value[i];
             l1VTensor[i] = resource.l1Buf.template GetBufferByByte<ElementB>(offset);
@@ -121,7 +122,8 @@ public:
     CATLASS_DEVICE void SetStreamKDestination(GM_ADDR dst, uint32_t rowOffset)
     {
         if constexpr (STREAM_K_ATOMIC) {
-            if (dst != nullptr) atomicDst.SetGlobalBuffer((__gm__ ElementAccumulator*)dst);
+            if (dst != nullptr)
+                atomicDst.SetGlobalBuffer((__gm__ ElementAccumulator*)dst);
             atomicRowOffset = rowOffset;
         }
     }
@@ -192,10 +194,10 @@ public:
 
         if (isFlush) {
             if constexpr (STREAM_K_ATOMIC) {
-                auto dstLayout = tla::MakeLayout(tla::MakeShape(mReal, kReal),
-                                                  tla::MakeStride((int64_t)kReal, tla::Int<1>{}));
-                auto tensorDst = tla::MakeTensor(atomicDst, dstLayout,
-                                                  tla::MakeCoord((int64_t)atomicRowOffset, 0), Arch::PositionGM{});
+                auto dstLayout =
+                    tla::MakeLayout(tla::MakeShape(mReal, kReal), tla::MakeStride((int64_t)kReal, tla::Int<1>{}));
+                auto tensorDst = tla::MakeTensor(atomicDst, dstLayout, tla::MakeCoord((int64_t)atomicRowOffset, 0),
+                                                 Arch::PositionGM{});
                 using CopyL0CToDst = typename TileCopy_::template CopyL0CToDst<decltype(tensorDst)>;
                 AscendC::SetAtomicAdd<ElementAccumulator>();
                 CopyL0CToDst{}(tensorDst, tensorL0c, 0);

@@ -161,8 +161,8 @@ struct CausalMaskPredictor {
 
         CATLASS_DEVICE uint32_t GetTargetQBlockEnd(const BlockPredParams& p) const
         {
-            return Catlass::Detail::GetTargetQBlockEndRuntime(p.kSeqId, p.seqlenQ, p.seqlenK, p.numTarget,
-                                                               p.numContext, p.targetGroupSize, blockM, blockN);
+            return Catlass::Detail::GetTargetQBlockEndRuntime(p.kSeqId, p.seqlenQ, p.seqlenK, p.numTarget, p.numContext,
+                                                              p.targetGroupSize, blockM, blockN);
         }
 
         CATLASS_DEVICE bool IsTargetSkip(const BlockPredParams& p) const
@@ -229,7 +229,8 @@ struct CausalMaskPredictor {
 
     template <class Coord>
     CATLASS_DEVICE void CopyPackedMask(AscendC::LocalTensor<int32_t>&, Coord const&, uint32_t) const
-    {}
+    {
+    }
 
     // =========================================================================
     // 4. ApplyMask — 写入 mask buffer
@@ -305,8 +306,7 @@ private:
     CATLASS_DEVICE void ApplyHistoryMask(AscendC::LocalTensor<Elem>& mask, int32_t rowCoord, int32_t colCoord,
                                          int32_t mSize, int32_t nSize, uint32_t alignRows, uint32_t alignCols) const
     {
-        int64_t deltaQK = static_cast<int64_t>(this->params.seqlenK) -
-                          static_cast<int64_t>(this->params.seqlenQ);
+        int64_t deltaQK = static_cast<int64_t>(this->params.seqlenK) - static_cast<int64_t>(this->params.seqlenQ);
         int64_t startMaskWidth = deltaQK + rowCoord - colCoord;
 
         int startMaskRow = 0;
@@ -360,8 +360,8 @@ private:
         const uint32_t numBlockForContextMaskK = (bp.seqlenK - bp.numTarget + blockN - 1U) / blockN;
         bool kIdNotInContext = (bp.numContext <= 0) || (bp.kSeqId >= numBlockForContextMaskK);
         const int64_t delta = static_cast<int64_t>(bp.seqlenK) - static_cast<int64_t>(bp.seqlenQ);
-        const int64_t deltaBlock = delta <= 0 ? delta / static_cast<int64_t>(blockN)
-                                              : (delta + blockN - 1) / static_cast<int64_t>(blockN);
+        const int64_t deltaBlock =
+            delta <= 0 ? delta / static_cast<int64_t>(blockN) : (delta + blockN - 1) / static_cast<int64_t>(blockN);
         const uint32_t qToKBlockRatio = blockM / blockN;
         const int64_t diagonalBegin = static_cast<int64_t>(bp.qSeqId) * qToKBlockRatio + deltaBlock;
         const int64_t kBlockId = static_cast<int64_t>(bp.kSeqId);

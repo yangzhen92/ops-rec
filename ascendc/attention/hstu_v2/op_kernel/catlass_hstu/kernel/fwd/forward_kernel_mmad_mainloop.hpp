@@ -89,8 +89,8 @@ struct ForwardMmadMainloop {
         CATLASS_DEVICE Params() {}
         CATLASS_DEVICE
         Params(GM_ADDR ptrQ_, GM_ADDR ptrK_, GM_ADDR ptrV_, GM_ADDR ptrSeqOffsetQ_, GM_ADDR ptrSeqOffsetK_,
-               GM_ADDR ptrNumContext_, GM_ADDR ptrNumTarget_, GM_ADDR ptrOutputAccum_,
-               GM_ADDR ptrMetadata_ = nullptr, GM_ADDR ptrSparseInfo_ = nullptr)
+               GM_ADDR ptrNumContext_, GM_ADDR ptrNumTarget_, GM_ADDR ptrOutputAccum_, GM_ADDR ptrMetadata_ = nullptr,
+               GM_ADDR ptrSparseInfo_ = nullptr)
             : ptrQ(ptrQ_),
               ptrK(ptrK_),
               ptrV(ptrV_),
@@ -99,7 +99,8 @@ struct ForwardMmadMainloop {
               ptrNumContext(ptrNumContext_),
               ptrNumTarget(ptrNumTarget_),
               ptrOutputAccum(ptrOutputAccum_),
-              ptrMetadata(ptrMetadata_), ptrSparseInfo(ptrSparseInfo_)
+              ptrMetadata(ptrMetadata_),
+              ptrSparseInfo(ptrSparseInfo_)
         {
         }
     };
@@ -114,7 +115,8 @@ struct ForwardMmadMainloop {
         dimV = tilingData.dimV;
         totalSeqLenQ = tilingData.totalSeqLenQ;
         totalSeqLenK = tilingData.totalSeqLenK;
-        maxSeqLenQ = tilingData.maxSeqLenQ; maxSeqLenK = tilingData.maxSeqLenK;
+        maxSeqLenQ = tilingData.maxSeqLenQ;
+        maxSeqLenK = tilingData.maxSeqLenK;
         blockM = tilingData.blockM;
         blockN = tilingData.blockN;
         targetGroupSize = tilingData.targetGroupSize;
@@ -123,7 +125,7 @@ struct ForwardMmadMainloop {
         if constexpr (IS_ARBITRARY) {
             maskHeads = tilingData.maskHeads;
         }
-        ptrTiling=ptrTiling_;
+        ptrTiling = ptrTiling_;
     }
 
     // ============ internal helpers ============
@@ -196,7 +198,12 @@ struct ForwardMmadMainloop {
 
             CATLASS_DEVICE StageCoord() = default;
             CATLASS_DEVICE StageCoord(decltype(initCoord) s, bool f, bool l, uint32_t row = 0U)
-                : shape(s), isFirst(f), isLast(l), outputRow(row) {}
+                : shape(s),
+                  isFirst(f),
+                  isLast(l),
+                  outputRow(row)
+            {
+            }
         };
         StageCoord stage[3] = {{initCoord, true, false}, {initCoord, true, false}, {initCoord, true, false}};
 
@@ -221,7 +228,7 @@ struct ForwardMmadMainloop {
                 newShape = tla::MakeCoord(tla::get<0>(tQ.shape()), tla::get<0>(tK.shape()));
                 auto qMeta = qBlockScheduler.GetMeta();
                 outputRow = static_cast<uint32_t>(tla::get<1>(qMeta)) * totalSeqLenQ +
-                    static_cast<uint32_t>(tla::get<0>(tQ.coord())) / heads;
+                            static_cast<uint32_t>(tla::get<0>(tQ.coord())) / heads;
             }
 
             // Stage 2 — MTE2: DMA V from GM to L1
@@ -294,11 +301,9 @@ struct ForwardMmadMainloop {
         const uint32_t pvReadyEvents[3] = {ForwardMmadEvents::PV_READY_0, ForwardMmadEvents::PV_READY_1,
                                            ForwardMmadEvents::PV_READY_2};
         BlockMmadQK blockMmadQK(resource, heads, dimQK, kL1Events, qL1Events, qkReadyEvents,
-                                ForwardMmadEvents::QK_L0_HANDOFF, ForwardMmadEvents::QK_L0C_FIX,
-                                blockM, blockN, dimV);
-        BlockMmadPV blockMmadPV(resource, heads, dimV, vL1Events, pvReadyEvents,
-                                ForwardMmadEvents::PV_L0_HANDOFF, ForwardMmadEvents::PV_L0C_FIX, TRANS_READY_ID,
-                                blockM, blockN, dimQK);
+                                ForwardMmadEvents::QK_L0_HANDOFF, ForwardMmadEvents::QK_L0C_FIX, blockM, blockN, dimV);
+        BlockMmadPV blockMmadPV(resource, heads, dimV, vL1Events, pvReadyEvents, ForwardMmadEvents::PV_L0_HANDOFF,
+                                ForwardMmadEvents::PV_L0C_FIX, TRANS_READY_ID, blockM, blockN, dimQK);
         if constexpr (ENABLE_STREAM_K) {
             blockMmadPV.SetStreamKDestination(params.ptrOutputAccum, 0U);
         }
@@ -308,10 +313,10 @@ struct ForwardMmadMainloop {
         QBlockScheduler qBlockScheduler = Gemm::Block::MakeRowScheduler<QBlockScheduler>(
             batch, heads, params.ptrSeqOffsetQ, params.ptrSeqOffsetK, params.ptrMetadata, blockM, blockN);
         KBlockScheduler kBlockScheduler(batch, heads, params.ptrSeqOffsetK, blockM, blockN);
-        InitializeForwardSchedulers<IS_ARBITRARY, IS_LOCAL, IS_CAUSAL, IS_CONTEXT, IS_TARGET, ENABLE_STREAM_K,
-                                    BLOCK_M, BLOCK_N>(
-            qBlockScheduler, kBlockScheduler, params, maskHeads, maxSeqLenQ, maxSeqLenK, windowSizeLeft,
-            windowSizeRight, targetGroupSize, blockM, blockN);
+        InitializeForwardSchedulers<IS_ARBITRARY, IS_LOCAL, IS_CAUSAL, IS_CONTEXT, IS_TARGET, ENABLE_STREAM_K, BLOCK_M,
+                                    BLOCK_N>(qBlockScheduler, kBlockScheduler, params, maskHeads, maxSeqLenQ,
+                                             maxSeqLenK, windowSizeLeft, windowSizeRight, targetGroupSize, blockM,
+                                             blockN);
         const bool hasWork = kBlockScheduler.IsValid() && qBlockScheduler.IsValid();
         if (hasWork) {
             PipeEventGuard guard;
@@ -334,7 +339,7 @@ struct ForwardMmadMainloop {
     uint32_t dimV{0};
     uint32_t totalSeqLenQ{0};
     uint32_t totalSeqLenK{0};
-    uint32_t maxSeqLenQ{0},maxSeqLenK{0},maskHeads{0},targetGroupSize{0};
+    uint32_t maxSeqLenQ{0}, maxSeqLenK{0}, maskHeads{0}, targetGroupSize{0};
     int32_t windowSizeLeft{-1}, windowSizeRight{-1};
     uint32_t blockM{BLOCK_M}, blockN{BLOCK_N};
     GM_ADDR ptrTiling{nullptr};

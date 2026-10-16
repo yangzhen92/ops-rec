@@ -55,25 +55,31 @@ CATLASS_DEVICE uint32_t GetTargetQBlockEnd(uint32_t kBlockId, uint32_t seqlenQ, 
     return static_cast<uint32_t>((qElementEnd + Q_BLOCK_SIZE - 1) / Q_BLOCK_SIZE);
 }
 
-CATLASS_DEVICE uint32_t GetTargetQBlockEndRuntime(
-    uint32_t kBlockId, uint32_t seqlenQ, uint32_t seqlenK, uint32_t numTarget,
-    uint32_t numContext, uint32_t targetGroupSize, uint32_t qBlockSize, uint32_t kBlockSize)
+CATLASS_DEVICE uint32_t GetTargetQBlockEndRuntime(uint32_t kBlockId, uint32_t seqlenQ, uint32_t seqlenK,
+                                                  uint32_t numTarget, uint32_t numContext, uint32_t targetGroupSize,
+                                                  uint32_t qBlockSize, uint32_t kBlockSize)
 {
     const uint32_t totalQBlocks = (seqlenQ + qBlockSize - 1U) / qBlockSize;
-    if (numTarget == 0 || targetGroupSize == 0) return totalQBlocks;
+    if (numTarget == 0 || targetGroupSize == 0)
+        return totalQBlocks;
     const int64_t historyLen = static_cast<int64_t>(seqlenK) - numTarget;
     const int64_t kBlockBegin = static_cast<int64_t>(kBlockId) * kBlockSize;
-    if (kBlockBegin < historyLen) return totalQBlocks;
+    if (kBlockBegin < historyLen)
+        return totalQBlocks;
     const int64_t kBlockEnd = (static_cast<int64_t>(kBlockId) + 1) * kBlockSize;
     const int64_t qkOffset = static_cast<int64_t>(seqlenK) - seqlenQ;
     const int64_t groupSize = targetGroupSize;
     const int64_t targetIndex = (kBlockEnd - historyLen + groupSize - 1) / groupSize;
     int64_t qElementEnd = kBlockEnd - qkOffset;
-    if (static_cast<int64_t>(numContext) > qElementEnd) qElementEnd = numContext;
+    if (static_cast<int64_t>(numContext) > qElementEnd)
+        qElementEnd = numContext;
     const int64_t targetQEnd = historyLen - qkOffset + targetIndex * groupSize;
-    if (targetQEnd > qElementEnd) qElementEnd = targetQEnd;
-    if (qElementEnd > static_cast<int64_t>(seqlenQ)) qElementEnd = seqlenQ;
-    if (qElementEnd <= 0) return 0;
+    if (targetQEnd > qElementEnd)
+        qElementEnd = targetQEnd;
+    if (qElementEnd > static_cast<int64_t>(seqlenQ))
+        qElementEnd = seqlenQ;
+    if (qElementEnd <= 0)
+        return 0;
     return static_cast<uint32_t>((qElementEnd + qBlockSize - 1) / qBlockSize);
 }
 

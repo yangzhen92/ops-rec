@@ -33,8 +33,8 @@ struct LocalMaskPredictor {
     }
 
     template <typename Kernel, typename Coord>
-    CATLASS_DEVICE BlockPredParams MakeBlockPredParams(Coord blockCoord, Kernel*, uint32_t seqlenQ,
-                                                       uint32_t seqlenK, uint32_t swizzleDir)
+    CATLASS_DEVICE BlockPredParams MakeBlockPredParams(Coord blockCoord, Kernel*, uint32_t seqlenQ, uint32_t seqlenK,
+                                                       uint32_t swizzleDir)
     {
         const uint32_t batch = static_cast<uint32_t>(tla::get<0>(blockCoord));
         uint32_t context = 0U;
@@ -46,7 +46,12 @@ struct LocalMaskPredictor {
             target = gNumTarget.GetValue(batch);
         }
         return {static_cast<uint32_t>(tla::get<2>(blockCoord)),
-                static_cast<uint32_t>(tla::get<3>(blockCoord)), seqlenQ, seqlenK, swizzleDir, context, target,
+                static_cast<uint32_t>(tla::get<3>(blockCoord)),
+                seqlenQ,
+                seqlenK,
+                swizzleDir,
+                context,
+                target,
                 targetGroupSize};
     }
 
@@ -67,17 +72,26 @@ struct LocalMaskPredictor {
         needMask = bp.numContext > 0 || bp.numTarget > 0 || outside || minDistance < lower || maxDistance > upper;
     }
 
-    CATLASS_DEVICE bool IsSkip() const { return false; }
-    CATLASS_DEVICE bool UsesDirectScoreMask() const { return false; }
+    CATLASS_DEVICE bool IsSkip() const
+    {
+        return false;
+    }
+    CATLASS_DEVICE bool UsesDirectScoreMask() const
+    {
+        return false;
+    }
 
     template <class Coord>
-    CATLASS_DEVICE void CopyPackedMask(AscendC::LocalTensor<int32_t>&, Coord const&, uint32_t) const {}
+    CATLASS_DEVICE void CopyPackedMask(AscendC::LocalTensor<int32_t>&, Coord const&, uint32_t) const
+    {
+    }
 
     template <typename Elem, class Coord, class Shape>
     CATLASS_DEVICE bool ApplyMask(AscendC::LocalTensor<Elem>& mask, Coord const& coord, Shape const& shape,
                                   uint32_t alignRows, uint32_t alignCols) const
     {
-        if (!needMask) return false;
+        if (!needMask)
+            return false;
         const int32_t qBase = static_cast<int32_t>(tla::get<2>(coord));
         const int32_t kBase = static_cast<int32_t>(tla::get<3>(coord));
         const int32_t delta = static_cast<int32_t>(params.seqlenK) - static_cast<int32_t>(params.seqlenQ);
@@ -88,7 +102,8 @@ struct LocalMaskPredictor {
             const int32_t center = qBase + row + delta - kBase;
             int32_t begin = windowSizeLeft < 0 ? 0 : max(0, center - windowSizeLeft);
             int32_t end = windowSizeRight < 0 ? cols : min(cols, center + windowSizeRight + 1);
-            if (end > begin) AscendC::Duplicate<Elem>(mask[row * alignCols + begin], 0, end - begin);
+            if (end > begin)
+                AscendC::Duplicate<Elem>(mask[row * alignCols + begin], 0, end - begin);
         }
         return true;
     }
@@ -107,8 +122,10 @@ struct LocalMaskPredictor {
 private:
     CATLASS_DEVICE bool BlockIntersects(const BlockPredParams& bp, int32_t qBlock) const
     {
-        if (qBlock < 0 || qBlock >= static_cast<int32_t>((bp.seqlenQ + blockM - 1U) / blockM)) return false;
-        if (bp.numContext > 0 || bp.numTarget > 0) return true;
+        if (qBlock < 0 || qBlock >= static_cast<int32_t>((bp.seqlenQ + blockM - 1U) / blockM))
+            return false;
+        if (bp.numContext > 0 || bp.numTarget > 0)
+            return true;
         const int32_t delta = static_cast<int32_t>(bp.seqlenK) - static_cast<int32_t>(bp.seqlenQ);
         const int32_t qBegin = qBlock * static_cast<int32_t>(blockM);
         const int32_t qEnd = min(qBegin + static_cast<int32_t>(blockM), static_cast<int32_t>(bp.seqlenQ)) - 1;
@@ -122,7 +139,6 @@ private:
     }
 
 public:
-
     BlockPredParams params{};
     int32_t windowSizeLeft{-1};
     int32_t windowSizeRight{-1};

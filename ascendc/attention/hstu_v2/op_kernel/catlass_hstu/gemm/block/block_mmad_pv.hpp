@@ -50,19 +50,18 @@ struct BackwardKvGradMmadBuffer {
     using TransV = detail::BufferPosition<Accumulator, L0_NK / 2U, Score::lowerBound>;
     using TransOut = detail::BufferPosition<Element, L0_NK / 2U, TransV::lowerBound>;
     using ProbUb = detail::BufferPosition<Element, L0_MN, Score::lowerBound>;
-    using GrabUb = detail::BufferPosition<Element, L0_MN,
-        (TransOut::lowerBound > ProbUb::lowerBound ? TransOut::lowerBound : ProbUb::lowerBound)>;
+    using GrabUb =
+        detail::BufferPosition<Element, L0_MN,
+                               (TransOut::lowerBound > ProbUb::lowerBound ? TransOut::lowerBound : ProbUb::lowerBound)>;
     using GrabPart = detail::BufferPosition<Element, L0_MN, GrabUb::lowerBound>;
     using Gs = detail::BufferPosition<Accumulator, L0_MN, GrabPart::lowerBound>;
     static constexpr uint32_t MASK_END = Gs::lowerBound + tla::get<0>(L0TileShape{}) * 64U;
     static constexpr uint32_t TRANS_K_OFFSET = tla::get<2>(L0TileShape{}) == 128U ? GrabPart::upperBound : MASK_END;
     using TransK = detail::BufferPosition<Accumulator, L0_NK / 2U, TRANS_K_OFFSET>;
-    static constexpr uint32_t L1A[Stages] = {
-        IsKGrad ? Grab::template Get<0>() : Prob::template Get<0>(),
-        IsKGrad ? Grab::template Get<1>() : Prob::template Get<1>()};
-    static constexpr uint32_t L1B[Stages] = {
-        IsKGrad ? Query::template Get<0>() : Grad::template Get<0>(),
-        IsKGrad ? Query::template Get<1>() : Grad::template Get<1>()};
+    static constexpr uint32_t L1A[Stages] = {IsKGrad ? Grab::template Get<0>() : Prob::template Get<0>(),
+                                             IsKGrad ? Grab::template Get<1>() : Prob::template Get<1>()};
+    static constexpr uint32_t L1B[Stages] = {IsKGrad ? Query::template Get<0>() : Grad::template Get<0>(),
+                                             IsKGrad ? Query::template Get<1>() : Grad::template Get<1>()};
     static constexpr uint32_t L0A[Stages] = {0U, ArchTag::L0A_SIZE / 2U};
     static constexpr uint32_t L0B[Stages] = {0U, ArchTag::L0B_SIZE / 2U};
     static constexpr uint32_t L0C = ArchTag::L0C_SIZE / 2U + (IsKGrad ? L0_NK : 0U) * sizeof(Accumulator);
@@ -106,15 +105,15 @@ struct BackwardKvGradMmadBuffer {
  •              支持子核绑定 (BIND_SUB_CORE) 可将计算绑定到特定子核
 
  */
-template <class ArchTag_, bool PAGED_CACHE_FLAG_, bool ENABLE_UNIT_FLAG_, uint32_t SUB_CORE_ID_, bool ENABLE_SCALAR_QUANT_,
-          bool SAME_AB_, bool STREAM_K_ATOMIC_,
-          class L1TileShape_, class L0TileShape_, class ElementA_, class ElementB_, class ElementC_, class TileBuffer_,
-          class TileCopy_, class TileMmad_>
-struct BlockMmadTla<MmadHSTUPV<ArchTag_, PAGED_CACHE_FLAG_, ENABLE_UNIT_FLAG_, SUB_CORE_ID_, ENABLE_SCALAR_QUANT_, SAME_AB_, STREAM_K_ATOMIC_>,
+template <class ArchTag_, bool PAGED_CACHE_FLAG_, bool ENABLE_UNIT_FLAG_, uint32_t SUB_CORE_ID_,
+          bool ENABLE_SCALAR_QUANT_, bool SAME_AB_, bool STREAM_K_ATOMIC_, class L1TileShape_, class L0TileShape_,
+          class ElementA_, class ElementB_, class ElementC_, class TileBuffer_, class TileCopy_, class TileMmad_>
+struct BlockMmadTla<MmadHSTUPV<ArchTag_, PAGED_CACHE_FLAG_, ENABLE_UNIT_FLAG_, SUB_CORE_ID_, ENABLE_SCALAR_QUANT_,
+                               SAME_AB_, STREAM_K_ATOMIC_>,
                     L1TileShape_, L0TileShape_, ElementA_, ElementB_, ElementC_, TileBuffer_, TileCopy_, TileMmad_> {
 public:
-    using DispatchPolicy =
-        MmadHSTUPV<ArchTag_, PAGED_CACHE_FLAG_, ENABLE_UNIT_FLAG_, SUB_CORE_ID_, ENABLE_SCALAR_QUANT_, SAME_AB_, STREAM_K_ATOMIC_>;
+    using DispatchPolicy = MmadHSTUPV<ArchTag_, PAGED_CACHE_FLAG_, ENABLE_UNIT_FLAG_, SUB_CORE_ID_,
+                                      ENABLE_SCALAR_QUANT_, SAME_AB_, STREAM_K_ATOMIC_>;
     using ArchTag = typename DispatchPolicy::ArchTag;
     using L1TileShape = L1TileShape_;
     using L0TileShape = L0TileShape_;
@@ -342,7 +341,7 @@ public:
                 if constexpr (STREAM_K_ATOMIC) {
                     if (isFlush) {
                         auto dstLayout = tla::MakeLayout(tla::MakeShape(nReal, kReal),
-                                                          tla::MakeStride((int64_t)kReal, tla::Int<1>{}));
+                                                         tla::MakeStride((int64_t)kReal, tla::Int<1>{}));
                         auto tensorC = tla::MakeTensor(atomicDst, dstLayout,
                                                        tla::MakeCoord((int64_t)atomicRowOffset, 0), Arch::PositionGM{});
                         using CopyL0CToDst = typename TileCopy_::template CopyL0CToDst<decltype(tensorC)>;

@@ -38,37 +38,33 @@ uint32_t GetTilingHeadDim(const at::Tensor& q, const at::Tensor& v)
     return static_cast<uint32_t>(std::max(dimQk, dimV));
 }
 
-std::vector<int64_t> GetFwdTileSize(
-    const at::Tensor& q, const at::Tensor& k, const at::Tensor& v, bool allowDynamic)
+std::vector<int64_t> GetFwdTileSize(const at::Tensor& q, const at::Tensor& k, const at::Tensor& v, bool allowDynamic)
 {
     TORCH_CHECK(q.dim() >= 3 && k.dim() >= 3 && v.dim() >= 3, "q, k and v must use an attention layout");
     if (!allowDynamic) {
         const auto tile = ops_rec::hstu::GetFwdTileSize(GetTilingHeadDim(q, v));
         return {tile.m, tile.n, tile.k};
     }
-    const uint32_t coreNum = static_cast<uint32_t>(
-        c10_npu::GetResInCurrentThread(c10_npu::acl::ACL_RT_DEV_RES_CUBE_CORE));
+    const uint32_t coreNum =
+        static_cast<uint32_t>(c10_npu::GetResInCurrentThread(c10_npu::acl::ACL_RT_DEV_RES_CUBE_CORE));
     const auto tile = ops_rec::hstu::GetFwdRuntimeTile(
-        static_cast<uint32_t>(q.size(0)), static_cast<uint32_t>(k.size(0)), 1U,
-        static_cast<uint32_t>(q.size(-2)), static_cast<uint32_t>(q.size(-1)),
-        static_cast<uint32_t>(v.size(-1)), coreNum, GetCoreMemSize(), allowDynamic);
+        static_cast<uint32_t>(q.size(0)), static_cast<uint32_t>(k.size(0)), 1U, static_cast<uint32_t>(q.size(-2)),
+        static_cast<uint32_t>(q.size(-1)), static_cast<uint32_t>(v.size(-1)), coreNum, GetCoreMemSize(), allowDynamic);
     return {tile.l1.m, tile.l1.n, tile.l1.k};
 }
 
-std::vector<int64_t> GetBwdTileSize(
-    const at::Tensor& q, const at::Tensor& k, const at::Tensor& v, bool allowDynamic)
+std::vector<int64_t> GetBwdTileSize(const at::Tensor& q, const at::Tensor& k, const at::Tensor& v, bool allowDynamic)
 {
     TORCH_CHECK(q.dim() >= 3 && k.dim() >= 3 && v.dim() >= 3, "q, k and v must use an attention layout");
     if (!allowDynamic) {
         const auto tile = ops_rec::hstu::GetBwdTileSize(GetTilingHeadDim(q, v));
         return {tile.m, tile.n, tile.k};
     }
-    const uint32_t coreNum = static_cast<uint32_t>(
-        c10_npu::GetResInCurrentThread(c10_npu::acl::ACL_RT_DEV_RES_CUBE_CORE));
+    const uint32_t coreNum =
+        static_cast<uint32_t>(c10_npu::GetResInCurrentThread(c10_npu::acl::ACL_RT_DEV_RES_CUBE_CORE));
     const auto tile = ops_rec::hstu::GetBwdRuntimeTile(
-        static_cast<uint32_t>(q.size(0)), static_cast<uint32_t>(k.size(0)), 1U,
-        static_cast<uint32_t>(q.size(-2)), static_cast<uint32_t>(q.size(-1)),
-        static_cast<uint32_t>(v.size(-1)), coreNum, GetCoreMemSize(), allowDynamic);
+        static_cast<uint32_t>(q.size(0)), static_cast<uint32_t>(k.size(0)), 1U, static_cast<uint32_t>(q.size(-2)),
+        static_cast<uint32_t>(q.size(-1)), static_cast<uint32_t>(v.size(-1)), coreNum, GetCoreMemSize(), allowDynamic);
     return {tile.l1.m, tile.l1.n, tile.l1.k};
 }
 }  // namespace

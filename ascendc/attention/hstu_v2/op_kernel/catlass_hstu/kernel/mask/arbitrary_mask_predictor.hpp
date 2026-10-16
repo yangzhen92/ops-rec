@@ -42,7 +42,6 @@ enum SparseInfoIndex : size_t {
 
 template <uint32_t BLOCK_M, uint32_t BLOCK_N, bool IS_FWD = true>
 struct ArbitraryMaskPredictor {
-
     struct SparseBounds {
         int32_t firstBlk{-1};
         int32_t lastBlk{-1};
@@ -82,8 +81,8 @@ struct ArbitraryMaskPredictor {
     }
 
     template <typename Kernel, typename Coord>
-    CATLASS_DEVICE BlockPredParams MakeBlockPredParams(Coord blockCoord, Kernel*, uint32_t seqlenQ,
-                                                       uint32_t seqlenK, uint32_t swizzleDir)
+    CATLASS_DEVICE BlockPredParams MakeBlockPredParams(Coord blockCoord, Kernel*, uint32_t seqlenQ, uint32_t seqlenK,
+                                                       uint32_t swizzleDir)
     {
         BlockPredParams bp;
         bp.batchId = tla::get<0>(blockCoord);
@@ -104,8 +103,7 @@ struct ArbitraryMaskPredictor {
 
         const uint32_t innerBlock = IS_FWD ? bp.kSeqId : bp.qSeqId;
         const uint32_t innerBlocks = IS_FWD ? maxBlkCntK : maxBlkCntQ;
-        const uint32_t descriptor =
-            static_cast<uint32_t>(gDescriptor.GetValue(outerPos * innerBlocks + innerBlock));
+        const uint32_t descriptor = static_cast<uint32_t>(gDescriptor.GetValue(outerPos * innerBlocks + innerBlock));
         const uint32_t state = descriptor & 0x3U;
         bp.isMaskBlock = state == 0x3U;
         bp.isFullBlock = state == 0x1U;
@@ -131,8 +129,7 @@ struct ArbitraryMaskPredictor {
     }
 
     template <class Coord>
-    CATLASS_DEVICE void CopyPackedMask(AscendC::LocalTensor<int32_t>& dst, Coord const& coord,
-                                       uint32_t alignRows) const
+    CATLASS_DEVICE void CopyPackedMask(AscendC::LocalTensor<int32_t>& dst, Coord const& coord, uint32_t alignRows) const
     {
         const uint32_t q = IS_FWD ? tla::get<3>(coord) : tla::get<2>(coord);
         const uint32_t rowInBlock = q - static_cast<uint32_t>(params.qSeqId) * blockM;

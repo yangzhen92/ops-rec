@@ -22,26 +22,22 @@ See the License for the specific language governing permissions and
 
 using tensor_list = std::vector<at::Tensor>;
 
-at::Tensor hstu_forward_v2_impl_npu(const at::Tensor& q, const at::Tensor& k, const at::Tensor& v,
-                                    const c10::optional<at::Tensor>& mask, const c10::optional<at::Tensor>& rab,
-                                    const int64_t maskType, const int64_t maxSeqLenQ,
-                                    const c10::optional<int64_t> maxSeqLenK, const c10::optional<double> siluScale_,
-                                    const at::Tensor& seqOffset, const c10::optional<at::Tensor>& seqOffsetK,
-                                    const c10::optional<at::Tensor>& numContext,
-                                    const c10::optional<at::Tensor>& numTarget,
-                                    const c10::optional<int64_t>& targetGroupSize, const c10::optional<double>& alpha,
-                                    const c10::optional<at::Tensor>& metadata,
-                                    const c10::optional<tensor_list>& sparseInfo, const int64_t windowSizeLeft,
-                                    const int64_t windowSizeRight, const c10::optional<at::Tensor>& planAf,
-                                    const bool deterministic)
+at::Tensor hstu_forward_v2_impl_npu(
+    const at::Tensor& q, const at::Tensor& k, const at::Tensor& v, const c10::optional<at::Tensor>& mask,
+    const c10::optional<at::Tensor>& rab, const int64_t maskType, const int64_t maxSeqLenQ,
+    const c10::optional<int64_t> maxSeqLenK, const c10::optional<double> siluScale_, const at::Tensor& seqOffset,
+    const c10::optional<at::Tensor>& seqOffsetK, const c10::optional<at::Tensor>& numContext,
+    const c10::optional<at::Tensor>& numTarget, const c10::optional<int64_t>& targetGroupSize,
+    const c10::optional<double>& alpha, const c10::optional<at::Tensor>& metadata,
+    const c10::optional<tensor_list>& sparseInfo, const int64_t windowSizeLeft, const int64_t windowSizeRight,
+    const c10::optional<at::Tensor>& planAf, const bool deterministic)
 {
     const int64_t realmaxSeqLenK = maxSeqLenK.value_or(maxSeqLenQ);
     auto acSeqOffset = seqOffset;
     auto acSeqOffsetK = seqOffsetK.has_value() ? seqOffsetK.value() : seqOffset;
     hstu_v2::HstuForwardV2ParamChecker(q, k, v, acSeqOffset, acSeqOffsetK, maxSeqLenQ, realmaxSeqLenK, rab);
     hstu::MaskCheck(maskType, mask.has_value() && mask->defined());
-    TORCH_CHECK(windowSizeLeft >= -1 && windowSizeRight >= -1,
-                "window_size_left and window_size_right must be >= -1");
+    TORCH_CHECK(windowSizeLeft >= -1 && windowSizeRight >= -1, "window_size_left and window_size_right must be >= -1");
     TORCH_CHECK(windowSizeLeft < realmaxSeqLenK && windowSizeRight < realmaxSeqLenK,
                 "window_size must be < max_seqlen_k");
     const bool isLocal = windowSizeLeft >= 0 || windowSizeRight > 0;
@@ -54,10 +50,10 @@ at::Tensor hstu_forward_v2_impl_npu(const at::Tensor& q, const at::Tensor& k, co
     auto denseBias = rab.value_or(at::Tensor());
     auto maskNpu = mask.value_or(at::Tensor());
 
-    auto acNumContext = CheckOptionalTensorIsNotNone(numContext)
-                            ? numContext.value().to(acSeqOffset.scalar_type()) : at::Tensor();
-    auto acNumTarget = CheckOptionalTensorIsNotNone(numTarget)
-                           ? numTarget.value().to(acSeqOffset.scalar_type()) : at::Tensor();
+    auto acNumContext =
+        CheckOptionalTensorIsNotNone(numContext) ? numContext.value().to(acSeqOffset.scalar_type()) : at::Tensor();
+    auto acNumTarget =
+        CheckOptionalTensorIsNotNone(numTarget) ? numTarget.value().to(acSeqOffset.scalar_type()) : at::Tensor();
     auto acTargetGroupSize = targetGroupSize.value_or(0);
     double realAlpha = alpha.value_or(1.0);
     TORCH_CHECK(realAlpha > 0.0, "alpha must be greater than 0");
@@ -67,9 +63,9 @@ at::Tensor hstu_forward_v2_impl_npu(const at::Tensor& q, const at::Tensor& k, co
     at::ScalarType output_dtype = use_fp8 ? at::kHalf : denseQ.scalar_type();
 
     auto attnOutput = at::zeros({denseQ.size(0), denseQ.size(1), denseV.size(2)}, denseQ.options().dtype(output_dtype));
-    auto outputAccum = deterministic ? at::Tensor()
-                                     : at::zeros({denseQ.size(1), denseQ.size(0), denseV.size(2)},
-                                                 denseQ.options().dtype(at::kFloat));
+    auto outputAccum =
+        deterministic ? at::Tensor()
+                      : at::zeros({denseQ.size(1), denseQ.size(0), denseV.size(2)}, denseQ.options().dtype(at::kFloat));
 
     TORCH_CHECK(attnOutput.defined(), "attnOutput is not defined!");
     TORCH_CHECK(attnOutput.storage().data_ptr() != nullptr, "attnOutput storage is null!");
@@ -86,8 +82,9 @@ at::Tensor hstu_forward_v2_impl_npu(const at::Tensor& q, const at::Tensor& k, co
                 "sparse_info must contain exactly nine packed tensors");
     at::TensorList inSparseInfo(sparseVec);
     EXEC_NPU_CMD(aclnnHstuForwardV2, denseQ, denseK, denseV, maskNpu, denseBias, acSeqOffset, acSeqOffsetK,
-                 acNumContext, acNumTarget, inMetadata, outputAccum, inSparseInfo, maxSeqLenQ, realmaxSeqLenK, realSiluScale,
-                 acTargetGroupSize, realAlpha, maskType, windowSizeLeft, windowSizeRight, deterministic, attnOutput);
+                 acNumContext, acNumTarget, inMetadata, outputAccum, inSparseInfo, maxSeqLenQ, realmaxSeqLenK,
+                 realSiluScale, acTargetGroupSize, realAlpha, maskType, windowSizeLeft, windowSizeRight, deterministic,
+                 attnOutput);
 
     return attnOutput;
 }
@@ -123,19 +120,20 @@ TORCH_LIBRARY_IMPL(ops_rec, PrivateUse1, m)
 }
 
 namespace {
-at::Tensor hstu_forward_v2_meta(
-    const at::Tensor& q, const at::Tensor&, const at::Tensor& v, const c10::optional<at::Tensor>&,
-    const c10::optional<at::Tensor>&, const int64_t, const int64_t, const c10::optional<int64_t>,
-    const c10::optional<double>, const at::Tensor&, const c10::optional<at::Tensor>&,
-    const c10::optional<at::Tensor>&, const c10::optional<at::Tensor>&, const c10::optional<int64_t>&,
-    const c10::optional<double>&, const c10::optional<at::Tensor>&, const c10::optional<tensor_list>&, const int64_t,
-    const int64_t, const c10::optional<at::Tensor>&, const bool)
+at::Tensor hstu_forward_v2_meta(const at::Tensor& q, const at::Tensor&, const at::Tensor& v,
+                                const c10::optional<at::Tensor>&, const c10::optional<at::Tensor>&, const int64_t,
+                                const int64_t, const c10::optional<int64_t>, const c10::optional<double>,
+                                const at::Tensor&, const c10::optional<at::Tensor>&, const c10::optional<at::Tensor>&,
+                                const c10::optional<at::Tensor>&, const c10::optional<int64_t>&,
+                                const c10::optional<double>&, const c10::optional<at::Tensor>&,
+                                const c10::optional<tensor_list>&, const int64_t, const int64_t,
+                                const c10::optional<at::Tensor>&, const bool)
 {
     auto sizes = q.sym_sizes().vec();
     sizes[2] = v.sym_size(2);
     return at::empty_symint(sizes, q.options().device(c10::kMeta));
 }
-}
+}  // namespace
 
 TORCH_LIBRARY_IMPL(ops_rec, Meta, m)
 {

@@ -130,7 +130,7 @@ public:
 
      */
     CATLASS_DEVICE
-    void InitBuffer(Arch::Resource<ArchTag> &resource)
+    void InitBuffer(Arch::Resource<ArchTag>& resource)
     {
         l1BTensor = resource.l1Buf.template GetBufferByByte<ElementB>(TileBuffer::L1B);
         for (auto i = 0; i < STAGES; i++) {
@@ -151,7 +151,7 @@ public:
 
      */
     CATLASS_DEVICE
-    BlockMmadTla(Arch::Resource<ArchTag> &resource)
+    BlockMmadTla(Arch::Resource<ArchTag>& resource)
     {
         InitBuffer(resource);
     }
@@ -188,7 +188,7 @@ public:
 
      */
     template <class TensorC>
-    CATLASS_DEVICE void operator()(TensorC &tensorC, GemmCoord &blockShape, uint32_t &pingPongFlag, uint32_t &l0bFlag)
+    CATLASS_DEVICE void operator()(TensorC& tensorC, GemmCoord& blockShape, uint32_t& pingPongFlag, uint32_t& l0bFlag)
     {
         uint32_t mReal = blockShape.m();
         uint32_t nReal = blockShape.n();
@@ -260,4 +260,4 @@ protected:
     CopyL1ToL0B copyL1ToL0B;
 };
 
-}
+}  // namespace Catlass::Gemm::Block

@@ -6,7 +6,10 @@
 #include "../../tla_hstu/layout.hpp"
 
 namespace Catlass::Kernel {
-enum class HstuDirection : uint8_t { FORWARD, BACKWARD };
+enum class HstuDirection : uint8_t {
+    FORWARD,
+    BACKWARD
+};
 
 // Forward and backward both use one Cube core with two Vector sub-cores.
 // Backward SAME AB splits each dV/dK result along M across the two AIVs.

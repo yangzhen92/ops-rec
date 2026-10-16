@@ -83,8 +83,7 @@ public:
                  uint32_t blockM, uint32_t blockN, uint32_t dimV)
     {
         detail::ForwardRuntimeBufferLayout<ElementA, ElementAccumulator> layout(blockM, blockN, headDim, dimV);
-        const bool useStaticLayout = blockM == tla::get<0>(L1TileShape{}) &&
-                                     blockN == tla::get<1>(L1TileShape{});
+        const bool useStaticLayout = blockM == tla::get<0>(L1TileShape{}) && blockN == tla::get<1>(L1TileShape{});
         for (uint32_t i = 0; i < 2; i++) {
             const uint32_t qOffset = useStaticLayout ? TileBuffer::L1Q[i] : layout.l1.query[i];
             const uint32_t kOffset = useStaticLayout ? TileBuffer::L1K[i] : layout.l1.key[i];

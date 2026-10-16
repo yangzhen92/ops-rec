@@ -58,7 +58,8 @@ struct MmadHSTUDQ : public MmadBase<ArchTag_, false> {
  • @description 用于 Q * K^T 计算的分发策略，流水线阶段数为 2
 
  */
-template <class ArchTag_, bool PAGED_CACHE_FLAG_ = false, bool ENABLE_UNIT_FLAG_ = false, bool ENABLE_SCALAR_QUANT_ = false>
+template <class ArchTag_, bool PAGED_CACHE_FLAG_ = false, bool ENABLE_UNIT_FLAG_ = false,
+          bool ENABLE_SCALAR_QUANT_ = false>
 struct MmadHSTUQK : public MmadBase<ArchTag_, false> {
     static constexpr uint32_t STAGES = 2;
     static constexpr bool PAGED_CACHE_FLAG = PAGED_CACHE_FLAG_;

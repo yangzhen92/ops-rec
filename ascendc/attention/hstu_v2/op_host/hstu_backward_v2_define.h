@@ -60,10 +60,10 @@ enum class IN_INDEX : uint32_t {
     NUM_CONTEXT,
     NUM_TARGET,
     Q_SHARE,
-    METADATA,   // 可选: flash_attn_metadata 分核输出(int32);未传 → 旧设备现算分核
+    METADATA,  // 可选: flash_attn_metadata 分核输出(int32);未传 → 旧设备现算分核
     K_GRAD_ACCUM,
     V_GRAD_ACCUM,
-    SPARSE_INFO // 可选: direct packed sparse info (Dynamic/TensorList), 9 个 int32 tensor
+    SPARSE_INFO  // 可选: direct packed sparse info (Dynamic/TensorList), 9 个 int32 tensor
 };
 
 /**

@@ -53,9 +53,9 @@ See the License for the specific language governing permissions and
 template <bool HAS_RAB, bool IS_LOCAL, bool IS_CAUSAL, bool IS_CONTEXT, bool IS_TARGET, bool IS_ARBITRARY,
           bool ENABLE_STREAM_K, uint32_t BLOCK_K>
 CATLASS_DEVICE void hstu_forward_v2_impl(GM_ADDR q, GM_ADDR k, GM_ADDR v, GM_ADDR mask, GM_ADDR attnBias,
-                                    GM_ADDR seq_offset_q, GM_ADDR seq_offset_k, GM_ADDR num_context, GM_ADDR num_target,
-                                    GM_ADDR metadata, GM_ADDR outputAccum, GM_ADDR sparseInfo, GM_ADDR attnOutput,
-                                    GM_ADDR workSpace, GM_ADDR tiling)
+                                         GM_ADDR seq_offset_q, GM_ADDR seq_offset_k, GM_ADDR num_context,
+                                         GM_ADDR num_target, GM_ADDR metadata, GM_ADDR outputAccum, GM_ADDR sparseInfo,
+                                         GM_ADDR attnOutput, GM_ADDR workSpace, GM_ADDR tiling)
 {
     constexpr bool HAS_MASK = IS_LOCAL || IS_CAUSAL || IS_ARBITRARY;
     using namespace Catlass::Kernel;
@@ -63,11 +63,9 @@ CATLASS_DEVICE void hstu_forward_v2_impl(GM_ADDR q, GM_ADDR k, GM_ADDR v, GM_ADD
 
     using Element = DTYPE_Q;
     using ElementOffset = DTYPE_SEQ_OFFSET_Q;
-    using KernelConfig =
-        ForwardKernelConfig<Arch::Ascend950, Element, ElementOffset, BLOCK_K, HAS_RAB, IS_LOCAL, IS_CAUSAL,
-                            IS_ARBITRARY>;
-    constexpr bool USE_CAUSAL_SERPENTINE =
-        !IS_LOCAL && !IS_CONTEXT && !IS_TARGET && (IS_CAUSAL || IS_ARBITRARY);
+    using KernelConfig = ForwardKernelConfig<Arch::Ascend950, Element, ElementOffset, BLOCK_K, HAS_RAB, IS_LOCAL,
+                                             IS_CAUSAL, IS_ARBITRARY>;
+    constexpr bool USE_CAUSAL_SERPENTINE = !IS_LOCAL && !IS_CONTEXT && !IS_TARGET && (IS_CAUSAL || IS_ARBITRARY);
     using KernelBuilder = ForwardKernelBuilder<KernelConfig, USE_CAUSAL_SERPENTINE, ENABLE_STREAM_K>;
 
     using L1TileShape = typename KernelConfig::L1TileShape;
@@ -87,27 +85,27 @@ CATLASS_DEVICE void hstu_forward_v2_impl(GM_ADDR q, GM_ADDR k, GM_ADDR v, GM_ADD
         using BlockMmadPV = typename KernelBuilder::BlockMmadPV;
 
         if constexpr (ENABLE_STREAM_K) {
-            using MmadMainLoopKernel = ForwardMmadMainloop<
-                BlockMmadQK, BlockMmadPV, QBlockScheduler, KBlockScheduler, Predictor,
-                IS_LOCAL, IS_CAUSAL, IS_CONTEXT, IS_TARGET, IS_ARBITRARY, true>;
-            typename MmadMainLoopKernel::Params params{q, k, v, seq_offset_q, seq_offset_k, num_context, num_target,
-                                                       outputAccum, metadata, sparseInfo};
+            using MmadMainLoopKernel =
+                ForwardMmadMainloop<BlockMmadQK, BlockMmadPV, QBlockScheduler, KBlockScheduler, Predictor, IS_LOCAL,
+                                    IS_CAUSAL, IS_CONTEXT, IS_TARGET, IS_ARBITRARY, true>;
+            typename MmadMainLoopKernel::Params params{q,           k,          v,           seq_offset_q, seq_offset_k,
+                                                       num_context, num_target, outputAccum, metadata,     sparseInfo};
             MmadMainLoopKernel kernel(tiling);
             kernel(params);
         } else if (metadata != nullptr) {
             using MmadMainLoopKernel =
                 ForwardMmadMainloop<BlockMmadQK, BlockMmadPV, MetaQBlockScheduler, MetaKBlockScheduler, Predictor,
                                     IS_LOCAL, IS_CAUSAL, IS_CONTEXT, IS_TARGET, IS_ARBITRARY, ENABLE_STREAM_K>;
-            typename MmadMainLoopKernel::Params params{q, k, v, seq_offset_q, seq_offset_k, num_context, num_target,
-                                                       nullptr, metadata, sparseInfo};
+            typename MmadMainLoopKernel::Params params{q,           k,          v,       seq_offset_q, seq_offset_k,
+                                                       num_context, num_target, nullptr, metadata,     sparseInfo};
             MmadMainLoopKernel kernel(tiling);
             kernel(params);
         } else {
-            using MmadMainLoopKernel = ForwardMmadMainloop<BlockMmadQK, BlockMmadPV, QBlockScheduler, KBlockScheduler,
-                                                           Predictor, IS_LOCAL, IS_CAUSAL, IS_CONTEXT, IS_TARGET,
-                                                           IS_ARBITRARY, ENABLE_STREAM_K>;
-            typename MmadMainLoopKernel::Params params{q, k, v, seq_offset_q, seq_offset_k, num_context, num_target,
-                                                       nullptr, nullptr, sparseInfo};
+            using MmadMainLoopKernel =
+                ForwardMmadMainloop<BlockMmadQK, BlockMmadPV, QBlockScheduler, KBlockScheduler, Predictor, IS_LOCAL,
+                                    IS_CAUSAL, IS_CONTEXT, IS_TARGET, IS_ARBITRARY, ENABLE_STREAM_K>;
+            typename MmadMainLoopKernel::Params params{q,           k,          v,       seq_offset_q, seq_offset_k,
+                                                       num_context, num_target, nullptr, nullptr,      sparseInfo};
             MmadMainLoopKernel kernel(tiling);
             kernel(params);
         }
@@ -120,11 +118,13 @@ CATLASS_DEVICE void hstu_forward_v2_impl(GM_ADDR q, GM_ADDR k, GM_ADDR v, GM_ADD
         using StreamKReduceEpilogue = typename KernelBuilder::StreamKReduceEpilogue;
 
         if constexpr (ENABLE_STREAM_K) {
-            using EpilogueMainLoopKernel = ForwardEpilogueMainloop<
-                BlockEpilogueQK, BlockEpiloguePV, StreamKReduceEpilogue, QBlockScheduler, KBlockScheduler,
-                Predictor, L1TileShape, IS_LOCAL, IS_CONTEXT, IS_TARGET, IS_ARBITRARY, true>;
-            typename EpilogueMainLoopKernel::Params params{attnBias, seq_offset_q, seq_offset_k, num_context,
-                                                           num_target, attnOutput, outputAccum, metadata, sparseInfo};
+            using EpilogueMainLoopKernel =
+                ForwardEpilogueMainloop<BlockEpilogueQK, BlockEpiloguePV, StreamKReduceEpilogue, QBlockScheduler,
+                                        KBlockScheduler, Predictor, L1TileShape, IS_LOCAL, IS_CONTEXT, IS_TARGET,
+                                        IS_ARBITRARY, true>;
+            typename EpilogueMainLoopKernel::Params params{attnBias,    seq_offset_q, seq_offset_k,
+                                                           num_context, num_target,   attnOutput,
+                                                           outputAccum, metadata,     sparseInfo};
             EpilogueMainLoopKernel kernel(tiling);
             kernel(params);
         } else if (metadata != nullptr) {
@@ -132,8 +132,9 @@ CATLASS_DEVICE void hstu_forward_v2_impl(GM_ADDR q, GM_ADDR k, GM_ADDR v, GM_ADD
                 ForwardEpilogueMainloop<BlockEpilogueQK, BlockEpiloguePV, StreamKReduceEpilogue, MetaQBlockScheduler,
                                         MetaKBlockScheduler, Predictor, L1TileShape, IS_LOCAL, IS_CONTEXT, IS_TARGET,
                                         IS_ARBITRARY, ENABLE_STREAM_K>;
-            typename EpilogueMainLoopKernel::Params params{attnBias, seq_offset_q, seq_offset_k, num_context,
-                                                           num_target, attnOutput, outputAccum, metadata, sparseInfo};
+            typename EpilogueMainLoopKernel::Params params{attnBias,    seq_offset_q, seq_offset_k,
+                                                           num_context, num_target,   attnOutput,
+                                                           outputAccum, metadata,     sparseInfo};
             EpilogueMainLoopKernel kernel(tiling);
             kernel(params);
         } else {
@@ -141,8 +142,9 @@ CATLASS_DEVICE void hstu_forward_v2_impl(GM_ADDR q, GM_ADDR k, GM_ADDR v, GM_ADD
                 ForwardEpilogueMainloop<BlockEpilogueQK, BlockEpiloguePV, StreamKReduceEpilogue, QBlockScheduler,
                                         KBlockScheduler, Predictor, L1TileShape, IS_LOCAL, IS_CONTEXT, IS_TARGET,
                                         IS_ARBITRARY, ENABLE_STREAM_K>;
-            typename EpilogueMainLoopKernel::Params params{attnBias, seq_offset_q, seq_offset_k, num_context,
-                                                           num_target, attnOutput, outputAccum, nullptr, sparseInfo};
+            typename EpilogueMainLoopKernel::Params params{attnBias,    seq_offset_q, seq_offset_k,
+                                                           num_context, num_target,   attnOutput,
+                                                           outputAccum, nullptr,      sparseInfo};
             EpilogueMainLoopKernel kernel(tiling);
             kernel(params);
         }
@@ -152,11 +154,12 @@ CATLASS_DEVICE void hstu_forward_v2_impl(GM_ADDR q, GM_ADDR k, GM_ADDR v, GM_ADD
 template <bool HAS_RAB, bool IS_LOCAL, bool IS_CAUSAL, bool IS_CONTEXT, bool IS_TARGET, bool IS_ARBITRARY,
           bool ENABLE_STREAM_K, uint32_t BLOCK_K>
 CATLASS_GLOBAL void hstu_forward_v2(GM_ADDR q, GM_ADDR k, GM_ADDR v, GM_ADDR mask, GM_ADDR attnBias,
-                                    GM_ADDR seq_offset_q, GM_ADDR seq_offset_k, GM_ADDR num_context,
-                                    GM_ADDR num_target, GM_ADDR metadata, GM_ADDR outputAccum, GM_ADDR sparseInfo, GM_ADDR attnOutput, GM_ADDR workSpace,
-                                    GM_ADDR tiling)
+                                    GM_ADDR seq_offset_q, GM_ADDR seq_offset_k, GM_ADDR num_context, GM_ADDR num_target,
+                                    GM_ADDR metadata, GM_ADDR outputAccum, GM_ADDR sparseInfo, GM_ADDR attnOutput,
+                                    GM_ADDR workSpace, GM_ADDR tiling)
 {
     KERNEL_TASK_TYPE_DEFAULT(HSTU_V2_TASK_TYPE);
-    hstu_forward_v2_impl<HAS_RAB, IS_LOCAL, IS_CAUSAL, IS_CONTEXT, IS_TARGET, IS_ARBITRARY, ENABLE_STREAM_K, BLOCK_K>(q, k, v, mask, attnBias, seq_offset_q, seq_offset_k,
-        num_context, num_target, metadata, outputAccum, sparseInfo, attnOutput, workSpace, tiling);
+    hstu_forward_v2_impl<HAS_RAB, IS_LOCAL, IS_CAUSAL, IS_CONTEXT, IS_TARGET, IS_ARBITRARY, ENABLE_STREAM_K, BLOCK_K>(
+        q, k, v, mask, attnBias, seq_offset_q, seq_offset_k, num_context, num_target, metadata, outputAccum, sparseInfo,
+        attnOutput, workSpace, tiling);
 }

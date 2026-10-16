@@ -45,7 +45,7 @@ public:
 
     CATLASS_DEVICE
     InterleavedOuterBlockScheduler(uint32_t batchSize, uint32_t headNum, GM_ADDR seqOffsetM, GM_ADDR seqOffsetN,
-                                 uint32_t runtimeBlockM = BLOCK_M, uint32_t runtimeBlockN = BLOCK_N)
+                                   uint32_t runtimeBlockM = BLOCK_M, uint32_t runtimeBlockN = BLOCK_N)
     {
         this->batchSize = batchSize;
         this->headNum = headNum;
@@ -157,8 +157,7 @@ private:
         totalFlatBlocks = batchSize * headNum;
         currentFlatBlockId = coreId;
         coreStride = coreNum;
-        blockCnt = coreId < totalFlatBlocks ?
-            (totalFlatBlocks - coreId + coreNum - 1U) / coreNum : 0U;
+        blockCnt = coreId < totalFlatBlocks ? (totalFlatBlocks - coreId + coreNum - 1U) / coreNum : 0U;
         this->coreId = coreId;
         if (blockCnt != 0U) {
             LocateShortSequenceBlock(currentFlatBlockId);

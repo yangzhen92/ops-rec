@@ -39,9 +39,12 @@ struct ForwardRuntimeL1Layout {
         const uint32_t keyBytes = blockN * blockK * sizeof(Element);
         const uint32_t valueBytes = blockN * blockK * sizeof(Element);
         const uint32_t probBytes = blockM * blockN * sizeof(Element);
-        query[0] = 0U; query[1] = queryBytes;
-        key[0] = 2U * queryBytes; key[1] = key[0] + keyBytes;
-        value[0] = key[0] + 2U * keyBytes; value[1] = value[0] + valueBytes;
+        query[0] = 0U;
+        query[1] = queryBytes;
+        key[0] = 2U * queryBytes;
+        key[1] = key[0] + keyBytes;
+        value[0] = key[0] + 2U * keyBytes;
+        value[1] = value[0] + valueBytes;
         prob[0] = value[0] + 2U * valueBytes;
         prob[1] = prob[0] + probBytes;
         prob[2] = prob[1] + probBytes;
@@ -86,7 +89,9 @@ struct ForwardRuntimeBufferLayout {
         const uint32_t rabBytes = splitMnElements * sizeof(Element);
         const uint32_t transOutBytes = splitMkElements * sizeof(Element);
         const uint32_t transInBytes = splitMkElements * sizeof(Accumulator);
-        score[0] = 0U; score[1] = scoreBytes; score[2] = 0U;
+        score[0] = 0U;
+        score[1] = scoreBytes;
+        score[2] = 0U;
         prob[0] = 2U * scoreBytes;
         prob[1] = prob[0] + probBytes;
         prob[2] = prob[1] + probBytes;

@@ -71,8 +71,8 @@ struct ForwardKernelConfig {
     static constexpr uint32_t STAGES = 2;
 };
 
-template <typename ArchTag_, typename ElementType_, typename L1TileShape_,
-          typename L0TileShape_, bool HAS_RAB_, bool HAS_MASK_, bool IS_LOCAL_, bool IS_CAUSAL_, bool IS_ARBITRARY_>
+template <typename ArchTag_, typename ElementType_, typename L1TileShape_, typename L0TileShape_, bool HAS_RAB_,
+          bool HAS_MASK_, bool IS_LOCAL_, bool IS_CAUSAL_, bool IS_ARBITRARY_>
 struct QKBlockBuilder {
     static constexpr bool HAS_RAB = HAS_RAB_;
     static constexpr bool HAS_MASK = HAS_MASK_;
@@ -108,15 +108,15 @@ struct QKBlockBuilder {
     using BlockMmad = Gemm::Block::BlockMmadTla<DispatchPolicy, L1TileShape, L0TileShape, ElementQ, ElementK, ElementS,
                                                 MmadTileBuffer, TileCopyTlaQK>;
 
-    using EpilogueTileBuffer = Epilogue::Block::ForwardScoreEpilogueBuffer<
-        ArchTag, L1TileShape, L0TileShape, ElementQ, ElementS, 2U>;
-    using BlockEpilogue = Epilogue::Block::BlockEpilogueScore<ArchTag, ElementQ, ElementS, EpilogueTileBuffer,
-                                                              L0TileShape, HAS_RAB, HAS_MASK, IS_LOCAL,
-                                                              IS_CAUSAL, IS_ARBITRARY>;
+    using EpilogueTileBuffer =
+        Epilogue::Block::ForwardScoreEpilogueBuffer<ArchTag, L1TileShape, L0TileShape, ElementQ, ElementS, 2U>;
+    using BlockEpilogue =
+        Epilogue::Block::BlockEpilogueScore<ArchTag, ElementQ, ElementS, EpilogueTileBuffer, L0TileShape, HAS_RAB,
+                                            HAS_MASK, IS_LOCAL, IS_CAUSAL, IS_ARBITRARY>;
 };
 
-template <typename ArchTag_, typename ElementType_, typename L1TileShape_,
-          typename L0TileShape_, bool HAS_RAB_, bool HAS_MASK_, bool ENABLE_STREAM_K_>
+template <typename ArchTag_, typename ElementType_, typename L1TileShape_, typename L0TileShape_, bool HAS_RAB_,
+          bool HAS_MASK_, bool ENABLE_STREAM_K_>
 struct PVBlockBuilder {
     using ArchTag = ArchTag_;
     using ElementType = ElementType_;
@@ -132,10 +132,11 @@ struct PVBlockBuilder {
     using ElementO = typename Gemm::helper::ElementAccumulatorSelector<ElementP, ElementV>::ElementAccumulator;
     using LayoutO = layout::RowMajor;
 
-    using TileCopyTlaPV = std::conditional_t<ENABLE_STREAM_K_,
+    using TileCopyTlaPV = std::conditional_t<
+        ENABLE_STREAM_K_,
         Gemm::Tile::PackedTileCopyTla<ArchTag, ElementP, LayoutP, ElementV, LayoutV, ElementO, LayoutO>,
         Gemm::Tile::PackedTileCopyTlaToUB<ArchTag, ElementP, LayoutP, ElementV, LayoutV, ElementO, LayoutO, void,
-                                         Gemm::Tile::CopyL0CToUBMode::RESERVED>>;
+                                          Gemm::Tile::CopyL0CToUBMode::RESERVED>>;
 
     using DispatchPolicy = Gemm::MmadHSTUPV<ArchTag, false, false, 0, false, false, ENABLE_STREAM_K_>;
 
@@ -143,10 +144,10 @@ struct PVBlockBuilder {
     using BlockMmad = Gemm::Block::BlockMmadTla<DispatchPolicy, L1TileShape, L0TileShape, ElementP, ElementV, ElementO,
                                                 MmadTileBuffer, TileCopyTlaPV>;
 
-    using EpilogueTileBuffer = Epilogue::Block::ForwardTransEpilogueBuffer<
-        ArchTag, L0TileShape, ElementV, ElementO>;
-    using BlockEpilogue = Epilogue::Block::BlockEpilogueTransOut<
-        ArchTag, EpilogueTileBuffer, Epilogue::Block::TransTag::UB_TO_GM, ElementO, ElementV, HAS_RAB>;
+    using EpilogueTileBuffer = Epilogue::Block::ForwardTransEpilogueBuffer<ArchTag, L0TileShape, ElementV, ElementO>;
+    using BlockEpilogue =
+        Epilogue::Block::BlockEpilogueTransOut<ArchTag, EpilogueTileBuffer, Epilogue::Block::TransTag::UB_TO_GM,
+                                               ElementO, ElementV, HAS_RAB>;
 };
 
 template <typename ArchTag_, typename ElementOffset_, typename L1TileShape_, bool SERPENTINE_ = false>
@@ -189,8 +190,8 @@ struct ForwardKernelBuilder {
     using L0TileShape = typename Config::L0TileShape;
 
     // Block QK Builder
-    using QKBlockBuilder = QKBlockBuilder<ArchTag, ElementType, L1TileShape, L0TileShape, HAS_RAB,
-                                          HAS_MASK, Config::IS_LOCAL, IS_CAUSAL, Config::IS_ARBITRARY>;
+    using QKBlockBuilder = QKBlockBuilder<ArchTag, ElementType, L1TileShape, L0TileShape, HAS_RAB, HAS_MASK,
+                                          Config::IS_LOCAL, IS_CAUSAL, Config::IS_ARBITRARY>;
     using BlockMmadQK = typename QKBlockBuilder::BlockMmad;
     using BlockEpilogueQK = typename QKBlockBuilder::BlockEpilogue;
 
@@ -199,21 +200,20 @@ struct ForwardKernelBuilder {
         PVBlockBuilder<ArchTag, ElementType, L1TileShape, L0TileShape, HAS_RAB, HAS_MASK, ENABLE_STREAM_K_>;
     using BlockMmadPV = typename PVBlockBuilder::BlockMmad;
     using BlockEpiloguePV = typename PVBlockBuilder::BlockEpilogue;
-    using StreamKBuffer = Epilogue::Block::ForwardStreamKReduceBuffer<
-        ArchTag, L0TileShape, ElementType, AccumulatorElementType>;
-    using StreamKReduceEpilogue = Epilogue::Block::StreamKReduceEpilogue<
-        ArchTag, StreamKBuffer, AccumulatorElementType, ElementType>;
+    using StreamKBuffer =
+        Epilogue::Block::ForwardStreamKReduceBuffer<ArchTag, L0TileShape, ElementType, AccumulatorElementType>;
+    using StreamKReduceEpilogue =
+        Epilogue::Block::StreamKReduceEpilogue<ArchTag, StreamKBuffer, AccumulatorElementType, ElementType>;
 
-    using DefaultSchedulerBuilder =
-        BlockSchedulerBuilder<ArchTag, ElementOffset, L1TileShape, USE_CAUSAL_SERPENTINE_>;
+    using DefaultSchedulerBuilder = BlockSchedulerBuilder<ArchTag, ElementOffset, L1TileShape, USE_CAUSAL_SERPENTINE_>;
     static constexpr uint32_t BLOCK_M = tla::get<0>(L1TileShape{});
     static constexpr uint32_t BLOCK_N = tla::get<1>(L1TileShape{});
     using StreamOuter = Gemm::Block::StreamKOuterBlockScheduler<ElementOffset, BLOCK_M, BLOCK_N>;
     using StreamInner = Gemm::Block::StreamKInnerBlockScheduler<StreamOuter, BLOCK_M, BLOCK_N>;
-    using QBlockScheduler = std::conditional_t<ENABLE_STREAM_K_, StreamOuter,
-                                               typename DefaultSchedulerBuilder::QBlockScheduler>;
-    using KBlockScheduler = std::conditional_t<ENABLE_STREAM_K_, StreamInner,
-                                               typename DefaultSchedulerBuilder::KBlockScheduler>;
+    using QBlockScheduler =
+        std::conditional_t<ENABLE_STREAM_K_, StreamOuter, typename DefaultSchedulerBuilder::QBlockScheduler>;
+    using KBlockScheduler =
+        std::conditional_t<ENABLE_STREAM_K_, StreamInner, typename DefaultSchedulerBuilder::KBlockScheduler>;
 };
 
 }  // namespace Catlass::Kernel

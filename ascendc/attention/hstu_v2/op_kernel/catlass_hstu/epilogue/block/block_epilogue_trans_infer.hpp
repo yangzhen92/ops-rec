@@ -99,17 +99,16 @@ public:
 
     CATLASS_DEVICE
     BlockEpilogueTransOut(uint32_t cubeFlag, uint32_t transEventId, Arch::Resource<ArchTag>& resource,
-                          ElementAccumulator scale_, uint32_t blockM, uint32_t blockN,
-                          uint32_t dimQk, uint32_t dimV)
+                          ElementAccumulator scale_, uint32_t blockM, uint32_t blockN, uint32_t dimQk, uint32_t dimV)
     {
-        Gemm::Block::detail::ForwardRuntimeBufferLayout<Element, ElementAccumulator> layout(
-            blockM, blockN, dimQk, dimV);
+        Gemm::Block::detail::ForwardRuntimeBufferLayout<Element, ElementAccumulator> layout(blockM, blockN, dimQk,
+                                                                                            dimV);
         const bool useStaticLayout = blockM == TileBuffer::PHYSICAL_M && blockN == TileBuffer::PHYSICAL_N;
         this->cubeReady = Arch::CrossCoreFlag(cubeFlag);
         this->transEventId = transEventId;
         this->scale = scale_;
-        this->ubTransOut = resource.ubBuf.template GetBufferByByte<Element>(
-            useStaticLayout ? TileBuffer::TRANS_OUT : layout.transOut);
+        this->ubTransOut =
+            resource.ubBuf.template GetBufferByByte<Element>(useStaticLayout ? TileBuffer::TRANS_OUT : layout.transOut);
         for (uint32_t i = 0; i < TileBuffer::TRANS_IN_CNT; i++) {
             const uint32_t offset = useStaticLayout ? TileBuffer::TRANS_IN[i] : layout.transIn[i];
             this->ubTransIn[i] = resource.ubBuf.template GetBufferByByte<ElementAccumulator>(offset);
@@ -174,8 +173,8 @@ private:
             AscendC::MicroAPI::LoadAlign(value, src + i * ONE_REP_ELM);
             AscendC::MicroAPI::Muls(value, value, scale, mask);
             if constexpr (!std::is_same<Element, ElementAccumulator>::value) {
-                Catlass::Epilogue::RegBase::CastDownStore<Element, ElementAccumulator>(
-                    dst + i * ONE_REP_ELM, value, mask);
+                Catlass::Epilogue::RegBase::CastDownStore<Element, ElementAccumulator>(dst + i * ONE_REP_ELM, value,
+                                                                                       mask);
             } else {
                 AscendC::MicroAPI::StoreAlign(dst + i * ONE_REP_ELM, value, mask);
             }

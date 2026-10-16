@@ -75,7 +75,7 @@ public:
      */
     CATLASS_DEVICE
     OuterBlockScheduler(uint32_t batchSize, uint32_t headNum, GM_ADDR seqOffsetM, GM_ADDR seqOffsetN,
-                      uint32_t runtimeBlockM = BLOCK_M, uint32_t runtimeBlockN = BLOCK_N)
+                        uint32_t runtimeBlockM = BLOCK_M, uint32_t runtimeBlockN = BLOCK_N)
     {
         this->batchSize = batchSize;
         this->headNum = headNum;
@@ -122,10 +122,8 @@ public:
         }
         AscendC::ListTensorDesc sparseListDesc;
         sparseListDesc.Init(sparseInfo);
-        GM_ADDR maskCntPtr =
-            (__gm__ uint8_t*)sparseListDesc.GetDataPtr<__gm__ uint8_t>(0);
-        GM_ADDR fullCntPtr =
-            (__gm__ uint8_t*)sparseListDesc.GetDataPtr<__gm__ uint8_t>(3);
+        GM_ADDR maskCntPtr = (__gm__ uint8_t*)sparseListDesc.GetDataPtr<__gm__ uint8_t>(0);
+        GM_ADDR fullCntPtr = (__gm__ uint8_t*)sparseListDesc.GetDataPtr<__gm__ uint8_t>(3);
         this->maskBlockCnt.SetGlobalBuffer((__gm__ int32_t*)maskCntPtr);
         this->fullBlockCnt.SetGlobalBuffer((__gm__ int32_t*)fullCntPtr);
         this->maskHeadNum = maskHeadNum;
@@ -178,7 +176,7 @@ public:
         // and BLOCK_N is the Q-axis tile. The helper names parameters by
         // semantic Q/K axes, hence the intentional template/length swap.
         return Catlass::Detail::GetTargetQBlockEndRuntime(kBlockId, seqLenN, seqLenM, targetNum,
-            hasContext ? contextNum : 0, targetGroupSize, blockN, blockM);
+                                                          hasContext ? contextNum : 0, targetGroupSize, blockN, blockM);
     }
 
     CATLASS_DEVICE
@@ -317,8 +315,10 @@ private:
         for (uint32_t batch = 0; batch < batchSize; ++batch) {
             const uint32_t seqLen = seqOffsetM.GetValue(batch + 1) - seqOffsetM.GetValue(batch);
             const uint32_t rows = RuntimeCeilDiv(seqLen, blockM);
-            if (batch == 0U) rowsPerBatch = rows;
-            else if (rows != rowsPerBatch) uniformRows = false;
+            if (batch == 0U)
+                rowsPerBatch = rows;
+            else if (rows != rowsPerBatch)
+                uniformRows = false;
             totalRows += rows * headNum;
         }
         return totalRows;
@@ -336,8 +336,7 @@ private:
         currentSeqLen = seqOffsetM.GetValue(batchId + 1U) - batchBaseOffset;
     }
 
-    CATLASS_DEVICE uint64_t GetRowWorkload(uint32_t batch, uint32_t head, uint32_t row,
-                                            bool denseFallback)
+    CATLASS_DEVICE uint64_t GetRowWorkload(uint32_t batch, uint32_t head, uint32_t row, bool denseFallback)
     {
         const uint32_t seqLenM = seqOffsetM.GetValue(batch + 1) - seqOffsetM.GetValue(batch);
         const uint32_t seqLenN = seqOffsetN.GetValue(batch + 1) - seqOffsetN.GetValue(batch);
@@ -381,8 +380,10 @@ private:
                 if (totalRows >= coreNum * 4U) {
                     const auto range = hstu::schedule::UniformCoreRange(totalRows, coreId, coreNum);
                     blockCnt = range.endBlock - range.beginBlock;
-                    if (blockCnt != 0U) InitUniformBlock(range.beginBlock, rowsPerBatch);
-                    else batchId = batchSize;
+                    if (blockCnt != 0U)
+                        InitUniformBlock(range.beginBlock, rowsPerBatch);
+                    else
+                        batchId = batchSize;
                     return;
                 }
             }
@@ -404,19 +405,23 @@ private:
             const auto range = hstu::schedule::UniformCoreRange(totalRows, coreId, coreNum);
             blockCnt = range.endBlock - range.beginBlock;
             if (blockCnt != 0U) {
-                if (uniformRows) InitUniformBlock(range.beginBlock, rowsPerBatch);
-                else InitBlock(range.beginBlock);
-            }
-            else batchId = batchSize;
+                if (uniformRows)
+                    InitUniformBlock(range.beginBlock, rowsPerBatch);
+                else
+                    InitBlock(range.beginBlock);
+            } else
+                batchId = batchSize;
             return;
         }
-        const bool plainSingleBatch = batchSize == 1U && !useTargetWorkload &&
-            !useCausalWorkload && !usePackedSparseWorkload;
+        const bool plainSingleBatch =
+            batchSize == 1U && !useTargetWorkload && !useCausalWorkload && !usePackedSparseWorkload;
         if (plainSingleBatch) {
             const auto range = hstu::schedule::UniformCoreRange(totalRows, coreId, coreNum);
             blockCnt = range.endBlock - range.beginBlock;
-            if (blockCnt != 0U) InitBlock(range.beginBlock);
-            else batchId = batchSize;
+            if (blockCnt != 0U)
+                InitBlock(range.beginBlock);
+            else
+                batchId = batchSize;
             return;
         }
 
@@ -462,8 +467,10 @@ private:
         }
         const auto range = builder.Finish();
         blockCnt = range.endBlock - range.beginBlock;
-        if (blockCnt != 0U) InitBlock(range.beginBlock);
-        else batchId = batchSize;
+        if (blockCnt != 0U)
+            InitBlock(range.beginBlock);
+        else
+            batchId = batchSize;
     }
 
     CATLASS_DEVICE
@@ -548,8 +555,8 @@ public:
 
      */
     CATLASS_DEVICE
-    InnerBlockScheduler(uint32_t batchSize, uint32_t headNum, GM_ADDR seqOffset,
-                         uint32_t runtimeBlockM = BLOCK_M, uint32_t runtimeBlockN = BLOCK_N)
+    InnerBlockScheduler(uint32_t batchSize, uint32_t headNum, GM_ADDR seqOffset, uint32_t runtimeBlockM = BLOCK_M,
+                        uint32_t runtimeBlockN = BLOCK_N)
     {
         this->batchSize = batchSize;
         this->headNum = headNum;
@@ -574,15 +581,17 @@ public:
         usePackedSparse = true;
     }
 
-    CATLASS_DEVICE void EnableCausal(GM_ADDR numContext, GM_ADDR numTarget, uint32_t targetGroupSize,
-                                     bool hasContext, bool hasTarget)
+    CATLASS_DEVICE void EnableCausal(GM_ADDR numContext, GM_ADDR numTarget, uint32_t targetGroupSize, bool hasContext,
+                                     bool hasTarget)
     {
         useCausal = true;
         this->hasContext = hasContext;
         this->hasTarget = hasTarget;
         this->targetGroupSize = targetGroupSize;
-        if (hasContext) this->numContext.SetGlobalBuffer((__gm__ ElementOffset*)numContext);
-        if (hasTarget) this->numTarget.SetGlobalBuffer((__gm__ ElementOffset*)numTarget);
+        if (hasContext)
+            this->numContext.SetGlobalBuffer((__gm__ ElementOffset*)numContext);
+        if (hasTarget)
+            this->numTarget.SetGlobalBuffer((__gm__ ElementOffset*)numTarget);
     }
 
     CATLASS_DEVICE void EnableLocal(int32_t windowSizeLeft, int32_t windowSizeRight, bool forward)
@@ -645,8 +654,7 @@ public:
             }
             if (hasTarget && targetGroupSize > 0 && qEnd >= seqLenQ - targetNum) {
                 const uint32_t targetRow = qEnd - (seqLenQ - targetNum);
-                const uint32_t groupEnd = seqLens - targetNum +
-                    (targetRow / targetGroupSize + 1) * targetGroupSize;
+                const uint32_t groupEnd = seqLens - targetNum + (targetRow / targetGroupSize + 1) * targetGroupSize;
                 visibleEnd = max(visibleEnd, static_cast<int64_t>(min(groupEnd, seqLens)));
             }
             const uint32_t visible = visibleEnd <= 0 ? 0U : min(static_cast<uint32_t>(visibleEnd), seqLens);
@@ -654,8 +662,8 @@ public:
         }
         if (useLocal) {
             const uint32_t rowSeqLen = rowBlockScheduler.GetCurrentSeqLen();
-            const int64_t delta = localForward ? static_cast<int64_t>(seqLens) - rowSeqLen
-                                               : static_cast<int64_t>(rowSeqLen) - seqLens;
+            const int64_t delta =
+                localForward ? static_cast<int64_t>(seqLens) - rowSeqLen : static_cast<int64_t>(rowSeqLen) - seqLens;
             const int64_t rowBegin = static_cast<int64_t>(rowBlockId) * blockM;
             const int64_t rowEnd = min(rowBegin + blockM, static_cast<int64_t>(rowSeqLen)) - 1;
             int64_t colBegin;
@@ -725,8 +733,8 @@ public:
         if (usePackedSparse) {
             return sparseFirst && subBlockId == 0U;
         }
-        const bool firstLogical = (swizzleDir == 1) ? blockId == static_cast<int32_t>(blockBegin)
-                                                    : blockId == (blockCnt - 1);
+        const bool firstLogical =
+            (swizzleDir == 1) ? blockId == static_cast<int32_t>(blockBegin) : blockId == (blockCnt - 1);
         return firstLogical && subBlockId == 0U;
     }
 
@@ -739,7 +747,8 @@ public:
     CATLASS_DEVICE
     bool IsLast()
     {
-        if (subBlockId + 1U < subBlockCount) return false;
+        if (subBlockId + 1U < subBlockCount)
+            return false;
         if (usePackedSparse) {
             const int32_t candidate = (swizzleDir == 1) ? blockId + 1 : blockId - 1;
             return FindNextNonEmpty(candidate) < 0;
@@ -771,8 +780,14 @@ public:
         const uint32_t chunksPerLogical = SPLIT_RUNTIME_INNER ? RuntimeCeilDiv(blockN, BLOCK_N) : 1U;
         return static_cast<uint32_t>(blockId) * chunksPerLogical + subBlockId;
     }
-    CATLASS_DEVICE bool IsFirstSubBlock() const { return subBlockId == 0U; }
-    CATLASS_DEVICE bool IsLastSubBlock() const { return subBlockId + 1U == subBlockCount; }
+    CATLASS_DEVICE bool IsFirstSubBlock() const
+    {
+        return subBlockId == 0U;
+    }
+    CATLASS_DEVICE bool IsLastSubBlock() const
+    {
+        return subBlockId + 1U == subBlockCount;
+    }
     CATLASS_DEVICE uint32_t GetRowBlockId() const
     {
         return rowBlockId;
@@ -810,8 +825,8 @@ public:
             sparseFirst = false;
             subBlockId = 0U;
             if (blockId >= 0) {
-                swizzlePosition += static_cast<uint32_t>(blockId > oldBlockId ? blockId - oldBlockId
-                                                                            : oldBlockId - blockId);
+                swizzlePosition +=
+                    static_cast<uint32_t>(blockId > oldBlockId ? blockId - oldBlockId : oldBlockId - blockId);
             }
             Update();
             return *this;
@@ -826,8 +841,7 @@ public:
     CATLASS_DEVICE void SkipBlocks(uint32_t count)
     {
         swizzlePosition += count;
-        blockId = (swizzleDir == 1) ? blockId + static_cast<int32_t>(count)
-                                    : blockId - static_cast<int32_t>(count);
+        blockId = (swizzleDir == 1) ? blockId + static_cast<int32_t>(count) : blockId - static_cast<int32_t>(count);
         Update();
     }
 
@@ -896,8 +910,7 @@ public:
     CATLASS_DEVICE auto GetTileMapping(Coord const& kCoord, Shape const& kShape)
     {
         const uint32_t physicalN = SPLIT_RUNTIME_INNER ? BLOCK_N : blockN;
-        auto coord = tla::MakeCoord(batchId, headId,
-                                    blockId * blockN + subBlockId * physicalN, rowBlockId * blockM);
+        auto coord = tla::MakeCoord(batchId, headId, blockId * blockN + subBlockId * physicalN, rowBlockId * blockM);
         auto shape = tla::MakeShape(blockSize, tla::get<0>(kShape));
         return tla::MakeTuple(coord, shape);
     }
@@ -921,11 +934,13 @@ private:
     {
         if (swizzleDir == 1) {
             for (; candidate < static_cast<int32_t>(blockCnt); ++candidate) {
-                if (IsPackedNonEmpty(static_cast<uint32_t>(candidate))) return candidate;
+                if (IsPackedNonEmpty(static_cast<uint32_t>(candidate)))
+                    return candidate;
             }
         } else {
             for (; candidate >= 0; --candidate) {
-                if (IsPackedNonEmpty(static_cast<uint32_t>(candidate))) return candidate;
+                if (IsPackedNonEmpty(static_cast<uint32_t>(candidate)))
+                    return candidate;
             }
         }
         return -1;
@@ -945,8 +960,7 @@ private:
             blockOffset = 0;
             return;
         }
-        const uint32_t logicalSize = (blockId == (physicalBlockCnt - 1)) ?
-            (seqLens - blockId * blockN) : blockN;
+        const uint32_t logicalSize = (blockId == (physicalBlockCnt - 1)) ? (seqLens - blockId * blockN) : blockN;
         const uint32_t physicalN = SPLIT_RUNTIME_INNER ? BLOCK_N : blockN;
         subBlockCount = RuntimeCeilDiv(logicalSize, physicalN);
         const uint32_t localOffset = subBlockId * physicalN;

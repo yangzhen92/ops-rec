@@ -153,10 +153,11 @@ __simd_callee__ inline void MulMask(RegType& dst, RegType& src, __ubuf__ Type* u
 
  */
 template <typename Type, typename AccType, bool HAS_RAB, bool HAS_MASK, typename RegType>
-__simd_callee__ inline void SiluScoreForward(__ubuf__ AccType* ubSPtr, __ubuf__ Type* ubRabPtr, __ubuf__ Type* ubMaskPtr,
-                                      __ubuf__ Type* ubSiluScorePtr, RegType& vregScore, RegType& vregDenom, RegType& vregSilu,
-                                      RegType& vregOnes, RegType& vregZeros, AccType alpha,
-                                      AscendC::MicroAPI::MaskReg& maskReg)
+__simd_callee__ inline void SiluScoreForward(__ubuf__ AccType* ubSPtr, __ubuf__ Type* ubRabPtr,
+                                             __ubuf__ Type* ubMaskPtr, __ubuf__ Type* ubSiluScorePtr,
+                                             RegType& vregScore, RegType& vregDenom, RegType& vregSilu,
+                                             RegType& vregOnes, RegType& vregZeros, AccType alpha,
+                                             AscendC::MicroAPI::MaskReg& maskReg)
 {
     AscendC::MicroAPI::LoadAlign(vregScore, ubSPtr);
 
@@ -212,9 +213,9 @@ __simd_callee__ inline void SiluScoreForward(__ubuf__ AccType* ubSPtr, __ubuf__ 
 
  */
 template <typename Type, typename AccType, bool HAS_RAB, bool HAS_MASK>
-__simd_vf__ inline void FastSiluScoreForwardVf(__ubuf__ AccType* ubSPtr, __ubuf__ Type* ubRabPtr, __ubuf__ Type* ubMaskPtr,
-                                        __ubuf__ Type* ubSiluScorePtr, AccType alpha, AccType scale, uint32_t count,
-                                        uint32_t repeatTimes)
+__simd_vf__ inline void FastSiluScoreForwardVf(__ubuf__ AccType* ubSPtr, __ubuf__ Type* ubRabPtr,
+                                               __ubuf__ Type* ubMaskPtr, __ubuf__ Type* ubSiluScorePtr, AccType alpha,
+                                               AccType scale, uint32_t count, uint32_t repeatTimes)
 {
     constexpr uint32_t oneRepElm = static_cast<uint32_t>(AscendC::GetVecLen() / sizeof(AccType));
 
@@ -233,32 +234,34 @@ __simd_vf__ inline void FastSiluScoreForwardVf(__ubuf__ AccType* ubSPtr, __ubuf_
         // 循环外只算一次会导致后续迭代 mask 错误（3dba5595 精度回归根因）
         maskReg = AscendC::MicroAPI::UpdateMask<AccType>(count);
         SiluScoreForward<Type, AccType, HAS_RAB, HAS_MASK>(
-            ubSPtr + i * oneRepElm, ubRabPtr + i * oneRepElm, ubMaskPtr + i * oneRepElm,
-            ubSiluScorePtr + i * oneRepElm, vregScore, vregDenom, vregSilu, vregOnes, vregZeros, alpha, maskReg);
+            ubSPtr + i * oneRepElm, ubRabPtr + i * oneRepElm, ubMaskPtr + i * oneRepElm, ubSiluScorePtr + i * oneRepElm,
+            vregScore, vregDenom, vregSilu, vregOnes, vregZeros, alpha, maskReg);
     }
 }
 
 template <typename Type, typename AccType, bool HAS_RAB>
-__simd_vf__ inline void FastSiluScorePackedVf(
-    __ubuf__ AccType* ubSPtr, __ubuf__ Type* ubRabPtr, __ubuf__ Type* ubSiluScorePtr,
-    __ubuf__ uint32_t* ubPackedMaskPtr, AccType alpha, AccType scale, uint32_t rows, uint32_t cols,
-    uint32_t maskWordsPerRow)
+__simd_vf__ inline void FastSiluScorePackedVf(__ubuf__ AccType* ubSPtr, __ubuf__ Type* ubRabPtr,
+                                              __ubuf__ Type* ubSiluScorePtr, __ubuf__ uint32_t* ubPackedMaskPtr,
+                                              AccType alpha, AccType scale, uint32_t rows, uint32_t cols,
+                                              uint32_t maskWordsPerRow)
 {
     using namespace AscendC::MicroAPI;
     constexpr uint32_t ONE_REP_ELM = AscendC::GetVecLen() / sizeof(AccType);
-    RegTensor<AccType> score,denom,silu,ones,zeros,alphaReg;
+    RegTensor<AccType> score, denom, silu, ones, zeros, alphaReg;
     RegTensor<Type> outputZeros;
     MaskReg sourceMask;
     MaskReg fullMask = CreateMask<AccType, MaskPattern::ALL>();
     MaskReg outputMask = CreateMask<Type, MaskPattern::ALL>();
-    Duplicate(ones, static_cast<AccType>(1)); Duplicate(zeros, static_cast<AccType>(0));
-    Duplicate(alphaReg, alpha); Duplicate(outputZeros, static_cast<Type>(0));
-    for (uint16_t row=0; row<rows; ++row) {
-        const uint32_t rowOffset=row*cols;
+    Duplicate(ones, static_cast<AccType>(1));
+    Duplicate(zeros, static_cast<AccType>(0));
+    Duplicate(alphaReg, alpha);
+    Duplicate(outputZeros, static_cast<Type>(0));
+    for (uint16_t row = 0; row < rows; ++row) {
+        const uint32_t rowOffset = row * cols;
         const uint32_t repeatTimes = (cols + ONE_REP_ELM - 1) / ONE_REP_ELM;
         StoreAlign(ubSiluScorePtr + rowOffset, outputZeros, outputMask);
-        for (uint16_t repeat=0; repeat<repeatTimes; ++repeat) {
-            const uint32_t valueOffset=rowOffset+repeat*ONE_REP_ELM;
+        for (uint16_t repeat = 0; repeat < repeatTimes; ++repeat) {
+            const uint32_t valueOffset = rowOffset + repeat * ONE_REP_ELM;
             LoadAlign(score, ubSPtr + valueOffset);
             if constexpr (HAS_RAB) {
                 RegTensor<AccType> rab;
@@ -271,14 +274,16 @@ __simd_vf__ inline void FastSiluScorePackedVf(
                 fullMask = CreateMask<AccType, MaskPattern::ALL>();
                 Add(score, score, rab, fullMask);
             }
-            fullMask = CreateMask<AccType, MaskPattern::ALL>(); Mul(score, score, alphaReg, fullMask);
-            fullMask = CreateMask<AccType, MaskPattern::ALL>(); SiluCore(score, denom, silu, ones, zeros, fullMask);
-            LoadAlign<uint32_t, MaskDist::DIST_US>(
-                sourceMask, ubPackedMaskPtr + row * maskWordsPerRow + repeat * 8);
+            fullMask = CreateMask<AccType, MaskPattern::ALL>();
+            Mul(score, score, alphaReg, fullMask);
+            fullMask = CreateMask<AccType, MaskPattern::ALL>();
+            SiluCore(score, denom, silu, ones, zeros, fullMask);
+            LoadAlign<uint32_t, MaskDist::DIST_US>(sourceMask, ubPackedMaskPtr + row * maskWordsPerRow + repeat * 8);
             MaskUnPack(sourceMask, sourceMask);
             Select(silu, silu, zeros, sourceMask);
             uint32_t valid = cols - repeat * ONE_REP_ELM;
-            if (valid > ONE_REP_ELM) valid = ONE_REP_ELM;
+            if (valid > ONE_REP_ELM)
+                valid = ONE_REP_ELM;
             fullMask = UpdateMask<AccType>(valid);
             if constexpr (!std::is_same<Type, AccType>::value) {
                 CastDownStore<Type, AccType>(ubSiluScorePtr + valueOffset, silu, fullMask);
@@ -290,10 +295,11 @@ __simd_vf__ inline void FastSiluScorePackedVf(
 }
 
 template <typename Type, typename AccType, bool HAS_RAB>
-__simd_vf__ inline void FastSiluScoreCausalVf(
-    __ubuf__ AccType* ubSPtr, __ubuf__ Type* ubRabPtr, __ubuf__ Type* ubSiluScorePtr,
-    AccType alpha, AccType scale, uint32_t rows, uint32_t cols, int32_t qBase, int32_t kBase,
-    int32_t seqlenQ, int32_t seqlenK, int32_t numContext, int32_t numTarget, int32_t targetGroupSize)
+__simd_vf__ inline void FastSiluScoreCausalVf(__ubuf__ AccType* ubSPtr, __ubuf__ Type* ubRabPtr,
+                                              __ubuf__ Type* ubSiluScorePtr, AccType alpha, AccType scale,
+                                              uint32_t rows, uint32_t cols, int32_t qBase, int32_t kBase,
+                                              int32_t seqlenQ, int32_t seqlenK, int32_t numContext, int32_t numTarget,
+                                              int32_t targetGroupSize)
 {
     using namespace AscendC::MicroAPI;
     constexpr uint32_t ONE_REP_ELM = AscendC::GetVecLen() / sizeof(AccType);
@@ -313,7 +319,8 @@ __simd_vf__ inline void FastSiluScoreCausalVf(
         for (uint16_t repeat = 0; repeat < (cols + ONE_REP_ELM - 1) / ONE_REP_ELM; ++repeat) {
             const uint32_t valueOffset = row * cols + repeat * ONE_REP_ELM;
             uint32_t valid = cols - repeat * ONE_REP_ELM;
-            if (valid > ONE_REP_ELM) valid = ONE_REP_ELM;
+            if (valid > ONE_REP_ELM)
+                valid = ONE_REP_ELM;
             validMask = UpdateMask<AccType>(valid);
             LoadAlign(a, ubSPtr + valueOffset);
             if constexpr (HAS_RAB) {
@@ -351,8 +358,8 @@ __simd_vf__ inline void FastSiluScoreCausalVf(
                 Compares<int32_t, AscendC::CMPMODE::LT>(historyRegion, colsReg, targetBase, validMask);
                 And(historyRegion, historyRegion, scoreMask, validMask);
                 Compares<int32_t, AscendC::CMPMODE::GE>(groupMask, colsReg, groupBegin, validMask);
-                Compares<int32_t, AscendC::CMPMODE::LE>(upperMask, colsReg, groupEnd < historyEnd ? groupEnd : historyEnd,
-                                               validMask);
+                Compares<int32_t, AscendC::CMPMODE::LE>(upperMask, colsReg,
+                                                        groupEnd < historyEnd ? groupEnd : historyEnd, validMask);
                 And(groupMask, groupMask, upperMask, validMask);
                 Or(scoreMask, historyRegion, groupMask, validMask);
             }
@@ -367,17 +374,18 @@ __simd_vf__ inline void FastSiluScoreCausalVf(
 }
 
 template <typename Type, typename AccType, bool HAS_RAB>
-__simd_vf__ inline void FastSiluScoreLocalVf(
-    __ubuf__ AccType* ubSPtr, __ubuf__ Type* ubRabPtr, __ubuf__ Type* ubSiluScorePtr,
-    AccType alpha, AccType scale, uint32_t rows, uint32_t cols, int32_t qBase, int32_t kBase,
-    int32_t seqlenQ, int32_t seqlenK, int32_t windowSizeLeft, int32_t windowSizeRight,
-    int32_t numContext, int32_t numTarget, int32_t targetGroupSize)
+__simd_vf__ inline void FastSiluScoreLocalVf(__ubuf__ AccType* ubSPtr, __ubuf__ Type* ubRabPtr,
+                                             __ubuf__ Type* ubSiluScorePtr, AccType alpha, AccType scale, uint32_t rows,
+                                             uint32_t cols, int32_t qBase, int32_t kBase, int32_t seqlenQ,
+                                             int32_t seqlenK, int32_t windowSizeLeft, int32_t windowSizeRight,
+                                             int32_t numContext, int32_t numTarget, int32_t targetGroupSize)
 {
     using namespace AscendC::MicroAPI;
     constexpr uint32_t ONE_REP_ELM = AscendC::GetVecLen() / sizeof(AccType);
     RegTensor<AccType> a, z, s, ones, zeros, alphaReg;
     RegTensor<int32_t> colsReg;
-    MaskReg validMask, lowerMask, upperMask, scoreMask, contextMask, outsideTargetMask, targetLowerMask, targetUpperMask;
+    MaskReg validMask, lowerMask, upperMask, scoreMask, contextMask, outsideTargetMask, targetLowerMask,
+        targetUpperMask;
     Duplicate(ones, static_cast<AccType>(1));
     Duplicate(zeros, static_cast<AccType>(0));
     Duplicate(alphaReg, alpha);
@@ -392,13 +400,16 @@ __simd_vf__ inline void FastSiluScoreLocalVf(
         for (uint16_t repeat = 0; repeat < (cols + ONE_REP_ELM - 1) / ONE_REP_ELM; ++repeat) {
             const uint32_t valueOffset = row * cols + repeat * ONE_REP_ELM;
             uint32_t valid = cols - repeat * ONE_REP_ELM;
-            if (valid > ONE_REP_ELM) valid = ONE_REP_ELM;
+            if (valid > ONE_REP_ELM)
+                valid = ONE_REP_ELM;
             validMask = UpdateMask<AccType>(valid);
             LoadAlign(a, ubSPtr + valueOffset);
             if constexpr (HAS_RAB) {
                 RegTensor<AccType> rab;
-                if constexpr (!std::is_same<Type, AccType>::value) CastUpLoad<AccType, Type>(rab, ubRabPtr + valueOffset, validMask);
-                else LoadAlign(rab, ubRabPtr + valueOffset);
+                if constexpr (!std::is_same<Type, AccType>::value)
+                    CastUpLoad<AccType, Type>(rab, ubRabPtr + valueOffset, validMask);
+                else
+                    LoadAlign(rab, ubRabPtr + valueOffset);
                 Add(a, a, rab, validMask);
             }
             Mul(a, a, alphaReg, validMask);
@@ -427,8 +438,10 @@ __simd_vf__ inline void FastSiluScoreLocalVf(
                 Or(scoreMask, scoreMask, targetLowerMask, validMask);
             }
             Select(s, s, zeros, scoreMask);
-            if constexpr (!std::is_same<Type, AccType>::value) CastDownStore<Type, AccType>(ubSiluScorePtr + valueOffset, s, validMask);
-            else StoreAlign(ubSiluScorePtr + valueOffset, s, validMask);
+            if constexpr (!std::is_same<Type, AccType>::value)
+                CastDownStore<Type, AccType>(ubSiluScorePtr + valueOffset, s, validMask);
+            else
+                StoreAlign(ubSiluScorePtr + valueOffset, s, validMask);
         }
     }
 }

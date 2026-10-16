@@ -52,8 +52,8 @@ struct BackwardRabGradEpilogueBuffer {
     using TransV = Gemm::Block::detail::BufferPosition<Accumulator, L0_NK / 2U, Score::lowerBound>;
     using TransOut = Gemm::Block::detail::BufferPosition<Element, L0_NK / 2U, TransV::lowerBound>;
     using Prob = Gemm::Block::detail::BufferPosition<Element, L0_MN, Score::lowerBound>;
-    using Grab = Gemm::Block::detail::BufferPosition<Element, L0_MN,
-        (TransOut::lowerBound > Prob::lowerBound ? TransOut::lowerBound : Prob::lowerBound)>;
+    using Grab = Gemm::Block::detail::BufferPosition<
+        Element, L0_MN, (TransOut::lowerBound > Prob::lowerBound ? TransOut::lowerBound : Prob::lowerBound)>;
     using GrabPart = Gemm::Block::detail::BufferPosition<Element, L0_MN, Grab::lowerBound>;
     using Gs = Gemm::Block::detail::BufferPosition<Accumulator, L0_MN, GrabPart::lowerBound>;
     static constexpr uint32_t GS = Gs::template Get<0>();
@@ -93,7 +93,7 @@ public:
     static constexpr uint32_t PING_PONG_ROW = L0_TILE_M / 2;
 
     CATLASS_DEVICE
-    BlockEpilogueRabGrad(uint32_t cubeFlag, uint32_t vecFlag, Arch::Resource<ArchTag> &resource,
+    BlockEpilogueRabGrad(uint32_t cubeFlag, uint32_t vecFlag, Arch::Resource<ArchTag>& resource,
                          bool atomicAdd_ = false)
         : atomicAdd(atomicAdd_)
     {
@@ -107,7 +107,7 @@ public:
     }
 
     template <class TensorDst, class Coord, class Shape>
-    CATLASS_DEVICE void operator()(TensorDst &tensorGrab, Coord const &coord, Shape const &shape)
+    CATLASS_DEVICE void operator()(TensorDst& tensorGrab, Coord const& coord, Shape const& shape)
     {
         auto mReal = tla::get<0>(shape);
         auto nReal = tla::get<1>(shape);
@@ -137,16 +137,16 @@ public:
     {
         auto repeatTimes = CeilDiv(count, AscendC::GetVecLen() / sizeof(ElementAccumulator));
 
-        auto ubGSPtr = (__ubuf__ ElementAccumulator *)ubGsTensor[offset].GetPhyAddr();
-        auto ubGRadPartPtr = (__ubuf__ Element *)ubGRabPartTensor[offset].GetPhyAddr();
-        auto ubGRabPtr = (__ubuf__ Element *)ubGRabTensor[offset].GetPhyAddr();
+        auto ubGSPtr = (__ubuf__ ElementAccumulator*)ubGsTensor[offset].GetPhyAddr();
+        auto ubGRadPartPtr = (__ubuf__ Element*)ubGRabPartTensor[offset].GetPhyAddr();
+        auto ubGRabPtr = (__ubuf__ Element*)ubGRabTensor[offset].GetPhyAddr();
 
         AscendC::VF_CALL<Catlass::Epilogue::RegBase::FastRabGradVf<Element, ElementAccumulator, Element>>(
             ubGSPtr, ubGRadPartPtr, ubGRabPtr, count, repeatTimes);
     }
 
     template <class Shape>
-    CATLASS_DEVICE void Compute(Shape const &shape)
+    CATLASS_DEVICE void Compute(Shape const& shape)
     {
         auto rows = RoundUp<ELEM_PER_BLOCK>(tla::get<0>(shape));
         auto cols = RoundUp<ELEM_PER_BLOCK>(tla::get<1>(shape));
@@ -180,7 +180,7 @@ public:
             intriParams.dstStride = 0;
             for (auto i = 0; i < colBlk; i++) {
                 AscendC::DataCopy(dstTensor[(i * rows + rowOffset) * ELEM_PER_BLOCK],
-                    ubGRabTensor[offset + i * ELEM_PER_BLOCK], intriParams);
+                                  ubGRabTensor[offset + i * ELEM_PER_BLOCK], intriParams);
             }
         } else {
             AscendC::DataCopy(dstTensor[offset], ubGRabTensor[offset], count);
@@ -188,7 +188,7 @@ public:
     }
 
     template <class TensorDst, class Coord, class Shape>
-    CATLASS_DEVICE void CopyOutGrab(TensorDst &tensorGrab, Coord const &coord, Shape const &shape)
+    CATLASS_DEVICE void CopyOutGrab(TensorDst& tensorGrab, Coord const& coord, Shape const& shape)
     {
         auto dstOffset = tensorGrab.layout()(coord);
 
@@ -219,4 +219,4 @@ private:
     bool atomicAdd{false};
 };
 
-}
+}  // namespace Catlass::Epilogue::Block

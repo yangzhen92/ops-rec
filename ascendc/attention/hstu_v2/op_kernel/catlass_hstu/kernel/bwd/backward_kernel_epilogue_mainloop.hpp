@@ -115,8 +115,8 @@ struct BackwardEpilogueMainloop {
         GM_ADDR ptrQShare;
         GM_ADDR ptrNumContext;
         GM_ADDR ptrNumTarget;
-        GM_ADDR ptrMetadata;       // 可选: flash_attn_metadata 分核输出;nullptr → 旧设备现算路径
-        GM_ADDR ptrSparseInfo;     // 可选: direct packed sparse info (TensorList), 9 个 int32 tensor
+        GM_ADDR ptrMetadata;    // 可选: flash_attn_metadata 分核输出;nullptr → 旧设备现算路径
+        GM_ADDR ptrSparseInfo;  // 可选: direct packed sparse info (TensorList), 9 个 int32 tensor
 
         CATLASS_DEVICE
         Params() {}
@@ -124,8 +124,8 @@ struct BackwardEpilogueMainloop {
         CATLASS_DEVICE
         Params(GM_ADDR ptrRab_, GM_ADDR ptrSeqOffsetQ_, GM_ADDR ptrSeqOffsetK_, GM_ADDR ptrQGrad_, GM_ADDR ptrKGrad_,
                GM_ADDR ptrVGrad_, GM_ADDR ptrKGradAccum_, GM_ADDR ptrVGradAccum_, GM_ADDR ptrRabGrad_,
-               GM_ADDR ptrQShare_, GM_ADDR ptrNumContext_,
-               GM_ADDR ptrNumTarget_, GM_ADDR ptrMetadata_ = nullptr, GM_ADDR ptrSparseInfo_ = nullptr)
+               GM_ADDR ptrQShare_, GM_ADDR ptrNumContext_, GM_ADDR ptrNumTarget_, GM_ADDR ptrMetadata_ = nullptr,
+               GM_ADDR ptrSparseInfo_ = nullptr)
             : ptrRab(ptrRab_),
               ptrSeqOffsetQ(ptrSeqOffsetQ_),
               ptrSeqOffsetK(ptrSeqOffsetK_),
@@ -284,9 +284,9 @@ struct BackwardEpilogueMainloop {
         BlockEpilogueQK blockEpilogueQK(alpha, scale, QK_READY_ID, PROB_READY_ID, resource);
         BlockEpilogueGV blockEpilogueGV(GV_READY_ID, GRAB_READY_ID, resource, rabHeads == 1);
         BlockEpilogueKGrad blockEpilogueKGrad(K_TRANS_READY_ID, K_TRANS_UB_FREE_ID, (int64_t)heads * dimQK, resource,
-                                               1);
-        BlockEpilogueVGrad blockEpilogueVGrad(V_TRANS_READY_ID, V_TRANS_UB_FREE_ID, (int64_t)heads * dimGV, resource,
-                                               0, scale);
+                                              1);
+        BlockEpilogueVGrad blockEpilogueVGrad(V_TRANS_READY_ID, V_TRANS_UB_FREE_ID, (int64_t)heads * dimGV, resource, 0,
+                                              scale);
 
         QBlockScheduler qBlockScheduler(batch, heads, params.ptrSeqOffsetQ, blockN, blockM);
         // 行(K)调度器: 经工厂构造,对 OuterBlockScheduler / MetadataOuterBlockScheduler 统一(见 mmad mainloop 注释)。
@@ -379,12 +379,14 @@ struct BackwardEpilogueMainloop {
         uint32_t coreNum = AscendC::GetBlockNum() * AscendC::GetTaskRatio();
         const auto range = hstu::schedule::UniformCoreRange(totalSeq, coreId, coreNum);
         const uint32_t rows = range.endBlock - range.beginBlock;
-        if (rows == 0U) return;
+        if (rows == 0U)
+            return;
         auto srcLayout = tla::MakeLayout(tla::MakeShape(rows, dim), tla::MakeStride((int64_t)dim, tla::Int<1>{}));
         auto src = tla::MakeTensor(srcGm, srcLayout, tla::MakeCoord((int64_t)range.beginBlock, 0), Arch::PositionGM{});
         auto dstLayout = tla::MakeLayout(tla::MakeShape(totalSeq, heads, dim),
-            tla::MakeStride((int64_t)heads * dim, (int64_t)dim, tla::Int<1>{}));
-        auto dst = tla::MakeTensor(dstGm, dstLayout, tla::MakeCoord((int64_t)range.beginBlock, 0, 0), Arch::PositionGM{});
+                                         tla::MakeStride((int64_t)heads * dim, (int64_t)dim, tla::Int<1>{}));
+        auto dst =
+            tla::MakeTensor(dstGm, dstLayout, tla::MakeCoord((int64_t)range.beginBlock, 0, 0), Arch::PositionGM{});
         BlockEpilogueQGrad reduce(resource, APPLY_SCALE ? scale : static_cast<ElementACC>(1));
         reduce.template operator()<APPLY_SCALE>(dst, src);
     }

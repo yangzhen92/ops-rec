@@ -54,8 +54,8 @@ struct BackwardScoreEpilogueBuffer {
     using TransOut = Gemm::Block::detail::BufferPosition<Element, L0_NK / 2U, TransV::lowerBound>;
     using Rab = Gemm::Block::detail::BufferPosition<Element, HasRab ? L0_MN : 0U, Score::lowerBound>;
     using Prob = Gemm::Block::detail::BufferPosition<Element, L0_MN, Score::lowerBound>;
-    using Grab = Gemm::Block::detail::BufferPosition<Element, L0_MN,
-        (TransOut::lowerBound > Prob::lowerBound ? TransOut::lowerBound : Prob::lowerBound)>;
+    using Grab = Gemm::Block::detail::BufferPosition<
+        Element, L0_MN, (TransOut::lowerBound > Prob::lowerBound ? TransOut::lowerBound : Prob::lowerBound)>;
     using GrabPart = Gemm::Block::detail::BufferPosition<Element, L0_MN, Grab::lowerBound>;
     using Gs = Gemm::Block::detail::BufferPosition<Accumulator, L0_MN, GrabPart::lowerBound>;
     static constexpr uint32_t SCORE = Score::template Get<0>();
@@ -321,10 +321,10 @@ public:
             auto ubGradRabPartPtr = (__ubuf__ Element*)ubGRabPartTensor[offset].GetPhyAddr();
             const auto qBase = static_cast<int32_t>(tla::get<2>(coord)) + static_cast<int32_t>(rowOffset);
             const auto kBase = static_cast<int32_t>(tla::get<3>(coord));
-            AscendC::VF_CALL<Catlass::Epilogue::RegBase::FastSiluGradHistoryVf<
-                Element, ElementAccumulator, Element, HAS_RAB>>(
-                ubSPtr, ubRabPtr, ubProbPtr, ubGradRabPartPtr, alpha, partRows, cols, qBase, kBase,
-                p.seqlenQ, p.seqlenK);
+            AscendC::VF_CALL<
+                Catlass::Epilogue::RegBase::FastSiluGradHistoryVf<Element, ElementAccumulator, Element, HAS_RAB>>(
+                ubSPtr, ubRabPtr, ubProbPtr, ubGradRabPartPtr, alpha, partRows, cols, qBase, kBase, p.seqlenQ,
+                p.seqlenK);
             AscendC::SetFlag<AscendC::HardEvent::V_MTE3>(pingPongFlag);
             AscendC::WaitFlag<AscendC::HardEvent::V_MTE3>(pingPongFlag);
             CopyToDst(offset, partRows * cols, rows, cols);
@@ -340,7 +340,8 @@ public:
     {
         auto rows = RoundUp<ELEM_PER_BLOCK>(tla::get<0>(shape));
         auto cols = RoundUp<ELEM_PER_BLOCK>(tla::get<1>(shape));
-        if constexpr (HAS_RAB) AscendC::WaitFlag<AscendC::HardEvent::MTE2_V>(EVENT_ID0);
+        if constexpr (HAS_RAB)
+            AscendC::WaitFlag<AscendC::HardEvent::MTE2_V>(EVENT_ID0);
         auto p = predictor.params;
         auto loop = CeilDiv(rows, PING_PONG_ROW);
         for (uint32_t i = 0; i < loop; ++i) {
@@ -355,8 +356,8 @@ public:
             auto ubGradRabPartPtr = (__ubuf__ Element*)ubGRabPartTensor[offset].GetPhyAddr();
             const auto qBase = static_cast<int32_t>(tla::get<2>(coord)) + static_cast<int32_t>(rowOffset);
             const auto kBase = static_cast<int32_t>(tla::get<3>(coord));
-            AscendC::VF_CALL<Catlass::Epilogue::RegBase::FastSiluGradLocalVf<
-                Element, ElementAccumulator, Element, HAS_RAB>>(
+            AscendC::VF_CALL<
+                Catlass::Epilogue::RegBase::FastSiluGradLocalVf<Element, ElementAccumulator, Element, HAS_RAB>>(
                 ubSPtr, ubRabPtr, ubProbPtr, ubGradRabPartPtr, alpha, partRows, cols, qBase, kBase, p.seqlenQ,
                 p.seqlenK, predictor.windowSizeLeft, predictor.windowSizeRight, p.numContext, p.numTarget,
                 p.targetGroupSize);
@@ -365,7 +366,8 @@ public:
             CopyToDst(offset, partRows * cols, rows, cols);
             AscendC::SetFlag<AscendC::HardEvent::MTE3_V>(pingPongFlag);
         }
-        if constexpr (HAS_RAB) AscendC::SetFlag<AscendC::HardEvent::MTE3_MTE2>(EVENT_ID1);
+        if constexpr (HAS_RAB)
+            AscendC::SetFlag<AscendC::HardEvent::MTE3_MTE2>(EVENT_ID1);
     }
 
     CATLASS_DEVICE void CopyToDst(int64_t offset, uint32_t count, uint32_t rows, uint32_t cols)

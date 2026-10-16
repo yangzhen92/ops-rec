@@ -45,8 +45,8 @@ namespace Catlass::Kernel {
  *              包括 SiLU 激活函数、RAB 处理、输出转置等
  */
 template <class BlockEpilogueQK_, class BlockEpiloguePV_, class StreamKReduceEpilogue_, class QBlockScheduler_,
-          class KBlockScheduler_, class Predictor_, class L1TileShape_, bool IS_LOCAL, bool IS_CONTEXT,
-          bool IS_TARGET, bool IS_ARBITRARY, bool ENABLE_STREAM_K = false>
+          class KBlockScheduler_, class Predictor_, class L1TileShape_, bool IS_LOCAL, bool IS_CONTEXT, bool IS_TARGET,
+          bool IS_ARBITRARY, bool ENABLE_STREAM_K = false>
 struct ForwardEpilogueMainloop {
     using BlockEpilogueQK = BlockEpilogueQK_;
     using BlockEpiloguePV = BlockEpiloguePV_;
@@ -89,8 +89,8 @@ struct ForwardEpilogueMainloop {
 
         CATLASS_DEVICE
         Params(GM_ADDR ptrRab_, GM_ADDR ptrSeqOffsetQ_, GM_ADDR ptrSeqOffsetK_, GM_ADDR ptrNumContext_,
-               GM_ADDR ptrNumTarget_, GM_ADDR ptrAttnOutput_, GM_ADDR ptrOutputAccum_,
-               GM_ADDR ptrMetadata_ = nullptr, GM_ADDR ptrSparseInfo_ = nullptr)
+               GM_ADDR ptrNumTarget_, GM_ADDR ptrAttnOutput_, GM_ADDR ptrOutputAccum_, GM_ADDR ptrMetadata_ = nullptr,
+               GM_ADDR ptrSparseInfo_ = nullptr)
             : ptrRab(ptrRab_),
               ptrSeqOffsetQ(ptrSeqOffsetQ_),
               ptrSeqOffsetK(ptrSeqOffsetK_),
@@ -98,7 +98,8 @@ struct ForwardEpilogueMainloop {
               ptrNumTarget(ptrNumTarget_),
               ptrAttnOutput(ptrAttnOutput_),
               ptrOutputAccum(ptrOutputAccum_),
-              ptrMetadata(ptrMetadata_),ptrSparseInfo(ptrSparseInfo_)
+              ptrMetadata(ptrMetadata_),
+              ptrSparseInfo(ptrSparseInfo_)
         {
         }
     };
@@ -125,7 +126,7 @@ struct ForwardEpilogueMainloop {
         if constexpr (IS_ARBITRARY) {
             maskHeads = tilingData.maskHeads;
         }
-        ptrTiling=ptrTiling_;
+        ptrTiling = ptrTiling_;
     }
 
     template <typename ElementT>
@@ -176,14 +177,14 @@ struct ForwardEpilogueMainloop {
 
     // 排空上一 Q block 的 PV 输出
     template <class GlobalOutput>
-    CATLASS_DEVICE void DrainPv(BlockEpiloguePV& blockEpiloguePV, GlobalOutput& gAttnOut,
-                                PvDrainInfo const& pv)
+    CATLASS_DEVICE void DrainPv(BlockEpiloguePV& blockEpiloguePV, GlobalOutput& gAttnOut, PvDrainInfo const& pv)
     {
         if constexpr (!ENABLE_STREAM_K) {
             auto layout = tla::MakeLayout(tla::MakeShape(pv.qBlockSize, dimV),
                                           tla::MakeStride((int64_t)heads * dimV, tla::Int<1>{}));
-            auto tile = tla::MakeTensor(gAttnOut, layout,
-                tla::MakeCoord((int64_t)pv.seqPos, (int64_t)pv.headIdInBlock * dimV), Arch::PositionGM{});
+            auto tile =
+                tla::MakeTensor(gAttnOut, layout, tla::MakeCoord((int64_t)pv.seqPos, (int64_t)pv.headIdInBlock * dimV),
+                                Arch::PositionGM{});
             blockEpiloguePV(tile, pv.transInSlot);
         }
     }
@@ -221,8 +222,8 @@ struct ForwardEpilogueMainloop {
     template <class TensorRab, class TensorAttnOut, class GlobalOutput>
     CATLASS_DEVICE void RunPipeline(BlockEpilogueQK& blockEpilogueQK, BlockEpiloguePV& blockEpiloguePV,
                                     QBlockScheduler& qBlockScheduler, KBlockScheduler& kBlockScheduler,
-                                    TensorRab& tensorRab, TensorAttnOut& tensorAttnOut,
-                                    GlobalOutput& gAttnOut, Predictor& predictor)
+                                    TensorRab& tensorRab, TensorAttnOut& tensorAttnOut, GlobalOutput& gAttnOut,
+                                    Predictor& predictor)
     {
         auto tQ0 = qBlockScheduler.GetTile(tensorAttnOut);
         auto tV0 = kBlockScheduler.GetTile(tensorAttnOut);
@@ -247,11 +248,11 @@ struct ForwardEpilogueMainloop {
 
                 auto coord = coordNext;
                 auto shape = shapeNext;
-                auto meta=qBlockScheduler.GetMeta();
-                auto predParams=predictor.MakeBlockPredParams(tla::MakeCoord((uint32_t)tla::get<0>(meta),
-                    (uint32_t)tla::get<1>(meta),(uint32_t)qBlockScheduler.GetHeadBlockId(),
-                    (uint32_t)kBlockScheduler.GetBlockId()),this,qBlockScheduler.GetCurrentSeqLen(),
-                    kBlockScheduler.GetSeqLens(),1);
+                auto meta = qBlockScheduler.GetMeta();
+                auto predParams = predictor.MakeBlockPredParams(
+                    tla::MakeCoord((uint32_t)tla::get<0>(meta), (uint32_t)tla::get<1>(meta),
+                                   (uint32_t)qBlockScheduler.GetHeadBlockId(), (uint32_t)kBlockScheduler.GetBlockId()),
+                    this, qBlockScheduler.GetCurrentSeqLen(), kBlockScheduler.GetSeqLens(), 1);
                 predictor.Classifier(predParams);
                 hasNext = NextTile(qBlockScheduler, kBlockScheduler, tensorAttnOut, tAttnOutQ, qBlockSize, coordNext,
                                    shapeNext);
@@ -285,7 +286,8 @@ struct ForwardEpilogueMainloop {
         AscendC::GlobalTensor<ElementQ> gAttnOut;
         InitGlobalTensors(params, gRab, gAttnOut);
         AscendC::GlobalTensor<float> gOutputAccum;
-        if constexpr (ENABLE_STREAM_K) gOutputAccum.SetGlobalBuffer((__gm__ float*)params.ptrOutputAccum);
+        if constexpr (ENABLE_STREAM_K)
+            gOutputAccum.SetGlobalBuffer((__gm__ float*)params.ptrOutputAccum);
 
         auto tensorRab = MakeBNSSTensor(gRab);
         auto tensorAttnOut = MakeTNDTensor(gAttnOut, totalSeqLenQ, dimV);
@@ -305,11 +307,11 @@ struct ForwardEpilogueMainloop {
                                            ForwardEpilogueEvents::QK_READY_2};
         const uint32_t pvReadyEvents[3] = {ForwardEpilogueEvents::PV_READY_0, ForwardEpilogueEvents::PV_READY_1,
                                            ForwardEpilogueEvents::PV_READY_2};
-        BlockEpilogueQK blockEpilogueQK(qkReadyEvents, pvReadyEvents, resource, alpha, scale,
-                                        blockM, blockN, dimQK, dimV);
-        BlockEpiloguePV blockEpiloguePV(TRANS_READY_ID, TRANS_MTE3_ID, resource, scale,
-                                        blockM, blockN, dimQK, dimV);
-        Predictor predictor; predictor.Construct(this,params);
+        BlockEpilogueQK blockEpilogueQK(qkReadyEvents, pvReadyEvents, resource, alpha, scale, blockM, blockN, dimQK,
+                                        dimV);
+        BlockEpiloguePV blockEpiloguePV(TRANS_READY_ID, TRANS_MTE3_ID, resource, scale, blockM, blockN, dimQK, dimV);
+        Predictor predictor;
+        predictor.Construct(this, params);
         AscendC::SetFlag<AscendC::HardEvent::MTE3_V>(TRANS_MTE3_ID);
         if (hasWork) {
             if constexpr (ENABLE_STREAM_K)
@@ -345,14 +347,14 @@ struct ForwardEpilogueMainloop {
             const auto range = hstu::schedule::UniformCoreRange(totalSeqLenQ, coreId, coreNum);
             const uint32_t rows = range.endBlock - range.beginBlock;
             if (rows != 0U) {
-                auto srcLayout = tla::MakeLayout(tla::MakeShape(rows, dimV),
-                                                  tla::MakeStride((int64_t)dimV, tla::Int<1>{}));
-                auto src = tla::MakeTensor(gOutputAccum, srcLayout,
-                                            tla::MakeCoord((int64_t)range.beginBlock, 0), Arch::PositionGM{});
+                auto srcLayout =
+                    tla::MakeLayout(tla::MakeShape(rows, dimV), tla::MakeStride((int64_t)dimV, tla::Int<1>{}));
+                auto src = tla::MakeTensor(gOutputAccum, srcLayout, tla::MakeCoord((int64_t)range.beginBlock, 0),
+                                           Arch::PositionGM{});
                 auto dstLayout = tla::MakeLayout(tla::MakeShape(totalSeqLenQ, heads, dimV),
-                    tla::MakeStride((int64_t)heads * dimV, (int64_t)dimV, tla::Int<1>{}));
-                auto dst = tla::MakeTensor(gAttnOut, dstLayout,
-                                            tla::MakeCoord((int64_t)range.beginBlock, 0, 0), Arch::PositionGM{});
+                                                 tla::MakeStride((int64_t)heads * dimV, (int64_t)dimV, tla::Int<1>{}));
+                auto dst = tla::MakeTensor(gAttnOut, dstLayout, tla::MakeCoord((int64_t)range.beginBlock, 0, 0),
+                                           Arch::PositionGM{});
                 // Forward score generation intentionally leaves 1/C out of
                 // the low-precision P tile. Apply it once, after all split-K
                 // FP32 partials have been accumulated.
@@ -381,7 +383,8 @@ struct ForwardEpilogueMainloop {
     uint32_t rabHeads{0};
     float alpha{0.0f};
     float scale{0.0f};
-    uint32_t maskHeads{0}; GM_ADDR ptrTiling{nullptr};
+    uint32_t maskHeads{0};
+    GM_ADDR ptrTiling{nullptr};
 };
 
 }  // namespace Catlass::Kernel

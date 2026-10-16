@@ -27,9 +27,8 @@ public:
     static constexpr int64_t kMaxDim = 256;
 
     HstuForwardV2ParamChecker(const at::Tensor& q, const at::Tensor& k, const at::Tensor& v,
-                              const at::Tensor& seqOffsetQ, const at::Tensor& seqOffsetK,
-                              int64_t maxSeqLenQ, int64_t maxSeqLenK,
-                              const c10::optional<at::Tensor>& rab)
+                              const at::Tensor& seqOffsetQ, const at::Tensor& seqOffsetK, int64_t maxSeqLenQ,
+                              int64_t maxSeqLenK, const c10::optional<at::Tensor>& rab)
     {
         TORCH_CHECK(q.dim() == 3 && k.dim() == 3 && v.dim() == 3, "q/k/v must be 3D");
         TORCH_CHECK(seqOffsetQ.dim() == 1 && seqOffsetK.dim() == 1, "seq_offset must be 1D");
@@ -42,10 +41,8 @@ public:
         TORCH_CHECK(seqOffsetK.size(0) == seqOffsetQ.size(0), "seq_offset size mismatch");
         TORCH_CHECK(batchSize > 0, "batchSize must be > 0");
         TORCH_CHECK(heads >= 1 && heads <= kMaxHeads, "heads must be in [1,16]");
-        TORCH_CHECK(dimQK % kDimAlign == 0 && dimQK <= kMaxDim,
-                    "dimQK must be a multiple of 16 and <= 256");
-        TORCH_CHECK(dimV % kDimAlign == 0 && dimV <= kMaxDim,
-                    "dimV must be a multiple of 16 and <= 256");
+        TORCH_CHECK(dimQK % kDimAlign == 0 && dimQK <= kMaxDim, "dimQK must be a multiple of 16 and <= 256");
+        TORCH_CHECK(dimV % kDimAlign == 0 && dimV <= kMaxDim, "dimV must be a multiple of 16 and <= 256");
         TORCH_CHECK(maxSeqLenQ > 0 && maxSeqLenK > 0, "max sequence lengths must be > 0");
         const auto dtype = q.scalar_type();
         TORCH_CHECK(dtype == at::kHalf || dtype == at::kBFloat16, "q/k/v must be float16 or bfloat16");
@@ -55,7 +52,8 @@ public:
         if (rab.has_value() && rab->defined()) {
             TORCH_CHECK(rab->dim() == 4, "rab must be 4D");
             TORCH_CHECK(rab->size(0) == batchSize && (rab->size(1) == 1 || rab->size(1) == heads) &&
-                        rab->size(2) == maxSeqLenQ && rab->size(3) == maxSeqLenK, "rab shape mismatch");
+                            rab->size(2) == maxSeqLenQ && rab->size(3) == maxSeqLenK,
+                        "rab shape mismatch");
             TORCH_CHECK(rab->scalar_type() == at::kHalf || rab->scalar_type() == at::kBFloat16,
                         "rab must be float16 or bfloat16");
         }
@@ -182,11 +180,10 @@ private:
     void CheckRab(const at::Tensor& rab, int64_t maxSeqLenQ, int64_t maxSeqLenK)
     {
         TORCH_CHECK(rab.dim() == 4, "rab must be 4D, got ", rab.dim(), "D");
-        TORCH_CHECK(
-            rab.size(0) == batchSize && (rab.size(1) == 1 || rab.size(1) == heads) &&
-                rab.size(2) == maxSeqLenQ && rab.size(3) == maxSeqLenK,
-            "rab shape mismatch, expect heads=1 or heads=", heads, ", got [",
-            rab.size(0), ",", rab.size(1), ",", rab.size(2), ",", rab.size(3), "]");
+        TORCH_CHECK(rab.size(0) == batchSize && (rab.size(1) == 1 || rab.size(1) == heads) &&
+                        rab.size(2) == maxSeqLenQ && rab.size(3) == maxSeqLenK,
+                    "rab shape mismatch, expect heads=1 or heads=", heads, ", got [", rab.size(0), ",", rab.size(1),
+                    ",", rab.size(2), ",", rab.size(3), "]");
         TORCH_CHECK(rab.scalar_type() == at::kHalf || rab.scalar_type() == at::kBFloat16,
                     "rab must be float16 or bfloat16, got ", c10::toString(rab.scalar_type()));
     }

@@ -103,8 +103,8 @@ static bool ParseAttr(gert::TilingContext* context, HstuForwardV2TilingData& til
     OPS_CHECK_PTR_NULL(winLeft, false);
     OPS_CHECK_PTR_NULL(winRight, false);
     OPS_CHECK_PTR_NULL(deterministic, false);
-    OPS_CHECK(*winLeft < -1 || *winRight < -1,
-              OPS_LOG_E("", "tiling failed window sizes must be >= -1.\n"), return false);
+    OPS_CHECK(*winLeft < -1 || *winRight < -1, OPS_LOG_E("", "tiling failed window sizes must be >= -1.\n"),
+              return false);
 
     tilingData.set_maxSeqLenQ(*maxSeqQ);
     tilingData.set_maxSeqLenK(*maxSeqK);
@@ -191,15 +191,14 @@ static bool TilingKeySet(gert::TilingContext* context, HstuForwardV2TilingData& 
     auto dimQK = tilingData.get_dimQK();
     auto dimV = tilingData.get_dimV();
 
-    const uint32_t tilingDim = ops_rec::hstu::GetFwdTileSize(
-        std::max(tilingData.get_dimQK(), tilingData.get_dimV())).k;
-    const uint64_t outerTasks = static_cast<uint64_t>(tilingData.get_batch()) * tilingData.get_heads() *
+    const uint32_t tilingDim = ops_rec::hstu::GetFwdTileSize(std::max(tilingData.get_dimQK(), tilingData.get_dimV())).k;
+    const uint64_t outerTasks =
+        static_cast<uint64_t>(tilingData.get_batch()) * tilingData.get_heads() *
         ((tilingData.get_maxSeqLenQ() + tilingData.get_blockM() - 1U) / tilingData.get_blockM());
-    const uint64_t innerBlocks =
-        (tilingData.get_maxSeqLenK() + tilingData.get_blockN() - 1U) / tilingData.get_blockN();
+    const uint64_t innerBlocks = (tilingData.get_maxSeqLenK() + tilingData.get_blockN() - 1U) / tilingData.get_blockN();
     const bool enableStreamK = !*deterministic && outerTasks < coreNum && innerBlocks > 1U;
-    ASCENDC_TPL_SEL_PARAM(context, hasRab, isLocal, isCausal, isContext, isTarget, isArbitrary,
-                          enableStreamK, tilingDim);
+    ASCENDC_TPL_SEL_PARAM(context, hasRab, isLocal, isCausal, isContext, isTarget, isArbitrary, enableStreamK,
+                          tilingDim);
     return true;
 }
 
@@ -230,13 +229,12 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
     auto ascendPlatform = platform_ascendc::PlatformAscendC(context->GetPlatformInfo());
     size_t coreNum = ascendPlatform.GetCoreNumAic();
     const auto* metadata = context->GetInputTensor(static_cast<size_t>(IN_INDEX::METADATA));
-    const auto* deterministic = context->GetAttrs()->GetAttrPointer<bool>(
-        static_cast<size_t>(ATTR_INDEX::DETERMINISTIC));
+    const auto* deterministic =
+        context->GetAttrs()->GetAttrPointer<bool>(static_cast<size_t>(ATTR_INDEX::DETERMINISTIC));
     OPS_CHECK_PTR_NULL(deterministic, return ge::GRAPH_FAILED);
     const size_t outerTasks = static_cast<size_t>(tilingData.get_batch()) * tilingData.get_heads() *
-        ((tilingData.get_maxSeqLenQ() + tilingData.get_blockM() - 1U) / tilingData.get_blockM());
-    const size_t innerBlocks = (tilingData.get_maxSeqLenK() + tilingData.get_blockN() - 1U) /
-                               tilingData.get_blockN();
+                              ((tilingData.get_maxSeqLenQ() + tilingData.get_blockM() - 1U) / tilingData.get_blockM());
+    const size_t innerBlocks = (tilingData.get_maxSeqLenK() + tilingData.get_blockN() - 1U) / tilingData.get_blockN();
     if (!*deterministic && outerTasks < coreNum && innerBlocks > 1U) {
         // Stream-K metadata is generated against the complete AIC topology.
         // Keep that launch width even when there are fewer pair tasks: the
@@ -244,9 +242,9 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
         // were removed by a host-side min(pairTasks) clamp.
     } else if (metadata == nullptr) {
         const auto tile = ops_rec::hstu::GetFwdTileSize(tilingData.get_dimQK());
-        const size_t outerBlocks = static_cast<size_t>(tilingData.get_batch()) * tilingData.get_heads() *
-                                   ((tilingData.get_maxSeqLenQ() + tilingData.get_blockM() - 1U) /
-                                    tilingData.get_blockM());
+        const size_t outerBlocks =
+            static_cast<size_t>(tilingData.get_batch()) * tilingData.get_heads() *
+            ((tilingData.get_maxSeqLenQ() + tilingData.get_blockM() - 1U) / tilingData.get_blockM());
         coreNum = std::max<size_t>(1U, std::min(coreNum, outerBlocks));
     }
     context->SetBlockDim(coreNum);
@@ -312,9 +310,14 @@ public:
         // 可选: flash_attn_metadata 分核输出(int32,HEAD+FA+FD 布局)。未传 → kernel 收到 nullptr →
         // 旧设备现算分核(零回归)
         this->Input("metadata").ParamType(OPTIONAL).DataType({ge::DT_INT32, ge::DT_INT32}).FormatList({ge::FORMAT_ND});
-        this->Input("output_accum").ParamType(OPTIONAL).DataType({ge::DT_FLOAT, ge::DT_FLOAT})
+        this->Input("output_accum")
+            .ParamType(OPTIONAL)
+            .DataType({ge::DT_FLOAT, ge::DT_FLOAT})
             .FormatList({ge::FORMAT_ND});
-        this->Input("sparse_info").ParamType(DYNAMIC).DataType({ge::DT_INT32, ge::DT_INT32}).FormatList({ge::FORMAT_ND});
+        this->Input("sparse_info")
+            .ParamType(DYNAMIC)
+            .DataType({ge::DT_INT32, ge::DT_INT32})
+            .FormatList({ge::FORMAT_ND});
         this->Output("attn_output").ParamType(REQUIRED).Follow("q", FollowType::DTYPE).FormatList({ge::FORMAT_ND});
 
         this->Attr("max_seqlen_q").Int();

@@ -91,9 +91,8 @@ __simd_callee__ inline void FastSiluGradVfImpl(__ubuf__ AccType* ubSPtr, __ubuf_
         maskReg = AscendC::MicroAPI::UpdateMask<AccType>(count);
 
         SiluScoreBackward<Type, AccType, HAS_RAB, NEED_MASK>(
-            ubSPtr + i * oneRepElm, ubRabPtr + i * oneRepElm, ubMaskPtr + i * oneRepElm,
-            ubSiluScorePtr + i * oneRepElm, vregScore, vregDenom, vregTmp, vregSilu, vregOnes, vregZeros, alpha,
-            maskReg);
+            ubSPtr + i * oneRepElm, ubRabPtr + i * oneRepElm, ubMaskPtr + i * oneRepElm, ubSiluScorePtr + i * oneRepElm,
+            vregScore, vregDenom, vregTmp, vregSilu, vregOnes, vregZeros, alpha, maskReg);
 
         AscendC::MicroAPI::Sub(vregTmp, vregOnes, vregDenom, maskReg);
         AscendC::MicroAPI::MulAddDst(vregDenom, vregSilu, vregTmp, maskReg);
@@ -121,10 +120,10 @@ __simd_vf__ inline void FastSiluGradVf(__ubuf__ AccType* ubSPtr, __ubuf__ Type* 
 }
 
 template <typename Type, typename AccType, typename GrabType, bool HAS_RAB>
-__simd_vf__ inline void FastSiluGradPackedVf(
-    __ubuf__ AccType* ubSPtr, __ubuf__ Type* ubRabPtr, __ubuf__ Type* ubSiluScorePtr,
-    __ubuf__ GrabType* ubGradPartPtr, __ubuf__ uint32_t* ubPackedMaskPtr, AccType alpha, uint32_t rows, uint32_t cols,
-    uint32_t maskWordsPerRow)
+__simd_vf__ inline void FastSiluGradPackedVf(__ubuf__ AccType* ubSPtr, __ubuf__ Type* ubRabPtr,
+                                             __ubuf__ Type* ubSiluScorePtr, __ubuf__ GrabType* ubGradPartPtr,
+                                             __ubuf__ uint32_t* ubPackedMaskPtr, AccType alpha, uint32_t rows,
+                                             uint32_t cols, uint32_t maskWordsPerRow)
 {
     using namespace AscendC::MicroAPI;
     constexpr uint32_t ONE_REP_ELM = static_cast<uint32_t>(AscendC::GetVecLen() / sizeof(AccType));
@@ -150,7 +149,8 @@ __simd_vf__ inline void FastSiluGradPackedVf(
         for (uint16_t repeat = 0; repeat < repeatTimes; ++repeat) {
             const uint32_t valueOffset = rowOffset + repeat * ONE_REP_ELM;
             uint32_t valid = cols - repeat * ONE_REP_ELM;
-            if (valid > ONE_REP_ELM) valid = ONE_REP_ELM;
+            if (valid > ONE_REP_ELM)
+                valid = ONE_REP_ELM;
             fullMask = UpdateMask<AccType>(valid);
             LoadAlign(vregA, ubSPtr + valueOffset);
             if constexpr (HAS_RAB) {
@@ -165,8 +165,8 @@ __simd_vf__ inline void FastSiluGradPackedVf(
             ExpSub(vregZ, vregZeros, vregA, fullMask);
             Add(vregZ, vregOnes, vregZ, fullMask);
             Div(vregZ, vregOnes, vregZ, fullMask);
-            LoadAlign<uint32_t, MaskDist::DIST_US>(
-                sourceMaskTensor, ubPackedMaskPtr + row * maskWordsPerRow + repeat * 8);
+            LoadAlign<uint32_t, MaskDist::DIST_US>(sourceMaskTensor,
+                                                   ubPackedMaskPtr + row * maskWordsPerRow + repeat * 8);
             MaskUnPack(sourceMaskTensor, sourceMaskTensor);
             Mul<AccType, MaskMergeMode::ZEROING>(vregS, vregZ, vregA, sourceMaskTensor);
             if constexpr (!std::is_same<Type, AccType>::value) {
@@ -187,10 +187,10 @@ __simd_vf__ inline void FastSiluGradPackedVf(
 }
 
 template <typename Type, typename AccType, typename GrabType, bool HAS_RAB>
-__simd_vf__ inline void FastSiluGradHistoryVf(
-    __ubuf__ AccType* ubSPtr, __ubuf__ Type* ubRabPtr, __ubuf__ Type* ubSiluScorePtr,
-    __ubuf__ GrabType* ubGradPartPtr, AccType alpha, uint32_t rows, uint32_t cols, int32_t qBase, int32_t kBase,
-    int32_t seqlenQ, int32_t seqlenK)
+__simd_vf__ inline void FastSiluGradHistoryVf(__ubuf__ AccType* ubSPtr, __ubuf__ Type* ubRabPtr,
+                                              __ubuf__ Type* ubSiluScorePtr, __ubuf__ GrabType* ubGradPartPtr,
+                                              AccType alpha, uint32_t rows, uint32_t cols, int32_t qBase, int32_t kBase,
+                                              int32_t seqlenQ, int32_t seqlenK)
 {
     using namespace AscendC::MicroAPI;
     constexpr uint32_t ONE_REP_ELM = AscendC::GetVecLen() / sizeof(AccType);
@@ -207,7 +207,8 @@ __simd_vf__ inline void FastSiluGradHistoryVf(
         for (uint16_t repeat = 0; repeat < (cols + ONE_REP_ELM - 1) / ONE_REP_ELM; ++repeat) {
             const uint32_t valueOffset = row * cols + repeat * ONE_REP_ELM;
             uint32_t valid = cols - repeat * ONE_REP_ELM;
-            if (valid > ONE_REP_ELM) valid = ONE_REP_ELM;
+            if (valid > ONE_REP_ELM)
+                valid = ONE_REP_ELM;
             validMask = UpdateMask<AccType>(valid);
             LoadAlign(a, ubSPtr + valueOffset);
             if constexpr (HAS_RAB) {
@@ -245,17 +246,19 @@ __simd_vf__ inline void FastSiluGradHistoryVf(
 }
 
 template <typename Type, typename AccType, typename GrabType, bool HAS_RAB>
-__simd_vf__ inline void FastSiluGradLocalVf(
-    __ubuf__ AccType* ubSPtr, __ubuf__ Type* ubRabPtr, __ubuf__ Type* ubSiluScorePtr,
-    __ubuf__ GrabType* ubGradPartPtr, AccType alpha, uint32_t rows, uint32_t cols, int32_t qBase, int32_t kBase,
-    int32_t seqlenQ, int32_t seqlenK, int32_t windowSizeLeft, int32_t windowSizeRight,
-    int32_t numContext, int32_t numTarget, int32_t targetGroupSize)
+__simd_vf__ inline void FastSiluGradLocalVf(__ubuf__ AccType* ubSPtr, __ubuf__ Type* ubRabPtr,
+                                            __ubuf__ Type* ubSiluScorePtr, __ubuf__ GrabType* ubGradPartPtr,
+                                            AccType alpha, uint32_t rows, uint32_t cols, int32_t qBase, int32_t kBase,
+                                            int32_t seqlenQ, int32_t seqlenK, int32_t windowSizeLeft,
+                                            int32_t windowSizeRight, int32_t numContext, int32_t numTarget,
+                                            int32_t targetGroupSize)
 {
     using namespace AscendC::MicroAPI;
     constexpr uint32_t ONE_REP_ELM = AscendC::GetVecLen() / sizeof(AccType);
     RegTensor<AccType> a, z, s, t, ones, zeros;
     RegTensor<int32_t> colsReg;
-    MaskReg validMask, lowerMask, upperMask, scoreMask, contextMask, outsideTargetMask, targetLowerMask, targetUpperMask;
+    MaskReg validMask, lowerMask, upperMask, scoreMask, contextMask, outsideTargetMask, targetLowerMask,
+        targetUpperMask;
     Duplicate(ones, static_cast<AccType>(1));
     Duplicate(zeros, static_cast<AccType>(0));
     const int32_t delta = seqlenK - seqlenQ;
@@ -269,13 +272,16 @@ __simd_vf__ inline void FastSiluGradLocalVf(
         for (uint16_t repeat = 0; repeat < (cols + ONE_REP_ELM - 1) / ONE_REP_ELM; ++repeat) {
             const uint32_t valueOffset = row * cols + repeat * ONE_REP_ELM;
             uint32_t valid = cols - repeat * ONE_REP_ELM;
-            if (valid > ONE_REP_ELM) valid = ONE_REP_ELM;
+            if (valid > ONE_REP_ELM)
+                valid = ONE_REP_ELM;
             validMask = UpdateMask<AccType>(valid);
             LoadAlign(a, ubSPtr + valueOffset);
             if constexpr (HAS_RAB) {
                 RegTensor<AccType> rab;
-                if constexpr (!std::is_same<Type, AccType>::value) CastUpLoad<AccType, Type>(rab, ubRabPtr + valueOffset, validMask);
-                else LoadAlign(rab, ubRabPtr + valueOffset);
+                if constexpr (!std::is_same<Type, AccType>::value)
+                    CastUpLoad<AccType, Type>(rab, ubRabPtr + valueOffset, validMask);
+                else
+                    LoadAlign(rab, ubRabPtr + valueOffset);
                 Axpy(a, rab, alpha, validMask);
             }
             ExpSub(z, zeros, a, validMask);
@@ -303,12 +309,16 @@ __simd_vf__ inline void FastSiluGradLocalVf(
             }
             Select(z, z, zeros, scoreMask);
             Mul(s, z, a, validMask);
-            if constexpr (!std::is_same<Type, AccType>::value) CastDownStore<Type, AccType>(ubSiluScorePtr + valueOffset, s, validMask);
-            else StoreAlign(ubSiluScorePtr + valueOffset, s, validMask);
+            if constexpr (!std::is_same<Type, AccType>::value)
+                CastDownStore<Type, AccType>(ubSiluScorePtr + valueOffset, s, validMask);
+            else
+                StoreAlign(ubSiluScorePtr + valueOffset, s, validMask);
             Sub(t, ones, z, validMask);
             MulAddDst(z, s, t, validMask);
-            if constexpr (!std::is_same<GrabType, AccType>::value) CastDownStore<GrabType, AccType>(ubGradPartPtr + valueOffset, z, validMask);
-            else StoreAlign(ubGradPartPtr + valueOffset, z, validMask);
+            if constexpr (!std::is_same<GrabType, AccType>::value)
+                CastDownStore<GrabType, AccType>(ubGradPartPtr + valueOffset, z, validMask);
+            else
+                StoreAlign(ubGradPartPtr + valueOffset, z, validMask);
         }
     }
 }

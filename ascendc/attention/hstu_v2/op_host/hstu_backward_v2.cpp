@@ -146,7 +146,8 @@ static bool TilingKeySet(gert::TilingContext* context, HstuBackwardV2TilingData&
     const auto* numContext = context->GetInputTensor(static_cast<size_t>(IN_INDEX::NUM_CONTEXT));
     const auto* numTarget = context->GetInputTensor(static_cast<size_t>(IN_INDEX::NUM_TARGET));
     const auto* rab = context->GetInputTensor(static_cast<size_t>(IN_INDEX::RAB));
-    const auto* deterministic = context->GetAttrs()->GetAttrPointer<bool>(static_cast<size_t>(ATTR_INDEX::DETERMINISTIC));
+    const auto* deterministic =
+        context->GetAttrs()->GetAttrPointer<bool>(static_cast<size_t>(ATTR_INDEX::DETERMINISTIC));
     OPS_CHECK_PTR_NULL(deterministic, false);
     auto winLeft = tilingData.get_windowSizeLeft();
     auto winRight = tilingData.get_windowSizeRight();
@@ -166,9 +167,9 @@ static bool TilingKeySet(gert::TilingContext* context, HstuBackwardV2TilingData&
     auto dimGV = tilingData.get_dimGV();
     auto platform = platform_ascendc::PlatformAscendC(context->GetPlatformInfo());
     const uint32_t coreNum = static_cast<uint32_t>(platform.GetCoreNumAic());
-    auto runtimeTile = ops_rec::hstu::GetBwdRuntimeTile(
-        tilingData.get_maxSeqLenQ(), tilingData.get_maxSeqLenK(), tilingData.get_batch(), tilingData.get_heads(),
-        dimQK, dimGV, coreNum, GetCoreMemSize(platform), true);
+    auto runtimeTile = ops_rec::hstu::GetBwdRuntimeTile(tilingData.get_maxSeqLenQ(), tilingData.get_maxSeqLenK(),
+                                                        tilingData.get_batch(), tilingData.get_heads(), dimQK, dimGV,
+                                                        coreNum, GetCoreMemSize(platform), true);
     tilingData.set_blockM(runtimeTile.l1.m);
     tilingData.set_blockN(runtimeTile.l1.n);
     uint32_t maskHeads = 0;
@@ -186,16 +187,13 @@ static bool TilingKeySet(gert::TilingContext* context, HstuBackwardV2TilingData&
         OPS_CHECK(maskHeads != 1 && maskHeads != tilingData.get_heads(),
                   OPS_LOG_E("", "backward packed heads must be 1 or equal to Q heads.\n"), return false);
         const auto tile = runtimeTile.l1;
-        const uint64_t maxBlkCntQ =
-            (static_cast<uint64_t>(tilingData.get_maxSeqLenQ()) + tile.m - 1) / tile.m;
-        const uint64_t maxBlkCntK =
-            (static_cast<uint64_t>(tilingData.get_maxSeqLenK()) + tile.n - 1) / tile.n;
+        const uint64_t maxBlkCntQ = (static_cast<uint64_t>(tilingData.get_maxSeqLenQ()) + tile.m - 1) / tile.m;
+        const uint64_t maxBlkCntK = (static_cast<uint64_t>(tilingData.get_maxSeqLenK()) + tile.n - 1) / tile.n;
         const uint64_t outerRows = static_cast<uint64_t>(tilingData.get_batch()) * maskHeads * maxBlkCntK;
         const uint64_t bitmapWordsPerRow = tile.n / 32U;
         OPS_CHECK(static_cast<uint64_t>(descriptor->GetShapeSize()) < outerRows * maxBlkCntQ,
                   OPS_LOG_E("", "backward descriptor is too small.\n"), return false);
-        OPS_CHECK(static_cast<uint64_t>(bitmap->GetShapeSize()) <
-                      outerRows * maxBlkCntQ * tile.m * bitmapWordsPerRow,
+        OPS_CHECK(static_cast<uint64_t>(bitmap->GetShapeSize()) < outerRows * maxBlkCntQ * tile.m * bitmapWordsPerRow,
                   OPS_LOG_E("", "backward bitmap is too small.\n"), return false);
         OPS_CHECK(static_cast<uint64_t>(rowBounds->GetShapeSize()) < outerRows * 2,
                   OPS_LOG_E("", "backward row_bounds is too small.\n"), return false);
@@ -218,13 +216,13 @@ static bool TilingKeySet(gert::TilingContext* context, HstuBackwardV2TilingData&
     tilingData.set_rabHeads(rabHeads);
 
     const uint32_t tilingDim = ops_rec::hstu::GetBwdTileSize(std::max(dimQK, dimGV)).k;
-    const uint64_t outerTasks = static_cast<uint64_t>(tilingData.get_batch()) * tilingData.get_heads() *
+    const uint64_t outerTasks =
+        static_cast<uint64_t>(tilingData.get_batch()) * tilingData.get_heads() *
         ((tilingData.get_maxSeqLenK() + tilingData.get_blockN() - 1U) / tilingData.get_blockN());
-    const uint64_t innerBlocks =
-        (tilingData.get_maxSeqLenQ() + tilingData.get_blockM() - 1U) / tilingData.get_blockM();
+    const uint64_t innerBlocks = (tilingData.get_maxSeqLenQ() + tilingData.get_blockM() - 1U) / tilingData.get_blockM();
     const bool enableStreamK = !*deterministic && outerTasks < coreNum && innerBlocks > 1U;
-    ASCENDC_TPL_SEL_PARAM(context, hasRab, isLocal, isCausal, isContext, isTarget, isArbitrary,
-                          enableStreamK, tilingDim);
+    ASCENDC_TPL_SEL_PARAM(context, hasRab, isLocal, isCausal, isContext, isTarget, isArbitrary, enableStreamK,
+                          tilingDim);
     return true;
 }
 
@@ -269,20 +267,20 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
     auto ascendPlatform = platform_ascendc::PlatformAscendC(context->GetPlatformInfo());
     size_t coreNum = ascendPlatform.GetCoreNumAic();
     const auto* metadata = context->GetInputTensor(static_cast<size_t>(IN_INDEX::METADATA));
-    const auto* deterministic = context->GetAttrs()->GetAttrPointer<bool>(static_cast<size_t>(ATTR_INDEX::DETERMINISTIC));
+    const auto* deterministic =
+        context->GetAttrs()->GetAttrPointer<bool>(static_cast<size_t>(ATTR_INDEX::DETERMINISTIC));
     OPS_CHECK_PTR_NULL(deterministic, return ge::GRAPH_FAILED);
     const size_t outerTasks = static_cast<size_t>(tilingData.get_batch()) * tilingData.get_heads() *
-        ((tilingData.get_maxSeqLenK() + tilingData.get_blockN() - 1U) / tilingData.get_blockN());
-    const size_t innerBlocks = (tilingData.get_maxSeqLenQ() + tilingData.get_blockM() - 1U) /
-                               tilingData.get_blockM();
+                              ((tilingData.get_maxSeqLenK() + tilingData.get_blockN() - 1U) / tilingData.get_blockN());
+    const size_t innerBlocks = (tilingData.get_maxSeqLenQ() + tilingData.get_blockM() - 1U) / tilingData.get_blockM();
     if (!*deterministic && outerTasks < coreNum && innerBlocks > 1U) {
         // Keep the complete topology used to generate Stream-K metadata.
         // Non-empty records can be sparse in core-id space when the pair-task
         // count is smaller than the device core count.
     } else if (metadata == nullptr) {
-        const size_t outerBlocks = static_cast<size_t>(tilingData.get_batch()) * tilingData.get_heads() *
-                                   ((tilingData.get_maxSeqLenK() + tilingData.get_blockN() - 1U) /
-                                    tilingData.get_blockN());
+        const size_t outerBlocks =
+            static_cast<size_t>(tilingData.get_batch()) * tilingData.get_heads() *
+            ((tilingData.get_maxSeqLenK() + tilingData.get_blockN() - 1U) / tilingData.get_blockN());
         coreNum = std::max<size_t>(1U, std::min(coreNum, outerBlocks));
     }
     context->SetBlockDim(coreNum);
@@ -440,8 +438,14 @@ public:
         // 可选: flash_attn_metadata 分核输出(int32,HEAD+FA+FD 布局)。未传 → kernel 收到 nullptr →
         // 旧设备现算分核(零回归)
         this->Input("metadata").ParamType(OPTIONAL).DataType({ge::DT_INT32, ge::DT_INT32}).FormatList({ge::FORMAT_ND});
-        this->Input("k_grad_accum").ParamType(OPTIONAL).DataType({ge::DT_FLOAT, ge::DT_FLOAT}).FormatList({ge::FORMAT_ND});
-        this->Input("v_grad_accum").ParamType(OPTIONAL).DataType({ge::DT_FLOAT, ge::DT_FLOAT}).FormatList({ge::FORMAT_ND});
+        this->Input("k_grad_accum")
+            .ParamType(OPTIONAL)
+            .DataType({ge::DT_FLOAT, ge::DT_FLOAT})
+            .FormatList({ge::FORMAT_ND});
+        this->Input("v_grad_accum")
+            .ParamType(OPTIONAL)
+            .DataType({ge::DT_FLOAT, ge::DT_FLOAT})
+            .FormatList({ge::FORMAT_ND});
         // 可选: direct packed sparse info (Dynamic/TensorList),固定 9 个 int32 tensor。
         this->Input("sparse_info")
             .ParamType(DYNAMIC)

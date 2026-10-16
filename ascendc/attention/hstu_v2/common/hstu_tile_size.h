@@ -27,12 +27,14 @@ struct HstuTileTrait {
                                : TilePlan{{128U, 64U, 256U}, {64U, 64U, 256U}};
     }
 
-    static bool CheckFwdBuffer(uint32_t m, uint32_t n, uint32_t dimQk, uint32_t dimV,
-                               const CoreMemSize& mem, const TilePlan& physical)
+    static bool CheckFwdBuffer(uint32_t m, uint32_t n, uint32_t dimQk, uint32_t dimV, const CoreMemSize& mem,
+                               const TilePlan& physical)
     {
-        if (m > physical.l1.m || dimQk > physical.l1.k || dimV > physical.l1.k) return false;
+        if (m > physical.l1.m || dimQk > physical.l1.k || dimV > physical.l1.k)
+            return false;
         const auto l0 = ops_rec::attn_plan::GetL0Tile(m, n, dimQk, dimV, mem, physical.l0);
-        if (l0.m == 0U || l0.n == 0U || l0.k == 0U) return false;
+        if (l0.m == 0U || l0.n == 0U || l0.k == 0U)
+            return false;
         constexpr uint64_t ELEMENT_BYTES = 2U;
         constexpr uint64_t ACC_BYTES = 4U;
         const uint64_t qkL0a = static_cast<uint64_t>(m) * dimQk * ELEMENT_BYTES;
@@ -45,27 +47,26 @@ struct HstuTileTrait {
         // are resident for the complete runtime N tile; score/prob remain
         // physical L0 sub-tiles and are consumed a slice at a time.
         const uint64_t blockK = std::max(dimQk, dimV);
-        const uint64_t l1 = (2ULL * m * blockK + 4ULL * n * blockK +
-                             3ULL * m * n) * ELEMENT_BYTES;
+        const uint64_t l1 = (2ULL * m * blockK + 4ULL * n * blockK + 3ULL * m * n) * ELEMENT_BYTES;
         constexpr uint64_t AIV_PER_AIC = 2U;
         const uint64_t score = static_cast<uint64_t>(m) * std::max(n, static_cast<uint32_t>(blockK)) / AIV_PER_AIC;
         const uint64_t prob = static_cast<uint64_t>(m) * n / AIV_PER_AIC;
         const uint64_t output = static_cast<uint64_t>(m) * blockK / AIV_PER_AIC;
-        const uint64_t packedMask = static_cast<uint64_t>(m) / AIV_PER_AIC *
-                                    ops_rec::attn_plan::CeilDiv(n, 64U) * 32U;
+        const uint64_t packedMask = static_cast<uint64_t>(m) / AIV_PER_AIC * ops_rec::attn_plan::CeilDiv(n, 64U) * 32U;
         const uint64_t ub = score * 2U * ELEMENT_BYTES + prob * 3U * ACC_BYTES + prob * 2U * ELEMENT_BYTES +
                             output * ELEMENT_BYTES + output * 2U * ACC_BYTES + packedMask;
-        return qkL0a + pvL0a <= mem.l0aBytes && qkL0b + pvL0b <= mem.l0bBytes &&
-               qkL0c + pvL0c <= mem.l0cBytes &&
+        return qkL0a + pvL0a <= mem.l0aBytes && qkL0b + pvL0b <= mem.l0bBytes && qkL0c + pvL0c <= mem.l0cBytes &&
                l1 <= mem.l1Bytes && ub <= mem.ubBytes;
     }
 
-    static bool CheckBwdBuffer(uint32_t m, uint32_t n, uint32_t dimQk, uint32_t dimV,
-                               const CoreMemSize& mem, const TilePlan& physical)
+    static bool CheckBwdBuffer(uint32_t m, uint32_t n, uint32_t dimQk, uint32_t dimV, const CoreMemSize& mem,
+                               const TilePlan& physical)
     {
-        if (n > physical.l1.n || dimQk > physical.l1.k || dimV > physical.l1.k) return false;
+        if (n > physical.l1.n || dimQk > physical.l1.k || dimV > physical.l1.k)
+            return false;
         const auto l0 = ops_rec::attn_plan::GetL0Tile(m, n, dimQk, dimV, mem, physical.l0);
-        if (l0.m == 0U || l0.n == 0U || l0.k == 0U) return false;
+        if (l0.m == 0U || l0.n == 0U || l0.k == 0U)
+            return false;
         constexpr uint64_t E = 2U, A = 4U;
         const uint64_t mn = static_cast<uint64_t>(physical.l0.m) * physical.l0.n;
         const uint64_t nk = static_cast<uint64_t>(physical.l0.n) * physical.l0.k;
@@ -90,32 +91,28 @@ struct HstuTileTrait {
 
 constexpr TileSize GetFwdTileSize(uint32_t headDim)
 {
-    return headDim <= 128U ? TileSize{128U, 128U, 128U}
-                           : TileSize{64U, 64U, 256U};
+    return headDim <= 128U ? TileSize{128U, 128U, 128U} : TileSize{64U, 64U, 256U};
 }
 
 constexpr TileSize GetBwdTileSize(uint32_t headDim)
 {
     // Backward schedules K rows in the outer loop (N) and Q columns in
     // the inner loop (M), but M still denotes the Q-axis block size.
-    return headDim <= 128U ? TileSize{256U, 128U, 128U}
-                           : TileSize{128U, 64U, 256U};
+    return headDim <= 128U ? TileSize{256U, 128U, 128U} : TileSize{128U, 64U, 256U};
 }
 
-inline TilePlan GetFwdRuntimeTile(uint32_t seqlenQ, uint32_t seqlenK, uint32_t batch, uint32_t heads,
-                                  uint32_t dimQk, uint32_t dimV, uint32_t coreNum,
-                                  const CoreMemSize& mem, bool allowDynamic)
+inline TilePlan GetFwdRuntimeTile(uint32_t seqlenQ, uint32_t seqlenK, uint32_t batch, uint32_t heads, uint32_t dimQk,
+                                  uint32_t dimV, uint32_t coreNum, const CoreMemSize& mem, bool allowDynamic)
 {
-    return ops_rec::attn_plan::SearchFwdTileSize<HstuTileTrait>(
-        seqlenQ, seqlenK, batch, heads, dimQk, dimV, coreNum, mem, allowDynamic);
+    return ops_rec::attn_plan::SearchFwdTileSize<HstuTileTrait>(seqlenQ, seqlenK, batch, heads, dimQk, dimV, coreNum,
+                                                                mem, allowDynamic);
 }
 
-inline TilePlan GetBwdRuntimeTile(uint32_t seqlenQ, uint32_t seqlenK, uint32_t batch, uint32_t heads,
-                                  uint32_t dimQk, uint32_t dimV, uint32_t coreNum,
-                                  const CoreMemSize& mem, bool allowDynamic)
+inline TilePlan GetBwdRuntimeTile(uint32_t seqlenQ, uint32_t seqlenK, uint32_t batch, uint32_t heads, uint32_t dimQk,
+                                  uint32_t dimV, uint32_t coreNum, const CoreMemSize& mem, bool allowDynamic)
 {
-    return ops_rec::attn_plan::SearchBwdTileSize<HstuTileTrait>(
-        seqlenQ, seqlenK, batch, heads, dimQk, dimV, coreNum, mem, allowDynamic);
+    return ops_rec::attn_plan::SearchBwdTileSize<HstuTileTrait>(seqlenQ, seqlenK, batch, heads, dimQk, dimV, coreNum,
+                                                                mem, allowDynamic);
 }
 
 }  // namespace ops_rec::hstu

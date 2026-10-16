@@ -121,9 +121,8 @@ struct BackwardKernelConfig {
  •              - Block 调度器类型
 
  */
-template <typename ArchTag_, typename ElementType_, typename L1TileShape_,
-          typename L0TileShape_, bool HAS_RAB_, bool HAS_MASK_, bool IS_LOCAL_, bool IS_ARBITRARY_,
-          bool DIRECT_CAUSAL_>
+template <typename ArchTag_, typename ElementType_, typename L1TileShape_, typename L0TileShape_, bool HAS_RAB_,
+          bool HAS_MASK_, bool IS_LOCAL_, bool IS_ARBITRARY_, bool DIRECT_CAUSAL_>
 struct QKBlockBuilder {
     static constexpr bool HAS_RAB = HAS_RAB_;
     static constexpr bool HAS_MASK = HAS_MASK_;
@@ -151,16 +150,15 @@ struct QKBlockBuilder {
 
     using DispatchPolicy = Gemm::MmadHSTUQK<ArchTag, false, false, true>;
 
-    using MmadTileBuffer = Gemm::Block::BackwardQkMmadBuffer<
-        ArchTag, L1TileShape, L0TileShape, ElementQ, ElementS, 2U>;
+    using MmadTileBuffer = Gemm::Block::BackwardQkMmadBuffer<ArchTag, L1TileShape, L0TileShape, ElementQ, ElementS, 2U>;
     using BlockMmad = Gemm::Block::BlockMmadTla<DispatchPolicy, L1TileShape, L0TileShape, ElementQ, ElementK, ElementS,
                                                 MmadTileBuffer, TileCopyTla>;
 
-    using EpilogueTileBuffer = Epilogue::Block::BackwardScoreEpilogueBuffer<
-        ArchTag, L1TileShape, L0TileShape, ElementQ, ElementS, 2U, HAS_RAB>;
-    using BlockEpilogue = Epilogue::Block::BlockEpilogueScoreGrad<ArchTag, ElementQ, ElementS, EpilogueTileBuffer,
-                                                                  L0TileShape, L1TileShape, HAS_RAB, HAS_MASK,
-                                                                  IS_LOCAL, IS_ARBITRARY, DIRECT_CAUSAL>;
+    using EpilogueTileBuffer = Epilogue::Block::BackwardScoreEpilogueBuffer<ArchTag, L1TileShape, L0TileShape, ElementQ,
+                                                                            ElementS, 2U, HAS_RAB>;
+    using BlockEpilogue =
+        Epilogue::Block::BlockEpilogueScoreGrad<ArchTag, ElementQ, ElementS, EpilogueTileBuffer, L0TileShape,
+                                                L1TileShape, HAS_RAB, HAS_MASK, IS_LOCAL, IS_ARBITRARY, DIRECT_CAUSAL>;
 };
 
 /**
@@ -183,8 +181,8 @@ struct QKBlockBuilder {
  • @description 构建 Attention Score * V (P * V) 矩阵乘法所需的 Block MMAD 组件
 
  */
-template <typename ArchTag_, typename ElementType_, typename L1TileShape_,
-          typename L0TileShape_, class BlockEpilogueQK_>
+template <typename ArchTag_, typename ElementType_, typename L1TileShape_, typename L0TileShape_,
+          class BlockEpilogueQK_>
 struct GVBlockBuilder {
     using ArchTag = ArchTag_;
     using ElementType = ElementType_;
@@ -213,13 +211,13 @@ struct GVBlockBuilder {
 
     using DispatchPolicy = Gemm::MmadHSTUQK<ArchTag, false, false, true>;
 
-    using MmadTileBuffer = Gemm::Block::BackwardGvMmadBuffer<
-        ArchTag, L1TileShape, L0TileShape, ElementG, ElementGS, 2U>;
+    using MmadTileBuffer =
+        Gemm::Block::BackwardGvMmadBuffer<ArchTag, L1TileShape, L0TileShape, ElementG, ElementGS, 2U>;
     using BlockMmad = Gemm::Block::BlockMmadTla<DispatchPolicy, L1TileShape, L0TileShape, ElementG, ElementV, ElementGS,
                                                 MmadTileBuffer, TileCopyTla>;
 
-    using EpilogueTileBuffer = Epilogue::Block::BackwardRabGradEpilogueBuffer<
-        ArchTag, L1TileShape, L0TileShape, ElementG, ElementGS, 2U>;
+    using EpilogueTileBuffer =
+        Epilogue::Block::BackwardRabGradEpilogueBuffer<ArchTag, L1TileShape, L0TileShape, ElementG, ElementGS, 2U>;
     using BlockEpilogue = Epilogue::Block::BlockEpilogueRabGrad<BlockEpilogueQK, EpilogueTileBuffer>;
 };
 
@@ -243,8 +241,8 @@ struct GVBlockBuilder {
  • @description 构建 dV 和 dK 梯度计算所需的 Block MMAD 组件
 
  */
-template <typename ArchTag_, typename ElementType_, typename L1TileShape_,
-          typename L0TileShape_, bool HAS_RAB_, bool ENABLE_STREAM_K_>
+template <typename ArchTag_, typename ElementType_, typename L1TileShape_, typename L0TileShape_, bool HAS_RAB_,
+          bool ENABLE_STREAM_K_>
 struct KVGradBlockBuilder {
     using ArchTag = ArchTag_;
     using ElementType = ElementType_;
@@ -267,34 +265,35 @@ struct KVGradBlockBuilder {
     using LayoutXGrad = layout::RowMajor;
 
     using DispatchPolicyVGrad = Gemm::MmadHSTUPV<ArchTag, false, false, 0, false, true, ENABLE_STREAM_K_>;
-    using VGradTileCopyTla = std::conditional_t<ENABLE_STREAM_K_,
+    using VGradTileCopyTla = std::conditional_t<
+        ENABLE_STREAM_K_,
         Gemm::Tile::PackedTileCopyTla<ArchTag, ElementP, LayoutP, ElementG, LayoutG, ElementXGradAcc, LayoutXGrad>,
         Gemm::Tile::PackedTileCopyTlaToUB<ArchTag, ElementP, LayoutP, ElementG, LayoutG, ElementXGradAcc, LayoutXGrad,
                                           void, Gemm::Tile::CopyL0CToUBMode::SPLIT_M>>;
 
     // GEMM VGrad
-    using VGradTileBuffer = Gemm::Block::BackwardKvGradMmadBuffer<
-        ArchTag, L1TileShape, L0TileShape, ElementType, ElementXGradAcc, 2U, false>;
-    using BlockMmadVGrad =
-        Gemm::Block::BlockMmadTla<DispatchPolicyVGrad, L1TileShape, L0TileShape, ElementP, ElementG, ElementXGradAcc,
-                                  VGradTileBuffer, VGradTileCopyTla>;
+    using VGradTileBuffer = Gemm::Block::BackwardKvGradMmadBuffer<ArchTag, L1TileShape, L0TileShape, ElementType,
+                                                                  ElementXGradAcc, 2U, false>;
+    using BlockMmadVGrad = Gemm::Block::BlockMmadTla<DispatchPolicyVGrad, L1TileShape, L0TileShape, ElementP, ElementG,
+                                                     ElementXGradAcc, VGradTileBuffer, VGradTileCopyTla>;
 
     using DispatchPolicyKGrad = Gemm::MmadHSTUPV<ArchTag, false, false, 0, false, true, ENABLE_STREAM_K_>;
-    using KGradTileCopyTla = std::conditional_t<ENABLE_STREAM_K_,
+    using KGradTileCopyTla = std::conditional_t<
+        ENABLE_STREAM_K_,
         Gemm::Tile::PackedTileCopyTla<ArchTag, ElementP, LayoutP, ElementG, LayoutG, ElementXGradAcc, LayoutXGrad>,
         Gemm::Tile::PackedTileCopyTlaToUB<ArchTag, ElementP, LayoutP, ElementG, LayoutG, ElementXGradAcc, LayoutXGrad,
                                           void, Gemm::Tile::CopyL0CToUBMode::SPLIT_M>>;
     // GEMM KGrad
-    using KGradTileBuffer = Gemm::Block::BackwardKvGradMmadBuffer<
-        ArchTag, L1TileShape, L0TileShape, ElementType, ElementXGradAcc, 2U, true>;
-    using BlockMmadKGrad =
-        Gemm::Block::BlockMmadTla<DispatchPolicyKGrad, L1TileShape, L0TileShape, ElementGrab, ElementQ, ElementXGradAcc,
-                                  KGradTileBuffer, KGradTileCopyTla>;
+    using KGradTileBuffer = Gemm::Block::BackwardKvGradMmadBuffer<ArchTag, L1TileShape, L0TileShape, ElementType,
+                                                                  ElementXGradAcc, 2U, true>;
+    using BlockMmadKGrad = Gemm::Block::BlockMmadTla<DispatchPolicyKGrad, L1TileShape, L0TileShape, ElementGrab,
+                                                     ElementQ, ElementXGradAcc, KGradTileBuffer, KGradTileCopyTla>;
 
-    using EpilogueTileBuffer = Epilogue::Block::BackwardKvTransEpilogueBuffer<
-        ArchTag, L0TileShape, ElementXGrad, ElementXGradAcc, 2U>;
-    using BlockEpilogue = Epilogue::Block::BlockEpilogueTransOut<
-        ArchTag, EpilogueTileBuffer, Epilogue::Block::TransTag::UB_TO_GM, ElementXGradAcc, ElementXGrad, HAS_RAB, true>;
+    using EpilogueTileBuffer =
+        Epilogue::Block::BackwardKvTransEpilogueBuffer<ArchTag, L0TileShape, ElementXGrad, ElementXGradAcc, 2U>;
+    using BlockEpilogue =
+        Epilogue::Block::BlockEpilogueTransOut<ArchTag, EpilogueTileBuffer, Epilogue::Block::TransTag::UB_TO_GM,
+                                               ElementXGradAcc, ElementXGrad, HAS_RAB, true>;
 };
 
 /**
@@ -313,8 +312,7 @@ struct KVGradBlockBuilder {
  • @description 构建 dQ 梯度计算所需的 Block MMAD 组件 (dO * K^T)
 
  */
-template <typename ArchTag_, typename ElementType_, typename L1TileShape_,
-          typename L0TileShape_>
+template <typename ArchTag_, typename ElementType_, typename L1TileShape_, typename L0TileShape_>
 struct QGradBlockBuilder {
     using ArchTag = ArchTag_;
     using ElementType = ElementType_;
@@ -334,15 +332,14 @@ struct QGradBlockBuilder {
     using TileCopyTla =
         Gemm::Tile::PackedTileCopyTla<ArchTag, ElementGrab, LayoutGrab, ElementK, LayoutK, ElementQGrad, LayoutQGrad>;
 
-    using MmadTileBuffer = Gemm::Block::BackwardDqMmadBuffer<
-        ArchTag, L1TileShape, L0TileShape, ElementGrab, ElementQGrad, 2U>;
+    using MmadTileBuffer =
+        Gemm::Block::BackwardDqMmadBuffer<ArchTag, L1TileShape, L0TileShape, ElementGrab, ElementQGrad, 2U>;
     using BlockMmad = Gemm::Block::BlockMmadTla<DispatchPolicy, L1TileShape, L0TileShape, ElementGrab, ElementK,
                                                 ElementQGrad, MmadTileBuffer, TileCopyTla>;
 
-    using EpilogueTileBuffer = Epilogue::Block::BackwardQTransEpilogueBuffer<
-        ArchTag, ElementGrab, ElementQGrad, 2U>;
-    using BlockEpilogue = Epilogue::Block::StreamKReduceEpilogue<
-        ArchTag, EpilogueTileBuffer, ElementQGrad, ElementGrab>;
+    using EpilogueTileBuffer = Epilogue::Block::BackwardQTransEpilogueBuffer<ArchTag, ElementGrab, ElementQGrad, 2U>;
+    using BlockEpilogue =
+        Epilogue::Block::StreamKReduceEpilogue<ArchTag, EpilogueTileBuffer, ElementQGrad, ElementGrab>;
 };
 
 /**
@@ -401,15 +398,13 @@ struct BackwardKernelBuilder {
     using L0TileShape = typename Config::L0TileShape;
 
     // Block QK Builder
-    using QKBlockBuilder = QKBlockBuilder<ArchTag, ElementType, L1TileShape, L0TileShape, HAS_RAB,
-                                          HAS_MASK, Config::IS_LOCAL, Config::IS_ARBITRARY_MASK,
-                                          Config::DIRECT_CAUSAL_MASK>;
+    using QKBlockBuilder = QKBlockBuilder<ArchTag, ElementType, L1TileShape, L0TileShape, HAS_RAB, HAS_MASK,
+                                          Config::IS_LOCAL, Config::IS_ARBITRARY_MASK, Config::DIRECT_CAUSAL_MASK>;
     using BlockMmadQK = typename QKBlockBuilder::BlockMmad;
     using BlockEpilogueQK = typename QKBlockBuilder::BlockEpilogue;
 
     // Block GV Builder
-    using GVBlockBuilder =
-        GVBlockBuilder<ArchTag, ElementType, L1TileShape, L0TileShape, BlockEpilogueQK>;
+    using GVBlockBuilder = GVBlockBuilder<ArchTag, ElementType, L1TileShape, L0TileShape, BlockEpilogueQK>;
     using BlockMmadGV = typename GVBlockBuilder::BlockMmad;
     using BlockEpilogueGV = typename GVBlockBuilder::BlockEpilogue;
 
@@ -430,10 +425,10 @@ struct BackwardKernelBuilder {
     static constexpr uint32_t BLOCK_N = tla::get<1>(L1TileShape{});
     using StreamOuter = Gemm::Block::StreamKOuterBlockScheduler<ElementOffset, BLOCK_N, BLOCK_M>;
     using StreamInner = Gemm::Block::StreamKInnerBlockScheduler<StreamOuter, BLOCK_N, BLOCK_M, true>;
-    using KBlockScheduler = std::conditional_t<ENABLE_STREAM_K_, StreamOuter,
-                                               typename DefaultSchedulerBuilder::KBlockScheduler>;
-    using QBlockScheduler = std::conditional_t<ENABLE_STREAM_K_, StreamInner,
-                                               typename DefaultSchedulerBuilder::QBlockScheduler>;
+    using KBlockScheduler =
+        std::conditional_t<ENABLE_STREAM_K_, StreamOuter, typename DefaultSchedulerBuilder::KBlockScheduler>;
+    using QBlockScheduler =
+        std::conditional_t<ENABLE_STREAM_K_, StreamInner, typename DefaultSchedulerBuilder::QBlockScheduler>;
 };
 
 }  // namespace Catlass::Kernel

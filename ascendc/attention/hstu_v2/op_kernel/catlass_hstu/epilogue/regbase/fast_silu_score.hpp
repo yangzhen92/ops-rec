@@ -138,10 +138,10 @@ __simd_callee__ inline void AddFusedRab(RegType& dst, RegType& src, __ubuf__ Typ
  */
 template <typename Type, typename AccType, bool HAS_RAB, bool NEED_MASK, typename RegType>
 __simd_callee__ inline void SiluScoreBackward(__ubuf__ AccType* ubSPtr, __ubuf__ Type* ubRabPtr,
-                                      __ubuf__ Type* ubMaskPtr,
-                                      __ubuf__ Type* ubSiluScorePtr, RegType& vregScore, RegType& vregDenom, RegType& vregTmp,
-                                      RegType& vregSilu, RegType& vregOnes, RegType& vregZeros, AccType alpha,
-                                      AscendC::MicroAPI::MaskReg& maskReg)
+                                              __ubuf__ Type* ubMaskPtr, __ubuf__ Type* ubSiluScorePtr,
+                                              RegType& vregScore, RegType& vregDenom, RegType& vregTmp,
+                                              RegType& vregSilu, RegType& vregOnes, RegType& vregZeros, AccType alpha,
+                                              AscendC::MicroAPI::MaskReg& maskReg)
 {
     AscendC::MicroAPI::LoadAlign(vregScore, ubSPtr);
     // A = A + (Rab + Mask) * alpha
@@ -186,9 +186,9 @@ __simd_callee__ inline void SiluScoreBackward(__ubuf__ AccType* ubSPtr, __ubuf__
 
  */
 template <typename Type, typename AccType, bool HAS_RAB>
-__simd_vf__ inline void FastSiluScoreBackwardVf(__ubuf__ AccType* ubSPtr, __ubuf__ Type* ubRabPtr, __ubuf__ Type* ubMaskPtr,
-                                        __ubuf__ Type* ubSiluScorePtr, AccType alpha, uint32_t count,
-                                        uint32_t repeatTimes)
+__simd_vf__ inline void FastSiluScoreBackwardVf(__ubuf__ AccType* ubSPtr, __ubuf__ Type* ubRabPtr,
+                                                __ubuf__ Type* ubMaskPtr, __ubuf__ Type* ubSiluScorePtr, AccType alpha,
+                                                uint32_t count, uint32_t repeatTimes)
 {
     constexpr uint32_t oneRepElm = static_cast<uint32_t>(AscendC::GetVecLen() / sizeof(AccType));
 
@@ -206,9 +206,8 @@ __simd_vf__ inline void FastSiluScoreBackwardVf(__ubuf__ AccType* ubSPtr, __ubuf
         maskReg = AscendC::MicroAPI::UpdateMask<AccType>(count);
 
         SiluScoreBackward<Type, AccType, HAS_RAB, false>(
-            ubSPtr + i * oneRepElm, ubRabPtr + i * oneRepElm, ubMaskPtr + i * oneRepElm,
-            ubSiluScorePtr + i * oneRepElm, vregScore, vregDenom, vregTmp, vregSilu, vregOnes, vregZeros, alpha,
-            maskReg);
+            ubSPtr + i * oneRepElm, ubRabPtr + i * oneRepElm, ubMaskPtr + i * oneRepElm, ubSiluScorePtr + i * oneRepElm,
+            vregScore, vregDenom, vregTmp, vregSilu, vregOnes, vregZeros, alpha, maskReg);
     }
 }
 

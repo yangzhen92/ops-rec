@@ -64,13 +64,14 @@ struct BackwardGvMmadBuffer {
     using Prob = detail::BufferPosition<Element, L0_MN, Grad::lowerBound, Stages>;
     using Grab = detail::BufferPosition<Element, L0_MN, Prob::lowerBound, Stages>;
     using Score = detail::BufferPosition<Accumulator, L0_MN>;
-    using TransV = detail::BufferPosition<Accumulator,
-        tla::get<1>(L0TileShape{}) * tla::get<2>(L0TileShape{}) / 2U, Score::lowerBound>;
-    using TransOut = detail::BufferPosition<Element,
-        tla::get<1>(L0TileShape{}) * tla::get<2>(L0TileShape{}) / 2U, TransV::lowerBound>;
+    using TransV = detail::BufferPosition<Accumulator, tla::get<1>(L0TileShape{}) * tla::get<2>(L0TileShape{}) / 2U,
+                                          Score::lowerBound>;
+    using TransOut = detail::BufferPosition<Element, tla::get<1>(L0TileShape{}) * tla::get<2>(L0TileShape{}) / 2U,
+                                            TransV::lowerBound>;
     using ProbUb = detail::BufferPosition<Element, L0_MN, Score::lowerBound>;
-    using GrabUb = detail::BufferPosition<Element, L0_MN,
-        (TransOut::lowerBound > ProbUb::lowerBound ? TransOut::lowerBound : ProbUb::lowerBound)>;
+    using GrabUb =
+        detail::BufferPosition<Element, L0_MN,
+                               (TransOut::lowerBound > ProbUb::lowerBound ? TransOut::lowerBound : ProbUb::lowerBound)>;
     using GrabPart = detail::BufferPosition<Element, L0_MN, GrabUb::lowerBound>;
     using Gs = detail::BufferPosition<Accumulator, L0_MN, GrabPart::lowerBound>;
     static constexpr uint32_t L1B = Value::template Get<0>();

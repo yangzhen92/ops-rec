@@ -82,10 +82,11 @@ See the License for the specific language governing permissions and
  */
 template <bool HAS_RAB, bool IS_LOCAL, bool IS_CAUSAL, bool IS_CONTEXT, bool IS_TARGET, bool IS_ARBITRARY,
           bool ENABLE_STREAM_K, uint32_t BLOCK_K>
-CATLASS_DEVICE void hstu_backward_v2_impl(GM_ADDR grad, GM_ADDR q, GM_ADDR k, GM_ADDR v, GM_ADDR rab, GM_ADDR seqOffsetQ,
-                                     GM_ADDR seqOffsetK, GM_ADDR numContext, GM_ADDR numTarget, GM_ADDR qShare,
-                                     GM_ADDR metadata, GM_ADDR kGradAccum, GM_ADDR vGradAccum, GM_ADDR sparseInfo, GM_ADDR qGrad,
-                                     GM_ADDR kGrad, GM_ADDR vGrad, GM_ADDR rabGrad, GM_ADDR workSpace, GM_ADDR tiling)
+CATLASS_DEVICE void hstu_backward_v2_impl(GM_ADDR grad, GM_ADDR q, GM_ADDR k, GM_ADDR v, GM_ADDR rab,
+                                          GM_ADDR seqOffsetQ, GM_ADDR seqOffsetK, GM_ADDR numContext, GM_ADDR numTarget,
+                                          GM_ADDR qShare, GM_ADDR metadata, GM_ADDR kGradAccum, GM_ADDR vGradAccum,
+                                          GM_ADDR sparseInfo, GM_ADDR qGrad, GM_ADDR kGrad, GM_ADDR vGrad,
+                                          GM_ADDR rabGrad, GM_ADDR workSpace, GM_ADDR tiling)
 {
     using namespace Catlass::Kernel;
     using namespace Catlass::Kernel::Mask;
@@ -123,18 +124,19 @@ CATLASS_DEVICE void hstu_backward_v2_impl(GM_ADDR grad, GM_ADDR q, GM_ADDR k, GM
                 BackwardMmadMainloop<BlockMmadQK, BlockMmadGV, BlockMmadVGrad, BlockMmadKGrad, BlockMmadQGrad,
                                      QBlockScheduler, KBlockScheduler, ElementOffset, IS_LOCAL, IS_CAUSAL, IS_CONTEXT,
                                      IS_TARGET, IS_ARBITRARY, Predictor, true>;
-            typename MmadMainLoopKernel::Params params{grad, q, k, v, seqOffsetQ, seqOffsetK, qShare, kGradAccum,
-                                                       vGradAccum, numContext, numTarget, metadata, sparseInfo};
-            MmadMainLoopKernel kernel(tiling); kernel(params);
+            typename MmadMainLoopKernel::Params params{grad,       q,        k,          v,          seqOffsetQ,
+                                                       seqOffsetK, qShare,   kGradAccum, vGradAccum, numContext,
+                                                       numTarget,  metadata, sparseInfo};
+            MmadMainLoopKernel kernel(tiling);
+            kernel(params);
         } else if (metadata != nullptr) {
             using MmadMainLoopKernel =
                 BackwardMmadMainloop<BlockMmadQK, BlockMmadGV, BlockMmadVGrad, BlockMmadKGrad, BlockMmadQGrad,
                                      MetaQBlockScheduler, MetaKBlockScheduler, ElementOffset, IS_LOCAL, IS_CAUSAL,
                                      IS_CONTEXT, IS_TARGET, IS_ARBITRARY, Predictor>;
-            typename MmadMainLoopKernel::Params params{grad,          q,         k,          v,         seqOffsetQ,
-                                                       seqOffsetK,    qShare,    nullptr,    nullptr,    numContext,
-                                                       numTarget,     metadata,
-                                                       sparseInfo};
+            typename MmadMainLoopKernel::Params params{grad,       q,        k,         v,       seqOffsetQ,
+                                                       seqOffsetK, qShare,   nullptr,   nullptr, numContext,
+                                                       numTarget,  metadata, sparseInfo};
             MmadMainLoopKernel kernel(tiling);
             kernel(params);
         } else {
@@ -142,10 +144,9 @@ CATLASS_DEVICE void hstu_backward_v2_impl(GM_ADDR grad, GM_ADDR q, GM_ADDR k, GM
                 BackwardMmadMainloop<BlockMmadQK, BlockMmadGV, BlockMmadVGrad, BlockMmadKGrad, BlockMmadQGrad,
                                      QBlockScheduler, KBlockScheduler, ElementOffset, IS_LOCAL, IS_CAUSAL, IS_CONTEXT,
                                      IS_TARGET, IS_ARBITRARY, Predictor>;
-            typename MmadMainLoopKernel::Params params{grad,          q,         k,          v,         seqOffsetQ,
-                                                       seqOffsetK,    qShare,    nullptr,    nullptr,    numContext,
-                                                       numTarget,     nullptr,
-                                                       sparseInfo};
+            typename MmadMainLoopKernel::Params params{grad,       q,       k,         v,       seqOffsetQ,
+                                                       seqOffsetK, qShare,  nullptr,   nullptr, numContext,
+                                                       numTarget,  nullptr, sparseInfo};
             MmadMainLoopKernel kernel(tiling);
             kernel(params);
         }
@@ -161,19 +162,19 @@ CATLASS_DEVICE void hstu_backward_v2_impl(GM_ADDR grad, GM_ADDR q, GM_ADDR k, GM
                 BackwardEpilogueMainloop<BlockEpilogueQK, BlockEpilogueGV, BlockEpilogueKVGrad, BlockEpilogueQGrad,
                                          QBlockScheduler, KBlockScheduler, ElementOffset, IS_LOCAL, IS_CAUSAL,
                                          IS_CONTEXT, IS_TARGET, IS_ARBITRARY, Predictor, true>;
-            typename EpilogueMainLoopKernel::Params params{rab, seqOffsetQ, seqOffsetK, qGrad, kGrad, vGrad,
-                                                           kGradAccum, vGradAccum, rabGrad, qShare, numContext,
-                                                           numTarget, metadata, sparseInfo};
-            EpilogueMainLoopKernel kernel(tiling); kernel(params);
+            typename EpilogueMainLoopKernel::Params params{rab,        seqOffsetQ, seqOffsetK, qGrad,     kGrad,
+                                                           vGrad,      kGradAccum, vGradAccum, rabGrad,   qShare,
+                                                           numContext, numTarget,  metadata,   sparseInfo};
+            EpilogueMainLoopKernel kernel(tiling);
+            kernel(params);
         } else if (metadata != nullptr) {
             using EpilogueMainLoopKernel =
                 BackwardEpilogueMainloop<BlockEpilogueQK, BlockEpilogueGV, BlockEpilogueKVGrad, BlockEpilogueQGrad,
                                          MetaQBlockScheduler, MetaKBlockScheduler, ElementOffset, IS_LOCAL, IS_CAUSAL,
                                          IS_CONTEXT, IS_TARGET, IS_ARBITRARY, Predictor>;
-            typename EpilogueMainLoopKernel::Params params{rab,      seqOffsetQ,    seqOffsetK, qGrad,      kGrad,
-                                                           vGrad,    nullptr,       nullptr,    rabGrad,    qShare,
-                                                           numContext, numTarget,
-                                                           metadata, sparseInfo};
+            typename EpilogueMainLoopKernel::Params params{rab,        seqOffsetQ, seqOffsetK, qGrad,     kGrad,
+                                                           vGrad,      nullptr,    nullptr,    rabGrad,   qShare,
+                                                           numContext, numTarget,  metadata,   sparseInfo};
             EpilogueMainLoopKernel kernel(tiling);
             kernel(params);
         } else {
@@ -181,29 +182,30 @@ CATLASS_DEVICE void hstu_backward_v2_impl(GM_ADDR grad, GM_ADDR q, GM_ADDR k, GM
                 BackwardEpilogueMainloop<BlockEpilogueQK, BlockEpilogueGV, BlockEpilogueKVGrad, BlockEpilogueQGrad,
                                          QBlockScheduler, KBlockScheduler, ElementOffset, IS_LOCAL, IS_CAUSAL,
                                          IS_CONTEXT, IS_TARGET, IS_ARBITRARY, Predictor>;
-            typename EpilogueMainLoopKernel::Params params{rab,     seqOffsetQ,    seqOffsetK, qGrad,      kGrad,
-                                                           vGrad,   nullptr,       nullptr,    rabGrad,    qShare,
-                                                           numContext, numTarget,
-                                                           nullptr, sparseInfo};
+            typename EpilogueMainLoopKernel::Params params{rab,        seqOffsetQ, seqOffsetK, qGrad,     kGrad,
+                                                           vGrad,      nullptr,    nullptr,    rabGrad,   qShare,
+                                                           numContext, numTarget,  nullptr,    sparseInfo};
             EpilogueMainLoopKernel kernel(tiling);
             kernel(params);
         }
     }
 }
 
-#define HSTU_BACKWARD_ENTRY(NAME)                                                                                \
-template <bool HAS_RAB, bool IS_LOCAL, bool IS_CAUSAL, bool IS_CONTEXT, bool IS_TARGET, bool IS_ARBITRARY,        \
-          bool ENABLE_STREAM_K, uint32_t BLOCK_K>                                                                 \
-CATLASS_GLOBAL void NAME(GM_ADDR grad, GM_ADDR q, GM_ADDR k, GM_ADDR v, GM_ADDR rab, GM_ADDR seqOffsetQ,          \
-                         GM_ADDR seqOffsetK, GM_ADDR numContext, GM_ADDR numTarget, GM_ADDR qShare,                \
-                         GM_ADDR metadata, GM_ADDR kGradAccum, GM_ADDR vGradAccum, GM_ADDR sparseInfo, GM_ADDR qGrad, \
-                         GM_ADDR kGrad, GM_ADDR vGrad, GM_ADDR rabGrad, GM_ADDR workSpace, GM_ADDR tiling)         \
-{                                                                                                                 \
-    KERNEL_TASK_TYPE_DEFAULT(HSTU_V2_TASK_TYPE);                                                                  \
-    hstu_backward_v2_impl<HAS_RAB, IS_LOCAL, IS_CAUSAL, IS_CONTEXT, IS_TARGET, IS_ARBITRARY, ENABLE_STREAM_K, BLOCK_K>( \
-        grad, q, k, v, rab, seqOffsetQ, seqOffsetK, numContext, numTarget, qShare, metadata, kGradAccum, vGradAccum, sparseInfo, \
-        qGrad, kGrad, vGrad, rabGrad, workSpace, tiling);                                                        \
-}
+#define HSTU_BACKWARD_ENTRY(NAME)                                                                                  \
+    template <bool HAS_RAB, bool IS_LOCAL, bool IS_CAUSAL, bool IS_CONTEXT, bool IS_TARGET, bool IS_ARBITRARY,     \
+              bool ENABLE_STREAM_K, uint32_t BLOCK_K>                                                              \
+    CATLASS_GLOBAL void NAME(GM_ADDR grad, GM_ADDR q, GM_ADDR k, GM_ADDR v, GM_ADDR rab, GM_ADDR seqOffsetQ,       \
+                             GM_ADDR seqOffsetK, GM_ADDR numContext, GM_ADDR numTarget, GM_ADDR qShare,            \
+                             GM_ADDR metadata, GM_ADDR kGradAccum, GM_ADDR vGradAccum, GM_ADDR sparseInfo,         \
+                             GM_ADDR qGrad, GM_ADDR kGrad, GM_ADDR vGrad, GM_ADDR rabGrad, GM_ADDR workSpace,      \
+                             GM_ADDR tiling)                                                                       \
+    {                                                                                                              \
+        KERNEL_TASK_TYPE_DEFAULT(HSTU_V2_TASK_TYPE);                                                               \
+        hstu_backward_v2_impl<HAS_RAB, IS_LOCAL, IS_CAUSAL, IS_CONTEXT, IS_TARGET, IS_ARBITRARY, ENABLE_STREAM_K,  \
+                              BLOCK_K>(grad, q, k, v, rab, seqOffsetQ, seqOffsetK, numContext, numTarget, qShare,  \
+                                       metadata, kGradAccum, vGradAccum, sparseInfo, qGrad, kGrad, vGrad, rabGrad, \
+                                       workSpace, tiling);                                                         \
+    }
 
 HSTU_BACKWARD_ENTRY(hstu_backward_v2)
 #undef HSTU_BACKWARD_ENTRY

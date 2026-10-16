@@ -11,14 +11,14 @@ namespace Catlass::Epilogue::Block {
 
 template <class ArchTag, class L0TileShape, class Element, class Accumulator>
 struct ForwardStreamKReduceBuffer {
-    static constexpr uint32_t TILE_Q_GRAD_MAX_ELEM =
-        tla::get<0>(L0TileShape{}) * tla::get<2>(L0TileShape{}) / 2U;
+    static constexpr uint32_t TILE_Q_GRAD_MAX_ELEM = tla::get<0>(L0TileShape{}) * tla::get<2>(L0TileShape{}) / 2U;
     static constexpr uint32_t L0_MN = tla::get<0>(L0TileShape{}) * tla::get<1>(L0TileShape{});
     using Score = Gemm::Block::detail::BufferPosition<Element, TILE_Q_GRAD_MAX_ELEM, 0, 2>;
     using Prob = Gemm::Block::detail::BufferPosition<Accumulator, L0_MN / 2U, Score::lowerBound, 3>;
     using Rab = Gemm::Block::detail::BufferPosition<Element, L0_MN / 2U, Prob::lowerBound, 2>;
     using TransOutScratch = Gemm::Block::detail::BufferPosition<Element, TILE_Q_GRAD_MAX_ELEM, Rab::lowerBound>;
-    using TransIn = Gemm::Block::detail::BufferPosition<Accumulator, TILE_Q_GRAD_MAX_ELEM, TransOutScratch::lowerBound, 2>;
+    using TransIn =
+        Gemm::Block::detail::BufferPosition<Accumulator, TILE_Q_GRAD_MAX_ELEM, TransOutScratch::lowerBound, 2>;
     static constexpr uint32_t STAGES = 2U;
     static constexpr uint32_t TRANS_IN[STAGES] = {TransIn::template Get<0>(), TransIn::template Get<1>()};
     static constexpr uint32_t TRANS_OUT[STAGES] = {Score::template Get<0>(), Score::template Get<1>()};
@@ -39,7 +39,7 @@ public:
     static constexpr uint32_t ELE_NUM_PER_C0 = Catlass::BYTE_PER_C0 / sizeof(Element);
 
     CATLASS_DEVICE explicit StreamKReduceEpilogue(Arch::Resource<ArchTag>& resource,
-                                                   ElementAccumulator scale = static_cast<ElementAccumulator>(1))
+                                                  ElementAccumulator scale = static_cast<ElementAccumulator>(1))
         : scale(scale)
     {
         for (uint32_t i = 0; i < STAGES; ++i) {
@@ -55,7 +55,8 @@ public:
         const uint32_t totalRows = tla::get<0>(dst.shape());
         const uint32_t dim = tla::get<1>(src.shape());
         const uint32_t heads = tla::get<1>(dst.shape());
-        if (rows == 0U || dim == 0U) return;
+        if (rows == 0U || dim == 0U)
+            return;
         AscendC::DataCopyParams params;
         params.blockLen = dim / ELE_NUM_PER_C0;
         params.srcStride = 0;
@@ -84,7 +85,9 @@ public:
                 AscendC::WaitFlag<AscendC::HardEvent::V_MTE3>(slot);
                 AscendC::DataCopy(dst.data()[dstOffset], ubOut[slot], params);
                 AscendC::SetFlag<AscendC::HardEvent::MTE3_V>(slot);
-                slot ^= 1U; srcOffset += count * dim; dstOffset += count * tla::get<0>(dst.stride());
+                slot ^= 1U;
+                srcOffset += count * dim;
+                dstOffset += count * tla::get<0>(dst.stride());
             }
         }
         // A following output reduction reuses the same ping-pong UB. Drain

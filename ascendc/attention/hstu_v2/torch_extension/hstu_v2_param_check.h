@@ -20,6 +20,46 @@ See the License for the specific language governing permissions and
 
 namespace hstu_v2 {
 
+class HstuForwardV2ParamChecker {
+public:
+    static constexpr int64_t kMaxHeads = 16;
+    static constexpr int64_t kDimAlign = 16;
+    static constexpr int64_t kMaxDim = 256;
+
+    HstuForwardV2ParamChecker(const at::Tensor& q, const at::Tensor& k, const at::Tensor& v,
+                              const at::Tensor& seqOffsetQ, const at::Tensor& seqOffsetK, int64_t maxSeqLenQ,
+                              int64_t maxSeqLenK, const c10::optional<at::Tensor>& rab)
+    {
+        TORCH_CHECK(q.dim() == 3 && k.dim() == 3 && v.dim() == 3, "q/k/v must be 3D");
+        TORCH_CHECK(seqOffsetQ.dim() == 1 && seqOffsetK.dim() == 1, "seq_offset must be 1D");
+        const int64_t batchSize = seqOffsetQ.size(0) - 1;
+        const int64_t heads = q.size(1);
+        const int64_t dimQK = q.size(2);
+        const int64_t dimV = v.size(2);
+        TORCH_CHECK(k.size(1) == heads && k.size(2) == dimQK, "k shape mismatch");
+        TORCH_CHECK(v.size(0) == k.size(0) && v.size(1) == heads, "v shape mismatch");
+        TORCH_CHECK(seqOffsetK.size(0) == seqOffsetQ.size(0), "seq_offset size mismatch");
+        TORCH_CHECK(batchSize > 0, "batchSize must be > 0");
+        TORCH_CHECK(heads >= 1 && heads <= kMaxHeads, "heads must be in [1,16]");
+        TORCH_CHECK(dimQK % kDimAlign == 0 && dimQK <= kMaxDim, "dimQK must be a multiple of 16 and <= 256");
+        TORCH_CHECK(dimV % kDimAlign == 0 && dimV <= kMaxDim, "dimV must be a multiple of 16 and <= 256");
+        TORCH_CHECK(maxSeqLenQ > 0 && maxSeqLenK > 0, "max sequence lengths must be > 0");
+        const auto dtype = q.scalar_type();
+        TORCH_CHECK(dtype == at::kHalf || dtype == at::kBFloat16, "q/k/v must be float16 or bfloat16");
+        TORCH_CHECK(k.scalar_type() == dtype && v.scalar_type() == dtype, "q/k/v must have the same dtype");
+        TORCH_CHECK(seqOffsetQ.scalar_type() == at::kInt && seqOffsetK.scalar_type() == at::kInt,
+                    "seq_offset must be int32");
+        if (rab.has_value() && rab->defined()) {
+            TORCH_CHECK(rab->dim() == 4, "rab must be 4D");
+            TORCH_CHECK(rab->size(0) == batchSize && (rab->size(1) == 1 || rab->size(1) == heads) &&
+                            rab->size(2) == maxSeqLenQ && rab->size(3) == maxSeqLenK,
+                        "rab shape mismatch");
+            TORCH_CHECK(rab->scalar_type() == at::kHalf || rab->scalar_type() == at::kBFloat16,
+                        "rab must be float16 or bfloat16");
+        }
+    }
+};
+
 class HstuV2ParamChecker {
 public:
     static constexpr int64_t kMaxHeads = 16;
@@ -115,11 +155,9 @@ private:
         TORCH_CHECK(windowSizeLeft < maxSeqLenK && windowSizeRight < maxSeqLenK,
                     "window_size must be < max_seqlen_k, got window_size=(", windowSizeLeft, ", ", windowSizeRight,
                     ") vs max_seqlen_k=", maxSeqLenK);
-
-        bool isCausal = (windowSizeLeft == -1 && windowSizeRight == 0);
-        // num_context/num_target 必须在 causal mask 场景下使用
-        TORCH_CHECK(!(hasCtx && !isCausal), "num_context requires causal mask (window_size=(-1, 0))");
-        TORCH_CHECK(!(hasTgt && !isCausal), "num_target requires causal mask (window_size=(-1, 0))");
+        bool isCausalOrLocal = windowSizeLeft >= 0 || windowSizeRight >= 0;
+        TORCH_CHECK(!(hasCtx && !isCausalOrLocal), "num_context requires causal or local mask");
+        TORCH_CHECK(!(hasTgt && !isCausalOrLocal), "num_target requires causal or local mask");
 
         // 校验 num_context 和 num_target 的 shape
         if (hasCtx) {
@@ -142,10 +180,10 @@ private:
     void CheckRab(const at::Tensor& rab, int64_t maxSeqLenQ, int64_t maxSeqLenK)
     {
         TORCH_CHECK(rab.dim() == 4, "rab must be 4D, got ", rab.dim(), "D");
-        TORCH_CHECK(
-            rab.size(0) == batchSize && rab.size(1) == heads && rab.size(2) == maxSeqLenQ && rab.size(3) == maxSeqLenK,
-            "rab shape mismatch, expect [", batchSize, ",", heads, ",", maxSeqLenQ, ",", maxSeqLenK, "], got [",
-            rab.size(0), ",", rab.size(1), ",", rab.size(2), ",", rab.size(3), "]");
+        TORCH_CHECK(rab.size(0) == batchSize && (rab.size(1) == 1 || rab.size(1) == heads) &&
+                        rab.size(2) == maxSeqLenQ && rab.size(3) == maxSeqLenK,
+                    "rab shape mismatch, expect heads=1 or heads=", heads, ", got [", rab.size(0), ",", rab.size(1),
+                    ",", rab.size(2), ",", rab.size(3), "]");
         TORCH_CHECK(rab.scalar_type() == at::kHalf || rab.scalar_type() == at::kBFloat16,
                     "rab must be float16 or bfloat16, got ", c10::toString(rab.scalar_type()));
     }

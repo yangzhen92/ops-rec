@@ -31,8 +31,44 @@ See the License for the specific language governing permissions and
 #include "tla/tensor.hpp"
 #include "tla/layout.hpp"
 #include "../../../catlass_hstu/epilogue/regbase/fast_silu_grad.hpp"
+#include "../../gemm/block/buffer_position.hpp"
 
 namespace Catlass::Epilogue::Block {
+
+template <class ArchTag, class L1TileShape, class L0TileShape, class Element, class Accumulator, uint32_t Stages,
+          bool HasRab>
+struct BackwardScoreEpilogueBuffer {
+    static constexpr uint32_t STAGES = Stages;
+    static constexpr uint32_t L1_NK = tla::get<1>(L1TileShape{}) * tla::get<2>(L1TileShape{});
+    static constexpr uint32_t L0_MK = tla::get<0>(L0TileShape{}) * tla::get<2>(L0TileShape{});
+    static constexpr uint32_t L0_MN = tla::get<0>(L0TileShape{}) * tla::get<1>(L0TileShape{});
+    static constexpr uint32_t L0_NK = tla::get<1>(L0TileShape{}) * tla::get<2>(L0TileShape{});
+    using Key = Gemm::Block::detail::BufferPosition<Element, L1_NK>;
+    using Query = Gemm::Block::detail::BufferPosition<Element, L0_MK, Key::lowerBound, Stages>;
+    using Value = Gemm::Block::detail::BufferPosition<Element, L1_NK, Query::lowerBound>;
+    using Grad = Gemm::Block::detail::BufferPosition<Element, L0_MK, Value::lowerBound, Stages>;
+    using L1Prob = Gemm::Block::detail::BufferPosition<Element, L0_MN, Grad::lowerBound, Stages>;
+    using L1Grab = Gemm::Block::detail::BufferPosition<Element, L0_MN, L1Prob::lowerBound, Stages>;
+    using Score = Gemm::Block::detail::BufferPosition<Accumulator, L0_MN>;
+    using TransV = Gemm::Block::detail::BufferPosition<Accumulator, L0_NK / 2U, Score::lowerBound>;
+    using TransOut = Gemm::Block::detail::BufferPosition<Element, L0_NK / 2U, TransV::lowerBound>;
+    using Rab = Gemm::Block::detail::BufferPosition<Element, HasRab ? L0_MN : 0U, Score::lowerBound>;
+    using Prob = Gemm::Block::detail::BufferPosition<Element, L0_MN, Score::lowerBound>;
+    using Grab = Gemm::Block::detail::BufferPosition<
+        Element, L0_MN, (TransOut::lowerBound > Prob::lowerBound ? TransOut::lowerBound : Prob::lowerBound)>;
+    using GrabPart = Gemm::Block::detail::BufferPosition<Element, L0_MN, Grab::lowerBound>;
+    using Gs = Gemm::Block::detail::BufferPosition<Accumulator, L0_MN, GrabPart::lowerBound>;
+    static constexpr uint32_t SCORE = Score::template Get<0>();
+    static constexpr uint32_t RAB = Rab::template Get<0>();
+    static constexpr uint32_t MASK = GrabPart::template Get<0>();
+    static constexpr uint32_t PACKED_MASK = Gs::lowerBound;
+    static constexpr uint32_t PROB = Prob::template Get<0>();
+    static constexpr uint32_t GRABPART = GrabPart::template Get<0>();
+    static constexpr uint32_t PROB_DST[Stages] = {L1Prob::template Get<0>(), L1Prob::template Get<1>()};
+    static_assert(L1Grab::lowerBound <= ArchTag::L1_SIZE, "backward score L1 layout exceeds capacity");
+    static_assert(PACKED_MASK + tla::get<0>(L0TileShape{}) * 64U <= ArchTag::UB_SIZE,
+                  "backward packed-mask layout exceeds UB capacity");
+};
 
 /**
  • @brief Score 梯度 Epilogue Block
@@ -55,7 +91,8 @@ namespace Catlass::Epilogue::Block {
 
  */
 template <class ArchTag_, class Element_, class ElementAccumulator_, class TileBuffer_, class L0TileShape_,
-          class L1TileShape_, bool HAS_RAB_ = false, bool HAS_MASK_ = false>
+          class L1TileShape_, bool HAS_RAB_ = false, bool HAS_MASK_ = false, bool IS_LOCAL_ = false,
+          bool IS_ARBITRARY_ = false, bool DIRECT_CAUSAL_ = false>
 struct BlockEpilogueScoreGrad {
 public:
     using ArchTag = ArchTag_;
@@ -69,6 +106,9 @@ public:
 
     static constexpr bool HAS_RAB = HAS_RAB_;
     static constexpr bool HAS_MASK = HAS_MASK_;
+    static constexpr bool IS_LOCAL = IS_LOCAL_;
+    static constexpr bool IS_ARBITRARY = IS_ARBITRARY_;
+    static constexpr bool DIRECT_CAUSAL = DIRECT_CAUSAL_;
 
     static constexpr uint32_t L0_TILE_M = tla::get<0>(L0TileShape{});
     static constexpr uint32_t L0_TILE_N = tla::get<1>(L0TileShape{});
@@ -91,6 +131,7 @@ public:
         ubScoreTensor = resource.ubBuf.template GetBufferByByte<ElementAccumulator>(TileBuffer::SCORE);
         ubProbTensor = resource.ubBuf.template GetBufferByByte<Element>(TileBuffer::PROB);
         ubGRabPartTensor = resource.ubBuf.template GetBufferByByte<Element>(TileBuffer::GRABPART);
+        ubPackedMaskTensor = resource.ubBuf.template GetBufferByByte<int32_t>(TileBuffer::PACKED_MASK);
         dstTensor = resource.l1Buf.template GetBufferByByte<Element>(TileBuffer::PROB_DST[AscendC::GetSubBlockIdx()]);
 
         cubeReady = Arch::CrossCoreFlag(cubeFlag);
@@ -122,13 +163,95 @@ public:
                 }
 
                 if constexpr (HAS_MASK) {
-                    predictor.ApplyMask(ubMaskTensor, coordNew, tileShape, rows, cols);
+                    if constexpr (IS_ARBITRARY) {
+                        if (needMask) {
+                            if constexpr (!HAS_RAB) {
+                                AscendC::WaitFlag<AscendC::HardEvent::V_MTE2>(EVENT_ID2);
+                            }
+                            predictor.CopyPackedMask(ubPackedMaskTensor, coordNew, rows);
+                            AscendC::SetFlag<AscendC::HardEvent::MTE2_V>(EVENT_ID2);
+                        }
+                    } else if constexpr (!DIRECT_CAUSAL && !IS_LOCAL) {
+                        needMask = predictor.ApplyMask(ubMaskTensor, coordNew, tileShape, rows, cols);
+                    }
                 }
 
                 AscendC::CrossCoreWaitFlag<0x4, PIPE_V>(cubeReady.id);
-                Compute(tileShape, needMask);
+                if constexpr (HAS_MASK) {
+                    if constexpr (IS_ARBITRARY) {
+                        if (needMask) {
+                            AscendC::WaitFlag<AscendC::HardEvent::MTE2_V>(EVENT_ID2);
+                            ComputePacked(tileShape, predictor);
+                        } else {
+                            Compute(tileShape, false);
+                        }
+                    } else if constexpr (IS_LOCAL) {
+                        if (needMask) {
+                            ComputeLocal(tileShape, coordNew, predictor);
+                        } else {
+                            Compute(tileShape, false);
+                        }
+                    } else if constexpr (DIRECT_CAUSAL) {
+                        if (needMask) {
+                            ComputeCausal(tileShape, coordNew, predictor);
+                        } else {
+                            Compute(tileShape, false);
+                        }
+                    } else {
+                        Compute(tileShape, needMask);
+                    }
+                } else {
+                    Compute(tileShape, needMask);
+                }
                 AscendC::CrossCoreSetFlag<0x4, PIPE_MTE3>(vecReady.id);
             }
+        }
+    }
+
+    template <class Shape, class Predictor>
+    CATLASS_DEVICE void ComputePacked(Shape& shape, Predictor& predictor)
+    {
+        auto rows = RoundUp<ELEM_PER_BLOCK>(tla::get<0>(shape));
+        auto cols = RoundUp<ELEM_PER_BLOCK>(tla::get<1>(shape));
+        if constexpr (HAS_RAB) {
+            AscendC::WaitFlag<AscendC::HardEvent::MTE2_V>(EVENT_ID0);
+        }
+
+        auto loop = CeilDiv(rows, PING_PONG_ROW);
+        // The two MTE3 flags protect the two destination halves from the
+        // preceding tile.  Wait for both halves first, then consume the whole
+        // resident tile in one SIMD VF.  In particular, the 128-bit bitmap is
+        // loaded into MaskReg and used by the SiLU/grad instructions inside
+        // that single VF; this block-level wrapper never constructs a mask.
+        for (uint32_t i = 0; i < loop; ++i) {
+            AscendC::WaitFlag<AscendC::HardEvent::MTE3_V>(i);
+        }
+
+        auto ubSPtr = (__ubuf__ ElementAccumulator*)ubScoreTensor.GetPhyAddr();
+        auto ubRabPtr = (__ubuf__ Element*)ubRabTensor.GetPhyAddr();
+        auto ubProbPtr = (__ubuf__ Element*)ubProbTensor.GetPhyAddr();
+        auto ubGradRabPartPtr = (__ubuf__ Element*)ubGRabPartTensor.GetPhyAddr();
+        auto ubPackedMaskPtr = (__ubuf__ uint32_t*)ubPackedMaskTensor.GetPhyAddr();
+        AscendC::VF_CALL<
+            Catlass::Epilogue::RegBase::FastSiluGradPackedVf<Element, ElementAccumulator, Element, HAS_RAB>>(
+            ubSPtr, ubRabPtr, ubProbPtr, ubGradRabPartPtr, ubPackedMaskPtr, alpha, rows, cols,
+            predictor.GetPackedMaskStrideWords());
+        if constexpr (!HAS_RAB) {
+            AscendC::SetFlag<AscendC::HardEvent::V_MTE2>(EVENT_ID2);
+        }
+
+        for (uint32_t i = 0; i < loop; ++i) {
+            const uint32_t rowOffset = i * PING_PONG_ROW;
+            const uint32_t partRows = (i == loop - 1) ? rows - rowOffset : PING_PONG_ROW;
+            const uint32_t offset = rowOffset * cols;
+            const uint32_t count = partRows * cols;
+            AscendC::SetFlag<AscendC::HardEvent::V_MTE3>(i);
+            AscendC::WaitFlag<AscendC::HardEvent::V_MTE3>(i);
+            CopyToDst(offset, count, rows, cols);
+            AscendC::SetFlag<AscendC::HardEvent::MTE3_V>(i);
+        }
+        if constexpr (HAS_RAB) {
+            AscendC::SetFlag<AscendC::HardEvent::MTE3_MTE2>(EVENT_ID1);
         }
     }
 
@@ -142,7 +265,7 @@ public:
         auto ubProbPtr = (__ubuf__ Element*)ubProbTensor[offset].GetPhyAddr();
         auto ubGradRabPartPtr = (__ubuf__ Element*)ubGRabPartTensor[offset].GetPhyAddr();
 
-        AscendC::VF_CALL<catlass::Epilogue::RegBase::FastSiluGradVf<Element, ElementAccumulator, Element, HAS_RAB>>(
+        AscendC::VF_CALL<Catlass::Epilogue::RegBase::FastSiluGradVf<Element, ElementAccumulator, Element, HAS_RAB>>(
             ubSPtr, ubRabPtr, ubMaskPtr, ubProbPtr, ubGradRabPartPtr, alpha, count, repeatTimes, needMask);
     }
 
@@ -176,6 +299,77 @@ public:
         }
     }
 
+    template <class Shape, class Coord, class Predictor>
+    CATLASS_DEVICE void ComputeCausal(Shape& shape, Coord const& coord, Predictor& predictor)
+    {
+        auto rows = RoundUp<ELEM_PER_BLOCK>(tla::get<0>(shape));
+        auto cols = RoundUp<ELEM_PER_BLOCK>(tla::get<1>(shape));
+        if constexpr (HAS_RAB) {
+            AscendC::WaitFlag<AscendC::HardEvent::MTE2_V>(EVENT_ID0);
+        }
+        auto p = predictor.params;
+        auto loop = CeilDiv(rows, PING_PONG_ROW);
+        for (uint32_t i = 0; i < loop; ++i) {
+            const uint32_t rowOffset = i * PING_PONG_ROW;
+            const uint32_t partRows = (i == loop - 1) ? rows - rowOffset : PING_PONG_ROW;
+            const uint32_t offset = rowOffset * cols;
+            const uint32_t pingPongFlag = i % 2;
+            AscendC::WaitFlag<AscendC::HardEvent::MTE3_V>(pingPongFlag);
+            auto ubSPtr = (__ubuf__ ElementAccumulator*)ubScoreTensor[offset].GetPhyAddr();
+            auto ubRabPtr = (__ubuf__ Element*)ubRabTensor[offset].GetPhyAddr();
+            auto ubProbPtr = (__ubuf__ Element*)ubProbTensor[offset].GetPhyAddr();
+            auto ubGradRabPartPtr = (__ubuf__ Element*)ubGRabPartTensor[offset].GetPhyAddr();
+            const auto qBase = static_cast<int32_t>(tla::get<2>(coord)) + static_cast<int32_t>(rowOffset);
+            const auto kBase = static_cast<int32_t>(tla::get<3>(coord));
+            AscendC::VF_CALL<
+                Catlass::Epilogue::RegBase::FastSiluGradHistoryVf<Element, ElementAccumulator, Element, HAS_RAB>>(
+                ubSPtr, ubRabPtr, ubProbPtr, ubGradRabPartPtr, alpha, partRows, cols, qBase, kBase, p.seqlenQ,
+                p.seqlenK);
+            AscendC::SetFlag<AscendC::HardEvent::V_MTE3>(pingPongFlag);
+            AscendC::WaitFlag<AscendC::HardEvent::V_MTE3>(pingPongFlag);
+            CopyToDst(offset, partRows * cols, rows, cols);
+            AscendC::SetFlag<AscendC::HardEvent::MTE3_V>(pingPongFlag);
+        }
+        if constexpr (HAS_RAB) {
+            AscendC::SetFlag<AscendC::HardEvent::MTE3_MTE2>(EVENT_ID1);
+        }
+    }
+
+    template <class Shape, class Coord, class Predictor>
+    CATLASS_DEVICE void ComputeLocal(Shape& shape, Coord const& coord, Predictor& predictor)
+    {
+        auto rows = RoundUp<ELEM_PER_BLOCK>(tla::get<0>(shape));
+        auto cols = RoundUp<ELEM_PER_BLOCK>(tla::get<1>(shape));
+        if constexpr (HAS_RAB)
+            AscendC::WaitFlag<AscendC::HardEvent::MTE2_V>(EVENT_ID0);
+        auto p = predictor.params;
+        auto loop = CeilDiv(rows, PING_PONG_ROW);
+        for (uint32_t i = 0; i < loop; ++i) {
+            const uint32_t rowOffset = i * PING_PONG_ROW;
+            const uint32_t partRows = (i == loop - 1) ? rows - rowOffset : PING_PONG_ROW;
+            const uint32_t offset = rowOffset * cols;
+            const uint32_t pingPongFlag = i % 2;
+            AscendC::WaitFlag<AscendC::HardEvent::MTE3_V>(pingPongFlag);
+            auto ubSPtr = (__ubuf__ ElementAccumulator*)ubScoreTensor[offset].GetPhyAddr();
+            auto ubRabPtr = (__ubuf__ Element*)ubRabTensor[offset].GetPhyAddr();
+            auto ubProbPtr = (__ubuf__ Element*)ubProbTensor[offset].GetPhyAddr();
+            auto ubGradRabPartPtr = (__ubuf__ Element*)ubGRabPartTensor[offset].GetPhyAddr();
+            const auto qBase = static_cast<int32_t>(tla::get<2>(coord)) + static_cast<int32_t>(rowOffset);
+            const auto kBase = static_cast<int32_t>(tla::get<3>(coord));
+            AscendC::VF_CALL<
+                Catlass::Epilogue::RegBase::FastSiluGradLocalVf<Element, ElementAccumulator, Element, HAS_RAB>>(
+                ubSPtr, ubRabPtr, ubProbPtr, ubGradRabPartPtr, alpha, partRows, cols, qBase, kBase, p.seqlenQ,
+                p.seqlenK, predictor.windowSizeLeft, predictor.windowSizeRight, p.numContext, p.numTarget,
+                p.targetGroupSize);
+            AscendC::SetFlag<AscendC::HardEvent::V_MTE3>(pingPongFlag);
+            AscendC::WaitFlag<AscendC::HardEvent::V_MTE3>(pingPongFlag);
+            CopyToDst(offset, partRows * cols, rows, cols);
+            AscendC::SetFlag<AscendC::HardEvent::MTE3_V>(pingPongFlag);
+        }
+        if constexpr (HAS_RAB)
+            AscendC::SetFlag<AscendC::HardEvent::MTE3_MTE2>(EVENT_ID1);
+    }
+
     CATLASS_DEVICE void CopyToDst(int64_t offset, uint32_t count, uint32_t rows, uint32_t cols)
     {
         if constexpr (HAS_RAB || HAS_MASK) {
@@ -205,12 +399,17 @@ public:
 
         AscendC::DataCopyParams intriParams;
         AscendC::DataCopyPadParams padParams;
+        const uint32_t cols = tla::get<1>(shape);
+        const uint32_t alignedCols = RoundUp<ELEM_PER_BLOCK>(cols);
         intriParams.blockCount = tla::get<0>(shape);
-        intriParams.blockLen = tla::get<1>(shape) * sizeof(Element);
-        intriParams.srcStride = (tla::get<2>(tensorRab.stride()) - tla::get<1>(shape)) * sizeof(Element);
+        intriParams.blockLen = cols * sizeof(Element);
+        intriParams.srcStride = (tla::get<2>(tensorRab.stride()) - cols) * sizeof(Element);
         intriParams.dstStride = 0;
 
-        padParams.isPad = false;
+        padParams.isPad = alignedCols != cols;
+        padParams.leftPadding = 0;
+        padParams.rightPadding = static_cast<uint8_t>(alignedCols - cols);
+        padParams.paddingValue = 0;
         AscendC::DataCopyPad(ubRabTensor, tensorRab.data()[srcOffset], intriParams, padParams);
 
         AscendC::SetFlag<AscendC::HardEvent::MTE2_V>(EVENT_ID0);
@@ -225,6 +424,7 @@ private:
     AscendC::LocalTensor<Element> ubMaskTensor;
     AscendC::LocalTensor<Element> ubProbTensor;
     AscendC::LocalTensor<Element> ubGRabPartTensor;
+    AscendC::LocalTensor<int32_t> ubPackedMaskTensor;
     AscendC::LocalTensor<Element> dstTensor;
 
     ElementAccumulator alpha{0.0f};

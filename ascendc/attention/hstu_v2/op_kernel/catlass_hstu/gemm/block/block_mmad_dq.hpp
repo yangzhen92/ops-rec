@@ -29,8 +29,30 @@ See the License for the specific language governing permissions and
 #include "../../../catlass_hstu/gemm/dispatch_policy.hpp"
 #include "catlass/arch/cross_core_sync.hpp"
 #include "catlass/gemm/block/block_mmad.hpp"
+#include "buffer_position.hpp"
 
 namespace Catlass::Gemm::Block {
+
+template <class ArchTag, class L1TileShape, class L0TileShape, class Element, class Accumulator, uint32_t Stages>
+struct BackwardDqMmadBuffer {
+    static constexpr uint32_t STAGES = Stages;
+    static constexpr uint32_t L1_NK = tla::get<1>(L1TileShape{}) * tla::get<2>(L1TileShape{});
+    static constexpr uint32_t L0_MK = tla::get<0>(L0TileShape{}) * tla::get<2>(L0TileShape{});
+    static constexpr uint32_t L0_MN = tla::get<0>(L0TileShape{}) * tla::get<1>(L0TileShape{});
+    using Key = detail::BufferPosition<Element, L1_NK>;
+    using Query = detail::BufferPosition<Element, L0_MK, Key::lowerBound, Stages>;
+    using Value = detail::BufferPosition<Element, L1_NK, Query::lowerBound>;
+    using Grad = detail::BufferPosition<Element, L0_MK, Value::lowerBound, Stages>;
+    using Prob = detail::BufferPosition<Element, L0_MN, Grad::lowerBound, Stages>;
+    using Grab = detail::BufferPosition<Element, L0_MN, Prob::lowerBound, Stages>;
+    static constexpr uint32_t L1B = Key::template Get<0>();
+    static constexpr uint32_t L1A[Stages] = {Grab::template Get<0>(), Grab::template Get<1>()};
+    static constexpr uint32_t L0A[Stages] = {0U, ArchTag::L0A_SIZE / 2U};
+    static constexpr uint32_t L0B[Stages] = {0U, ArchTag::L0B_SIZE / 2U};
+    static constexpr uint32_t L0C[Stages] = {0U, ArchTag::L0C_SIZE / 4U};
+    static constexpr uint32_t DST = 0U;
+    static_assert(Grab::lowerBound <= ArchTag::L1_SIZE, "backward dQ L1 layout exceeds capacity");
+};
 
 /**
  • @brief HSTU dQ 矩阵乘法的 Block MMAD 特化实现
@@ -196,7 +218,7 @@ public:
 
             AscendC::WaitFlag<AscendC::HardEvent::M_MTE1>(pingPongFlag);
             auto l1aLayout = tla::MakeLayout<ElementA, LayoutTagL1A>(mSize, nReal);
-            auto tensorL1a = tla::MakeTensor(l1ATensor[m % STAGES], l1aLayout, coord, Arch::PositionL1{});
+            auto tensorL1a = tla::MakeTensor(l1ATensor[m & (STAGES - 1)], l1aLayout, coord, Arch::PositionL1{});
             auto l0aLayout = tla::MakeLayout<ElementA, LayoutTagL0A>(mSize, nReal);
             auto tensorL0a = tla::MakeTensor(l0ATensor[pingPongFlag], l0aLayout, coord, Arch::PositionL0A{});
             copyL1ToL0A(tensorL0a, tensorL1a);
@@ -218,11 +240,11 @@ public:
 
             AscendC::SetFlag<AscendC::HardEvent::FIX_M>(pingPongFlag);
 
-            pingPongFlag = (pingPongFlag + 1) % 2;
+            pingPongFlag = pingPongFlag ^ 1U;
         }
 
         AscendC::SetFlag<AscendC::HardEvent::M_MTE1>(l0bFlag + 2);
-        l0bFlag = (l0bFlag + 1) % 2;
+        l0bFlag = l0bFlag ^ 1U;
     }
 
 protected:

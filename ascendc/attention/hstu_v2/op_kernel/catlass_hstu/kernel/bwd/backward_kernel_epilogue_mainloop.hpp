@@ -25,12 +25,15 @@ See the License for the specific language governing permissions and
  */
 
 #pragma once
-
+#include "../scheduler_setup.hpp"
+#include "kernel_operator_list_tensor_intf.h"
 #include "catlass/detail/macros.hpp"
 #include "catlass/arch/cross_core_sync.hpp"
 #include "catlass/gemm/gemm_type.hpp"
 #include "catlass/layout/layout.hpp"
 #include "../../../catlass_hstu/kernel/mask/predictor_builder.hpp"
+#include "../../../catlass_hstu/gemm/block/metadata_row_block_scheduler.hpp"
+#include "../../../../common/hstu_schedule_policy.h"
 
 namespace Catlass::Kernel {
 
@@ -56,7 +59,7 @@ namespace Catlass::Kernel {
  */
 template <class BlockEpilogueQK_, class BlockEpilogueGV_, class BlockEpilogueKVGrad_, class BlockEpilogueQGrad_,
           class QBlockScheduler_, class KBlockScheduler_, typename ElementOffset, bool IS_LOCAL, bool IS_CAUSAL,
-          bool IS_CONTEXT, bool IS_TARGET, bool IS_ARBITRARY, class Predictor>
+          bool IS_CONTEXT, bool IS_TARGET, bool IS_ARBITRARY, class Predictor, bool ENABLE_STREAM_K = false>
 struct BackwardEpilogueMainloop {
     using BlockEpilogueQK = BlockEpilogueQK_;
     using BlockEpilogueGV = BlockEpilogueGV_;
@@ -78,8 +81,11 @@ struct BackwardEpilogueMainloop {
     static constexpr uint32_t PROB_READY_ID = 2;
     static constexpr uint32_t GRAB_READY_ID = 3;
     static constexpr uint32_t TRANS_READY_ID = 4;
+    static constexpr uint32_t V_TRANS_READY_ID = TRANS_READY_ID;
+    static constexpr uint32_t K_TRANS_READY_ID = 6;
     static constexpr uint32_t Q_TRANS_READY_ID = 5;
-    static constexpr uint32_t TRANS_UB_FREE_ID = 7;
+    static constexpr uint32_t V_TRANS_UB_FREE_ID = 7;
+    static constexpr uint32_t K_TRANS_UB_FREE_ID = 8;
 
     static constexpr bool IS_LOCAL_V = IS_LOCAL;
     static constexpr bool IS_CAUSAL_V = IS_CAUSAL;
@@ -103,28 +109,37 @@ struct BackwardEpilogueMainloop {
         GM_ADDR ptrQGrad;
         GM_ADDR ptrKGrad;
         GM_ADDR ptrVGrad;
+        GM_ADDR ptrKGradAccum;
+        GM_ADDR ptrVGradAccum;
         GM_ADDR ptrRabGrad;
         GM_ADDR ptrQShare;
         GM_ADDR ptrNumContext;
         GM_ADDR ptrNumTarget;
+        GM_ADDR ptrMetadata;    // 可选: flash_attn_metadata 分核输出;nullptr → 旧设备现算路径
+        GM_ADDR ptrSparseInfo;  // 可选: direct packed sparse info (TensorList), 9 个 int32 tensor
 
         CATLASS_DEVICE
         Params() {}
 
         CATLASS_DEVICE
         Params(GM_ADDR ptrRab_, GM_ADDR ptrSeqOffsetQ_, GM_ADDR ptrSeqOffsetK_, GM_ADDR ptrQGrad_, GM_ADDR ptrKGrad_,
-               GM_ADDR ptrVGrad_, GM_ADDR ptrRabGrad_, GM_ADDR ptrQShare_, GM_ADDR ptrNumContext_,
-               GM_ADDR ptrNumTarget_)
+               GM_ADDR ptrVGrad_, GM_ADDR ptrKGradAccum_, GM_ADDR ptrVGradAccum_, GM_ADDR ptrRabGrad_,
+               GM_ADDR ptrQShare_, GM_ADDR ptrNumContext_, GM_ADDR ptrNumTarget_, GM_ADDR ptrMetadata_ = nullptr,
+               GM_ADDR ptrSparseInfo_ = nullptr)
             : ptrRab(ptrRab_),
               ptrSeqOffsetQ(ptrSeqOffsetQ_),
               ptrSeqOffsetK(ptrSeqOffsetK_),
               ptrQGrad(ptrQGrad_),
               ptrKGrad(ptrKGrad_),
               ptrVGrad(ptrVGrad_),
+              ptrKGradAccum(ptrKGradAccum_),
+              ptrVGradAccum(ptrVGradAccum_),
               ptrRabGrad(ptrRabGrad_),
               ptrQShare(ptrQShare_),
               ptrNumContext(ptrNumContext_),
-              ptrNumTarget(ptrNumTarget_)
+              ptrNumTarget(ptrNumTarget_),
+              ptrMetadata(ptrMetadata_),
+              ptrSparseInfo(ptrSparseInfo_)
         {
         }
     };
@@ -132,6 +147,7 @@ struct BackwardEpilogueMainloop {
     CATLASS_DEVICE
     BackwardEpilogueMainloop(GM_ADDR ptrTiling_)
     {
+        ptrTiling = ptrTiling_;
         GET_TILING_DATA(tilingData, ptrTiling_);
         batch = tilingData.batch;
         heads = tilingData.heads;
@@ -142,8 +158,14 @@ struct BackwardEpilogueMainloop {
         totalSeqLenQ = tilingData.totalSeqLenQ;
         totalSeqLenK = tilingData.totalSeqLenK;
         targetGroupSize = tilingData.targetGroupSize;
+        windowSizeLeft = tilingData.windowSizeLeft;
+        windowSizeRight = tilingData.windowSizeRight;
         alpha = tilingData.alpha;
         scale = tilingData.scale;
+        rabHeads = tilingData.rabHeads;
+        maskHeads = tilingData.maskHeads;
+        blockM = tilingData.blockM;
+        blockN = tilingData.blockN;
     }
 
     struct PipeEventGuard {
@@ -157,6 +179,9 @@ struct BackwardEpilogueMainloop {
             AscendC::SetFlag<AscendC::HardEvent::MTE3_MTE2>(EVENT_ID1);
             AscendC::SetFlag<AscendC::HardEvent::V_MTE2>(EVENT_ID0);
             AscendC::SetFlag<AscendC::HardEvent::V_MTE2>(EVENT_ID1);
+            if constexpr (IS_ARBITRARY && !HAS_RAB) {
+                AscendC::SetFlag<AscendC::HardEvent::V_MTE2>(EVENT_ID2);
+            }
         }
 
         CATLASS_DEVICE
@@ -169,6 +194,9 @@ struct BackwardEpilogueMainloop {
             AscendC::WaitFlag<AscendC::HardEvent::MTE3_MTE2>(EVENT_ID1);
             AscendC::WaitFlag<AscendC::HardEvent::V_MTE2>(EVENT_ID0);
             AscendC::WaitFlag<AscendC::HardEvent::V_MTE2>(EVENT_ID1);
+            if constexpr (IS_ARBITRARY && !HAS_RAB) {
+                AscendC::WaitFlag<AscendC::HardEvent::V_MTE2>(EVENT_ID2);
+            }
         }
     };
 
@@ -202,13 +230,10 @@ struct BackwardEpilogueMainloop {
         gRab.SetGlobalBuffer((__gm__ ElementG*)params.ptrRab);
         gRabGrad.SetGlobalBuffer((__gm__ ElementG*)params.ptrRabGrad);
 
-        gRab.template SetL2CacheHint<AscendC::CacheRwMode::READ>(AscendC::CacheMode::CACHE_MODE_DISABLE);
-
-        if constexpr (IS_CONTEXT) {
-            gNumContext.SetGlobalBuffer((__gm__ ElementOffset*)params.ptrNumContext);
-        }
-        if constexpr (IS_TARGET) {
-            gNumTarget.SetGlobalBuffer((__gm__ ElementOffset*)params.ptrNumTarget);
+        if (rabHeads == 1) {
+            gRab.template SetL2CacheHint<AscendC::CacheRwMode::READ>(AscendC::CacheMode::CACHE_MODE_NORMAL);
+        } else {
+            gRab.template SetL2CacheHint<AscendC::CacheRwMode::READ>(AscendC::CacheMode::CACHE_MODE_DISABLE);
         }
     }
 
@@ -223,8 +248,8 @@ struct BackwardEpilogueMainloop {
     template <typename ElementT>
     CATLASS_DEVICE auto MakeBNSSTensor(AscendC::GlobalTensor<ElementT>& gt)
     {
-        auto stride0 = (int64_t)heads * maxSeqLenQ * maxSeqLenK;
-        auto stride1 = (int64_t)maxSeqLenQ * maxSeqLenK;
+        auto stride0 = (int64_t)rabHeads * maxSeqLenQ * maxSeqLenK;
+        auto stride1 = rabHeads == 1 ? 0 : (int64_t)maxSeqLenQ * maxSeqLenK;
         auto layout = tla::MakeLayout(tla::MakeShape(batch, heads, maxSeqLenQ, maxSeqLenK),
                                       tla::MakeStride(stride0, stride1, maxSeqLenK, tla::Int<1>{}));
         return tla::MakeTensor(gt, layout, Arch::PositionGM{});
@@ -239,7 +264,13 @@ struct BackwardEpilogueMainloop {
         AscendC::GlobalTensor<ElementK> gKGrad;
         AscendC::GlobalTensor<ElementG> gRab;
         AscendC::GlobalTensor<ElementG> gRabGrad;
+        AscendC::GlobalTensor<ElementACC> gKGradAccum;
+        AscendC::GlobalTensor<ElementACC> gVGradAccum;
         InitGlobalTensors(params, gVGrad, gKGrad, gRab, gRabGrad);
+        if constexpr (ENABLE_STREAM_K) {
+            gKGradAccum.SetGlobalBuffer((__gm__ ElementACC*)params.ptrKGradAccum);
+            gVGradAccum.SetGlobalBuffer((__gm__ ElementACC*)params.ptrVGradAccum);
+        }
         // 使能单指令饱和模式
         if constexpr (IS_CAUSAL || IS_LOCAL || IS_ARBITRARY) {
             AscendC::SetCtrlSpr<60, 60>(0);
@@ -251,25 +282,46 @@ struct BackwardEpilogueMainloop {
         auto tensorGrab = MakeBNSSTensor(gRabGrad);
 
         BlockEpilogueQK blockEpilogueQK(alpha, scale, QK_READY_ID, PROB_READY_ID, resource);
-        BlockEpilogueGV blockEpilogueGV(GV_READY_ID, GRAB_READY_ID, resource);
-        BlockEpilogueKGrad blockEpilogueKGrad(TRANS_READY_ID, TRANS_UB_FREE_ID, (int64_t)heads * dimQK, resource);
-        BlockEpilogueVGrad blockEpilogueVGrad(TRANS_READY_ID, TRANS_UB_FREE_ID, (int64_t)heads * dimGV, resource);
-        QBlockScheduler qBlockScheduler(batch, heads, params.ptrSeqOffsetQ);
-        KBlockScheduler kBlockScheduler(batch, heads, params.ptrSeqOffsetK, params.ptrSeqOffsetQ);
-        // Seed one free-buffer token per AIV so the first FixPipe does not wait
-        // for a UB->GM copy that has not happened yet.
-        Arch::CrossCoreFlag transUbFree{TRANS_UB_FREE_ID};
-        AscendC::CrossCoreSetFlag<0x4, PIPE_MTE3>(transUbFree.id);
+        BlockEpilogueGV blockEpilogueGV(GV_READY_ID, GRAB_READY_ID, resource, rabHeads == 1);
+        BlockEpilogueKGrad blockEpilogueKGrad(K_TRANS_READY_ID, K_TRANS_UB_FREE_ID, (int64_t)heads * dimQK, resource,
+                                              1);
+        BlockEpilogueVGrad blockEpilogueVGrad(V_TRANS_READY_ID, V_TRANS_UB_FREE_ID, (int64_t)heads * dimGV, resource, 0,
+                                              scale);
 
-        kBlockScheduler.Init();
+        QBlockScheduler qBlockScheduler(batch, heads, params.ptrSeqOffsetQ, blockN, blockM);
+        // 行(K)调度器: 经工厂构造,对 OuterBlockScheduler / MetadataOuterBlockScheduler 统一(见 mmad mainloop 注释)。
+        KBlockScheduler kBlockScheduler = Gemm::Block::MakeRowScheduler<KBlockScheduler>(
+            batch, heads, params.ptrSeqOffsetK, params.ptrSeqOffsetQ, params.ptrMetadata, blockN, blockM);
+
+        // Each AIV seeds both ping-pong input slots. Subsequent tokens are
+        // returned from PIPE_V immediately after that slot has been consumed.
+        Arch::CrossCoreFlag vTransUbFree{V_TRANS_UB_FREE_ID};
+        Arch::CrossCoreFlag kTransUbFree{K_TRANS_UB_FREE_ID};
+        AscendC::CrossCoreSetFlag<0x4, PIPE_V>(vTransUbFree.id);
+        AscendC::CrossCoreSetFlag<0x4, PIPE_V>(kTransUbFree.id);
+        InitializeBackwardSchedulers<IS_ARBITRARY, IS_LOCAL, IS_CAUSAL, IS_CONTEXT, IS_TARGET, BLOCK_M, BLOCK_N>(
+            qBlockScheduler, kBlockScheduler, params, maskHeads, maxSeqLenQ, maxSeqLenK, windowSizeLeft,
+            windowSizeRight, targetGroupSize, blockM, blockN);
         Predictor predictor;
+        predictor.Construct(this, params);
         for (; kBlockScheduler.IsValid(); ++kBlockScheduler) {
+            qBlockScheduler.Init(kBlockScheduler);
+            bool pairExecuted = false;
             auto tVg = kBlockScheduler.GetTile(tensorVGrad);
             auto tKg = kBlockScheduler.GetTile(tensorKGrad);
+            if constexpr (IS_ARBITRARY) {
+                if (!qBlockScheduler.IsValid()) {
+                    // No AIC work (and therefore no ready/free handshake) is
+                    // emitted for this K tile. Materialize its mathematical
+                    // zero locally through the existing trans-out UB.
+                    blockEpilogueVGrad.StoreZero(tVg);
+                    blockEpilogueKGrad.StoreZero(tKg);
+                    continue;
+                }
+            }
 
             LoopPipeEventGuard loopPipeEventGuard;
 
-            qBlockScheduler.Init(kBlockScheduler);
             for (; qBlockScheduler.IsValid(); ++qBlockScheduler) {
                 auto meta = kBlockScheduler.GetMeta();
                 auto blockCoord = tla::MakeCoord(static_cast<uint32_t>(tla::get<0>(meta)),             // batchId
@@ -282,80 +334,64 @@ struct BackwardEpilogueMainloop {
                                                   kBlockScheduler.GetCurrentSeqLen(), qBlockScheduler.GetSwizzleDir());
                 predictor.Classifier(blockPredParams);
                 if (predictor.IsSkip()) {
+                    if constexpr (IS_ARBITRARY) {
+                        // InnerBlockScheduler already advances to the next non-empty descriptor.
+                    }
                     continue;
                 }
+                pairExecuted = true;
                 auto mapping = qBlockScheduler.GetTileMapping(tVg.coord(), tVg.shape());
                 auto coord = tla::get<0>(mapping);
                 auto shape = tla::get<1>(mapping);
                 blockEpilogueQK(tensorRab, coord, shape, predictor);
                 blockEpilogueGV(tensorGrab, coord, shape);
             }
-            if (AscendC::GetSubBlockIdx() == 0) {
-                blockEpilogueVGrad(tVg);
-            } else {
-                blockEpilogueKGrad(tKg);
+            if constexpr (!ENABLE_STREAM_K) {
+                blockEpilogueVGrad.template operator()<true>(tVg);
+                blockEpilogueKGrad.template operator()<false>(tKg);
             }
         }
 
         Arch::CrossCoreFlag qTransReady{Arch::CrossCoreFlag(Q_TRANS_READY_ID)};
-        AscendC::CrossCoreWaitFlag<0x2, PIPE_MTE2>(qTransReady.id);
+        // qShare is produced once per paired AIC. One AIV consumes that
+        // completion token, then both AIVs rendezvous before splitting the
+        // head-major -> TND conversion in CopyQGrad. Waiting from both AIVs
+        // would require two tokens and deadlocks under synccheck.
+        if (AscendC::GetSubBlockIdx() == 0) {
+            AscendC::CrossCoreWaitFlag<0x2, PIPE_MTE2>(qTransReady.id);
+        }
         AscendC::SyncAll();
-        CopyQGrad(params);
+        if constexpr (ENABLE_STREAM_K) {
+            CopyAccumGrad<true>(params.ptrVGrad, params.ptrVGradAccum, totalSeqLenK, dimGV);
+            CopyAccumGrad<false>(params.ptrKGrad, params.ptrKGradAccum, totalSeqLenK, dimQK);
+        }
+        CopyAccumGrad<false>(params.ptrQGrad, params.ptrQShare, totalSeqLenQ, dimQK);
     }
 
-    CATLASS_DEVICE
-    auto GetQShareTile(AscendC::GlobalTensor<ElementACC>& gQShare)
+    template <bool APPLY_SCALE>
+    CATLASS_DEVICE void CopyAccumGrad(GM_ADDR dstPtr, GM_ADDR srcPtr, uint32_t totalSeq, uint32_t dim)
     {
+        AscendC::GlobalTensor<ElementG> dstGm;
+        AscendC::GlobalTensor<ElementACC> srcGm;
+        dstGm.SetGlobalBuffer((__gm__ ElementG*)dstPtr);
+        srcGm.SetGlobalBuffer((__gm__ ElementACC*)srcPtr);
         uint32_t coreId = AscendC::GetBlockIdx();
         uint32_t coreNum = AscendC::GetBlockNum() * AscendC::GetTaskRatio();
-
-        auto splitNextCore = totalSeqLenQ / coreNum;
-        auto splitPrevCore = splitNextCore + 1;
-        auto splitCoreIdx = totalSeqLenQ % coreNum;
-
-        uint32_t totalProcSeqs = 0;
-        uint32_t coreSeqsOffset = 0;
-        if (coreId < splitCoreIdx) {
-            totalProcSeqs = splitPrevCore;
-            coreSeqsOffset = coreId * splitPrevCore;
-        } else if (coreId < coreNum) {
-            totalProcSeqs = splitNextCore;
-            coreSeqsOffset = splitCoreIdx * splitPrevCore + (coreId - splitCoreIdx) * splitNextCore;
-        }
-
-        auto layout =
-            tla::MakeLayout(tla::MakeShape((int64_t)totalProcSeqs, dimQK), tla::MakeStride(dimQK, tla::Int<1>{}));
-        auto coord = tla::MakeCoord(coreSeqsOffset, 0);
-        auto tensorQShareTile = tla::MakeTensor(gQShare, layout, coord, Arch::PositionGM{});
-        return tensorQShareTile;
-    }
-
-    CATLASS_DEVICE
-    void CopyQGrad(const Params& params)
-    {
-        AscendC::GlobalTensor<ElementG> gQGrad;
-        gQGrad.SetGlobalBuffer((__gm__ ElementG*)params.ptrQGrad);
-        AscendC::GlobalTensor<ElementACC> gQShare;
-        gQShare.SetGlobalBuffer((__gm__ ElementACC*)params.ptrQShare);
-
-        auto tensorQShare = GetQShareTile(gQShare);
-        auto totalProcSeqs = tla::get<0>(tensorQShare.shape());
-        auto seqOffset = tla::get<0>(tensorQShare.coord());
-
-        auto layoutQGrad = tla::MakeLayout(tla::MakeShape(totalSeqLenQ, heads, dimQK),
-                                           tla::MakeStride((int64_t)heads * dimQK, (int64_t)dimQK, tla::Int<1>{}));
-        auto tensorQGrad = tla::MakeTensor(gQGrad, layoutQGrad, tla::MakeCoord(seqOffset, 0, 0), Arch::PositionGM{});
-
-        if (totalProcSeqs != 0) {
-            BlockEpilogueQGrad blockEpilogueQGrad(resource);
-            blockEpilogueQGrad(tensorQGrad, tensorQShare);
-        }
+        const auto range = hstu::schedule::UniformCoreRange(totalSeq, coreId, coreNum);
+        const uint32_t rows = range.endBlock - range.beginBlock;
+        if (rows == 0U)
+            return;
+        auto srcLayout = tla::MakeLayout(tla::MakeShape(rows, dim), tla::MakeStride((int64_t)dim, tla::Int<1>{}));
+        auto src = tla::MakeTensor(srcGm, srcLayout, tla::MakeCoord((int64_t)range.beginBlock, 0), Arch::PositionGM{});
+        auto dstLayout = tla::MakeLayout(tla::MakeShape(totalSeq, heads, dim),
+                                         tla::MakeStride((int64_t)heads * dim, (int64_t)dim, tla::Int<1>{}));
+        auto dst =
+            tla::MakeTensor(dstGm, dstLayout, tla::MakeCoord((int64_t)range.beginBlock, 0, 0), Arch::PositionGM{});
+        BlockEpilogueQGrad reduce(resource, APPLY_SCALE ? scale : static_cast<ElementACC>(1));
+        reduce.template operator()<APPLY_SCALE>(dst, src);
     }
 
     Arch::Resource<ArchTag> resource;
-
-    AscendC::GlobalTensor<ElementOffset> gNumContext;
-    AscendC::GlobalTensor<ElementOffset> gNumTarget;
 
     uint32_t batch{0};
     uint32_t heads{0};
@@ -365,9 +401,15 @@ struct BackwardEpilogueMainloop {
     uint32_t maxSeqLenK{0};
     uint32_t totalSeqLenQ{0};
     uint32_t totalSeqLenK{0};
-    int32_t targetGroupSize{0};
+    uint32_t targetGroupSize{0};  // Target 分核使用的分组大小，与 Predictor 使用相同的 tiling 值。
+    uint32_t rabHeads{0};
+    uint32_t maskHeads{0};
+    int32_t windowSizeLeft{-1}, windowSizeRight{-1};
     ElementACC alpha{0.0f};
     ElementACC scale{0.0f};
+    uint32_t blockM{BLOCK_M}, blockN{BLOCK_N};
+
+    GM_ADDR ptrTiling{nullptr};
 };
 
 }  // namespace Catlass::Kernel

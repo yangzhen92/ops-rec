@@ -27,7 +27,24 @@ See the License for the specific language governing permissions and
 #include "catlass/gemm_coord.hpp"
 #include "catlass/matrix_coord.hpp"
 
-namespace catlass::Epilogue::RegBase {
+namespace Catlass::Epilogue::RegBase {
+
+template <typename RegType>
+__simd_callee__ inline void Sigmoid(RegType& dst, RegType& src, RegType& ones, RegType& zeros,
+                                    AscendC::MicroAPI::MaskReg& maskReg)
+{
+    AscendC::MicroAPI::ExpSub(dst, zeros, src, maskReg);
+    AscendC::MicroAPI::Add(dst, ones, dst, maskReg);
+    AscendC::MicroAPI::Div(dst, ones, dst, maskReg);
+}
+
+template <typename RegType>
+__simd_callee__ inline void SiluCore(RegType& score, RegType& denom, RegType& silu, RegType& ones, RegType& zeros,
+                                     AscendC::MicroAPI::MaskReg& maskReg)
+{
+    Sigmoid(denom, score, ones, zeros, maskReg);
+    AscendC::MicroAPI::Mul(silu, denom, score, maskReg);
+}
 
 /**
  • @brief 将高精度数据转换为低精度数据并存储到 UBuf
@@ -94,4 +111,4 @@ __simd_callee__ inline void CastUpLoad(AscendC::MicroAPI::RegTensor<dstType>& ds
     AscendC::MicroAPI::Cast<dstType, srcType, castTrait>(dst, vregTmp, maskReg);
 }
 
-}  // namespace catlass::Epilogue::RegBase
+}  // namespace Catlass::Epilogue::RegBase

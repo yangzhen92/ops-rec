@@ -19,8 +19,34 @@ See the License for the specific language governing permissions and
 #include "../../../catlass_hstu/gemm/dispatch_policy.hpp"
 #include "catlass/arch/cross_core_sync.hpp"
 #include "catlass/gemm/block/block_mmad.hpp"
+#include "buffer_position.hpp"
 
 namespace Catlass::Gemm::Block {
+
+template <class ArchTag, class L1TileShape, class L0TileShape, class Element, class Accumulator, uint32_t Stages>
+struct ForwardQkMmadBuffer {
+    static constexpr uint32_t PROB_STAGES = 3U;
+    static constexpr uint32_t STAGES = PROB_STAGES;
+    static constexpr uint32_t L1_MK = tla::get<0>(L1TileShape{}) * tla::get<2>(L1TileShape{});
+    static constexpr uint32_t L0_MN = tla::get<0>(L0TileShape{}) * tla::get<1>(L0TileShape{});
+    static constexpr uint32_t L0_NK = tla::get<1>(L0TileShape{}) * tla::get<2>(L0TileShape{});
+    static constexpr uint32_t L0_MK = tla::get<0>(L0TileShape{}) * tla::get<2>(L0TileShape{});
+    using Query = detail::BufferPosition<Element, L1_MK, 0, Stages>;
+    using Key = detail::BufferPosition<Element, L0_NK, Query::lowerBound, Stages>;
+    using Value = detail::BufferPosition<Element, L0_NK, Key::lowerBound, Stages>;
+    using Prob = detail::BufferPosition<Element, L0_MN, Value::lowerBound, PROB_STAGES>;
+    using Score = detail::BufferPosition<Element, L0_MK / 2U, 0, 2>;
+    using UbProb = detail::BufferPosition<Accumulator, L0_MN / 2U, Score::lowerBound, PROB_STAGES>;
+    static constexpr uint32_t L1Q[2] = {Query::template Get<0>(), Query::template Get<1>()};
+    static constexpr uint32_t L1K[2] = {Key::template Get<0>(), Key::template Get<1>()};
+    static constexpr uint32_t L0A[2] = {0U, ArchTag::L0A_SIZE / 2U};
+    static constexpr uint32_t L0B[2] = {0U, ArchTag::L0B_SIZE / 2U};
+    static constexpr uint32_t L0C[1] = {0U};
+    static constexpr uint32_t DST[PROB_STAGES] = {UbProb::template Get<0>(), UbProb::template Get<1>(),
+                                                  UbProb::template Get<2>()};
+    static_assert(Prob::lowerBound <= ArchTag::L1_SIZE, "forward QK L1 layout exceeds capacity");
+    static_assert(UbProb::lowerBound <= ArchTag::UB_SIZE, "forward QK UB layout exceeds capacity");
+};
 
 template <class ArchTag_, bool PAGED_CACHE_FLAG_, bool ENABLE_UNIT_FLAG_, class L1TileShape_, class L0TileShape_,
           class ElementA_, class ElementB_, class ElementC_, class TileBuffer_, class TileCopy_, class TileMmad_>
@@ -53,19 +79,25 @@ public:
     CATLASS_DEVICE
     BlockMmadTla(Arch::Resource<ArchTag>& resource, uint32_t headNum, uint32_t headDim,
                  uint32_t const (&K_L1_EVENT_ID_)[2], uint32_t const (&Q_L1_EVENT_ID_)[2],
-                 uint32_t const (&CUBE_CROSS_EVENT_ID_)[PROB_STAGES], uint32_t L0_HANDOFF_ID_, uint32_t L0C_FIX_ID_)
+                 uint32_t const (&CUBE_CROSS_EVENT_ID_)[PROB_STAGES], uint32_t L0_HANDOFF_ID_, uint32_t L0C_FIX_ID_,
+                 uint32_t blockM, uint32_t blockN, uint32_t dimV)
     {
+        detail::ForwardRuntimeBufferLayout<ElementA, ElementAccumulator> layout(blockM, blockN, headDim, dimV);
+        const bool useStaticLayout = blockM == tla::get<0>(L1TileShape{}) && blockN == tla::get<1>(L1TileShape{});
         for (uint32_t i = 0; i < 2; i++) {
-            l1QTensor[i] = resource.l1Buf.template GetBufferByByte<ElementA>(TileBuffer::L1Q[i]);
-            l1KTensor[i] = resource.l1Buf.template GetBufferByByte<ElementB>(TileBuffer::L1K[i]);
+            const uint32_t qOffset = useStaticLayout ? TileBuffer::L1Q[i] : layout.l1.query[i];
+            const uint32_t kOffset = useStaticLayout ? TileBuffer::L1K[i] : layout.l1.key[i];
+            l1QTensor[i] = resource.l1Buf.template GetBufferByByte<ElementA>(qOffset);
+            l1KTensor[i] = resource.l1Buf.template GetBufferByByte<ElementB>(kOffset);
         }
 
-        l0ATensor = resource.l0ABuf.template GetBufferByByte<ElementA>(TileBuffer::L0A[0]);
-        l0BTensor = resource.l0BBuf.template GetBufferByByte<ElementB>(TileBuffer::L0B[0]);
-        l0CTensor = resource.l0CBuf.template GetBufferByByte<ElementAccumulator>(TileBuffer::L0C[0]);
+        l0ATensor = resource.l0ABuf.template GetBufferByByte<ElementA>(layout.l0aQ);
+        l0BTensor = resource.l0BBuf.template GetBufferByByte<ElementB>(layout.l0bK);
+        l0CTensor = resource.l0CBuf.template GetBufferByByte<ElementAccumulator>(layout.l0cQk);
 
         for (uint32_t i = 0; i < PROB_STAGES; i++) {
-            dstTensor[i] = resource.ubBuf.template GetBufferByByte<ElementAccumulator>(TileBuffer::DST[i]);
+            const uint32_t offset = useStaticLayout ? TileBuffer::DST[i] : layout.prob[i];
+            dstTensor[i] = resource.ubBuf.template GetBufferByByte<ElementAccumulator>(offset);
         }
 
         this->stride = headNum * headDim;

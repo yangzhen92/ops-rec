@@ -28,8 +28,48 @@ See the License for the specific language governing permissions and
 #include "../../../catlass_hstu/gemm/dispatch_policy.hpp"
 #include "catlass/arch/cross_core_sync.hpp"
 #include "catlass/gemm/block/block_mmad.hpp"
+#include "buffer_position.hpp"
 
 namespace Catlass::Gemm::Block {
+
+template <class ArchTag, class L1TileShape, class L0TileShape, class Element, class Accumulator, uint32_t Stages,
+          bool IsKGrad>
+struct BackwardKvGradMmadBuffer {
+    static constexpr uint32_t STAGES = Stages;
+    static constexpr uint32_t L1_NK = tla::get<1>(L1TileShape{}) * tla::get<2>(L1TileShape{});
+    static constexpr uint32_t L0_MK = tla::get<0>(L0TileShape{}) * tla::get<2>(L0TileShape{});
+    static constexpr uint32_t L0_MN = tla::get<0>(L0TileShape{}) * tla::get<1>(L0TileShape{});
+    static constexpr uint32_t L0_NK = tla::get<1>(L0TileShape{}) * tla::get<2>(L0TileShape{});
+    using Key = detail::BufferPosition<Element, L1_NK>;
+    using Query = detail::BufferPosition<Element, L0_MK, Key::lowerBound, Stages>;
+    using Value = detail::BufferPosition<Element, L1_NK, Query::lowerBound>;
+    using Grad = detail::BufferPosition<Element, L0_MK, Value::lowerBound, Stages>;
+    using Prob = detail::BufferPosition<Element, L0_MN, Grad::lowerBound, Stages>;
+    using Grab = detail::BufferPosition<Element, L0_MN, Prob::lowerBound, Stages>;
+    using Score = detail::BufferPosition<Accumulator, L0_MN>;
+    using TransV = detail::BufferPosition<Accumulator, L0_NK / 2U, Score::lowerBound>;
+    using TransOut = detail::BufferPosition<Element, L0_NK / 2U, TransV::lowerBound>;
+    using ProbUb = detail::BufferPosition<Element, L0_MN, Score::lowerBound>;
+    using GrabUb =
+        detail::BufferPosition<Element, L0_MN,
+                               (TransOut::lowerBound > ProbUb::lowerBound ? TransOut::lowerBound : ProbUb::lowerBound)>;
+    using GrabPart = detail::BufferPosition<Element, L0_MN, GrabUb::lowerBound>;
+    using Gs = detail::BufferPosition<Accumulator, L0_MN, GrabPart::lowerBound>;
+    static constexpr uint32_t MASK_END = Gs::lowerBound + tla::get<0>(L0TileShape{}) * 64U;
+    static constexpr uint32_t TRANS_K_OFFSET = tla::get<2>(L0TileShape{}) == 128U ? GrabPart::upperBound : MASK_END;
+    using TransK = detail::BufferPosition<Accumulator, L0_NK / 2U, TRANS_K_OFFSET>;
+    static constexpr uint32_t L1A[Stages] = {IsKGrad ? Grab::template Get<0>() : Prob::template Get<0>(),
+                                             IsKGrad ? Grab::template Get<1>() : Prob::template Get<1>()};
+    static constexpr uint32_t L1B[Stages] = {IsKGrad ? Query::template Get<0>() : Grad::template Get<0>(),
+                                             IsKGrad ? Query::template Get<1>() : Grad::template Get<1>()};
+    static constexpr uint32_t L0A[Stages] = {0U, ArchTag::L0A_SIZE / 2U};
+    static constexpr uint32_t L0B[Stages] = {0U, ArchTag::L0B_SIZE / 2U};
+    static constexpr uint32_t L0C = ArchTag::L0C_SIZE / 2U + (IsKGrad ? L0_NK : 0U) * sizeof(Accumulator);
+    static constexpr uint32_t DST = IsKGrad ? TransK::template Get<0>() : TransV::template Get<0>();
+    static_assert(Grab::lowerBound <= ArchTag::L1_SIZE, "backward KV-grad L1 layout exceeds capacity");
+    static_assert((IsKGrad ? TransK::lowerBound : TransOut::lowerBound) <= ArchTag::UB_SIZE,
+                  "backward KV-grad UB layout exceeds capacity");
+};
 
 /**
  • @brief HSTU PV 矩阵乘法的 Block MMAD 特化实现
@@ -65,14 +105,15 @@ namespace Catlass::Gemm::Block {
  •              支持子核绑定 (BIND_SUB_CORE) 可将计算绑定到特定子核
 
  */
-template <class ArchTag_, bool PAGED_CACHE_FLAG_, bool ENABLE_UNIT_FLAG_, bool SUB_CORE_ID_, bool ENABLE_SCALAR_QUANT_,
-          class L1TileShape_, class L0TileShape_, class ElementA_, class ElementB_, class ElementC_, class TileBuffer_,
-          class TileCopy_, class TileMmad_>
-struct BlockMmadTla<MmadHSTUPV<ArchTag_, PAGED_CACHE_FLAG_, ENABLE_UNIT_FLAG_, SUB_CORE_ID_, ENABLE_SCALAR_QUANT_>,
+template <class ArchTag_, bool PAGED_CACHE_FLAG_, bool ENABLE_UNIT_FLAG_, uint32_t SUB_CORE_ID_,
+          bool ENABLE_SCALAR_QUANT_, bool SAME_AB_, bool STREAM_K_ATOMIC_, class L1TileShape_, class L0TileShape_,
+          class ElementA_, class ElementB_, class ElementC_, class TileBuffer_, class TileCopy_, class TileMmad_>
+struct BlockMmadTla<MmadHSTUPV<ArchTag_, PAGED_CACHE_FLAG_, ENABLE_UNIT_FLAG_, SUB_CORE_ID_, ENABLE_SCALAR_QUANT_,
+                               SAME_AB_, STREAM_K_ATOMIC_>,
                     L1TileShape_, L0TileShape_, ElementA_, ElementB_, ElementC_, TileBuffer_, TileCopy_, TileMmad_> {
 public:
-    using DispatchPolicy =
-        MmadHSTUPV<ArchTag_, PAGED_CACHE_FLAG_, ENABLE_UNIT_FLAG_, SUB_CORE_ID_, ENABLE_SCALAR_QUANT_>;
+    using DispatchPolicy = MmadHSTUPV<ArchTag_, PAGED_CACHE_FLAG_, ENABLE_UNIT_FLAG_, SUB_CORE_ID_,
+                                      ENABLE_SCALAR_QUANT_, SAME_AB_, STREAM_K_ATOMIC_>;
     using ArchTag = typename DispatchPolicy::ArchTag;
     using L1TileShape = L1TileShape_;
     using L0TileShape = L0TileShape_;
@@ -103,9 +144,10 @@ public:
     static constexpr uint32_t L0_TILE_K = tla::get<2>(L0TileShape{});
 
     static constexpr uint32_t STAGES = DispatchPolicy::STAGES;
-    static constexpr bool BIND_SUB_CORE = DispatchPolicy::BIND_SUB_CORE;
     static constexpr uint32_t SUB_CORE_ID = DispatchPolicy::SUB_CORE_ID;
     static constexpr bool ENABLE_SCALAR_QUANT = DispatchPolicy::ENABLE_SCALAR_QUANT;
+    static constexpr bool SAME_AB = DispatchPolicy::SAME_AB;
+    static constexpr bool STREAM_K_ATOMIC = DispatchPolicy::STREAM_K_ATOMIC;
 
     /**
      ◦ @brief 构造函数
@@ -139,10 +181,12 @@ public:
             vecReady[i] = Arch::CrossCoreFlag(i * AscendC::SYNC_FLAG_ID_MAX + vecFlag);
         }
 
-        cubeReady = Arch::CrossCoreFlag(cubeFlag);
+        cubeReady[0] = Arch::CrossCoreFlag(cubeFlag);
+        cubeReady[1] = Arch::CrossCoreFlag(AscendC::SYNC_FLAG_ID_MAX + cubeFlag);
         // mode 4 uses an offset flag ID on AIC to select the destination AIV.
         // The AIV side always signals the base ubFreeFlag in its own namespace.
-        ubFree = Arch::CrossCoreFlag(SUB_CORE_ID * AscendC::SYNC_FLAG_ID_MAX + ubFreeFlag);
+        ubFree[0] = Arch::CrossCoreFlag(ubFreeFlag);
+        ubFree[1] = Arch::CrossCoreFlag(AscendC::SYNC_FLAG_ID_MAX + ubFreeFlag);
 
         L1B_EVENT_ID[0] = L1B_EVENT_ID_[0];  // q or grad
         L1B_EVENT_ID[1] = L1B_EVENT_ID_[1];  // q or grad
@@ -152,6 +196,14 @@ public:
     void SetDeqScalar(ElementAccumulator deqScalar)
     {
         this->deqScalar = deqScalar;
+    }
+
+    CATLASS_DEVICE void SetStreamKDestination(GM_ADDR dst, uint32_t rowOffset)
+    {
+        if constexpr (STREAM_K_ATOMIC) {
+            atomicDst.SetGlobalBuffer((__gm__ ElementAccumulator*)dst);
+            atomicRowOffset = rowOffset;
+        }
     }
 
     /**
@@ -182,13 +234,22 @@ public:
         if (isFlush) {
             // Do not overwrite the destination UB until its previous UB->GM copy
             // has completed. The initial token is seeded once by each AIV.
-            AscendC::CrossCoreWaitFlag<0x4, PIPE_FIX>(ubFree.id);
-            if constexpr (ENABLE_SCALAR_QUANT) {
+            AscendC::CrossCoreWaitFlag<0x4, PIPE_FIX>(ubFree[0].id);
+            if constexpr (SAME_AB) {
+                AscendC::CrossCoreWaitFlag<0x4, PIPE_FIX>(ubFree[1].id);
+            }
+            if constexpr (SAME_AB) {
+                static_assert(!ENABLE_SCALAR_QUANT, "SAME AB converts and scales on AIV");
+                tileCopy(dst, src, 0);
+            } else if constexpr (ENABLE_SCALAR_QUANT) {
                 tileCopy(dst, src, 0, deqScalar, SUB_CORE_ID);
             } else {
                 tileCopy(dst, src, 0, SUB_CORE_ID);
             }
-            AscendC::CrossCoreSetFlag<0x4, PIPE_FIX>(cubeReady.id);
+            AscendC::CrossCoreSetFlag<0x4, PIPE_FIX>(cubeReady[0].id);
+            if constexpr (SAME_AB) {
+                AscendC::CrossCoreSetFlag<0x4, PIPE_FIX>(cubeReady[1].id);
+            }
         }
     }
 
@@ -208,7 +269,10 @@ public:
 
      ◦ @param isFlush 是否刷新结果到目标
 
-     ◦ @description 执行 P * V 矩阵乘法，包含以下步骤:
+     ◦ @param l1ReuseSlot Q/Grad block 在每个 L1 stage buffer
+     内的子槽位，必须与 QK/GV 写入的 slot 一致
+ ◦ @description 执行 P * V
+     矩阵乘法，包含以下步骤:
 
      ◦              1. 等待 Vector 核数据就绪
 
@@ -227,17 +291,11 @@ public:
      */
     CATLASS_DEVICE
     void operator()(GemmCoord& blockShape, uint32_t& pingPongFlag, uint32_t& l0bFlag, bool isInit = false,
-                    bool isFlush = false)
+                    bool isFlush = false, uint32_t l1ReuseSlot = 0)
     {
         uint32_t mReal = blockShape.m();
         uint32_t nReal = blockShape.n();
         uint32_t kReal = blockShape.k();
-
-        auto dstLayout = tla::MakeLayout<ElementC, LayoutTagDST>(nReal, kReal);
-        auto tensorC = tla::MakeTensor(dstTensor, dstLayout, Arch::PositionUB{});
-
-        using CopyL0CToDst = typename TileCopy_::template CopyL0CToDst<decltype(tensorC)>;
-        CopyL0CToDst copyL0CToDst;
 
         auto coord = tla::MakeCoord(0, 0);
 
@@ -248,19 +306,22 @@ public:
             bool isLast = (m == mLoop - 1);
             auto mSize = isLast ? mTail : L0_TILE_M;
 
-            AscendC::CrossCoreWaitFlag<0x4, PIPE_MTE1>(vecReady[m % STAGES].id);
+            AscendC::CrossCoreWaitFlag<0x4, PIPE_MTE1>(vecReady[m & (STAGES - 1)].id);
 
             AscendC::WaitFlag<AscendC::HardEvent::M_MTE1>(l0bFlag + 2);  // 2 means pingPong
             auto l1bLayout = tla::MakeLayout<ElementB, LayoutTagL1B>(mSize, kReal);
-            auto tensorL1b = tla::MakeTensor(l1BTensor[m % STAGES], l1bLayout, coord, Arch::PositionL1{});
+            // 从 QK/GV 生产者写入的同一个 slot 读取 Q/Grad。
+            auto l1SlotOffset = l1ReuseSlot * L0_TILE_M * kReal;
+            auto l1bSlot = l1BTensor[m & (STAGES - 1)][l1SlotOffset];
+            auto tensorL1b = tla::MakeTensor(l1bSlot, l1bLayout, coord, Arch::PositionL1{});
             auto l0bLayout = tla::MakeLayout<ElementB, LayoutTagL0B>(mSize, kReal);
             auto tensorL0b = tla::MakeTensor(l0BTensor[l0bFlag], l0bLayout, coord, Arch::PositionL0B{});
             copyL1ToL0B(tensorL0b, tensorL1b);
-            AscendC::SetFlag<AscendC::HardEvent::MTE1_MTE2>(L1B_EVENT_ID[m % STAGES]);
+            AscendC::SetFlag<AscendC::HardEvent::MTE1_MTE2>(L1B_EVENT_ID[m & (STAGES - 1)]);
 
             AscendC::WaitFlag<AscendC::HardEvent::M_MTE1>(pingPongFlag);
             auto l1aLayout = tla::MakeLayout<ElementA, LayoutTagL1A>(nReal, mSize);
-            auto tensorL1a = tla::MakeTensor(l1ATensor[m % STAGES], l1aLayout, coord, Arch::PositionL1{});
+            auto tensorL1a = tla::MakeTensor(l1ATensor[m & (STAGES - 1)], l1aLayout, coord, Arch::PositionL1{});
             auto l0aLayout = tla::MakeLayout<ElementA, LayoutTagL0A>(nReal, mSize);
             auto tensorL0a = tla::MakeTensor(l0ATensor[pingPongFlag], l0aLayout, coord, Arch::PositionL0A{});
             copyL1ToL0A(tensorL0a, tensorL1a);
@@ -277,20 +338,37 @@ public:
 
             AscendC::WaitFlag<AscendC::HardEvent::M_FIX>(pingPongFlag);
             if (isLast) {
-                TriggerFlushToDst(tensorC, tensorL0c, isFlush, copyL0CToDst);
+                if constexpr (STREAM_K_ATOMIC) {
+                    if (isFlush) {
+                        auto dstLayout = tla::MakeLayout(tla::MakeShape(nReal, kReal),
+                                                         tla::MakeStride((int64_t)kReal, tla::Int<1>{}));
+                        auto tensorC = tla::MakeTensor(atomicDst, dstLayout,
+                                                       tla::MakeCoord((int64_t)atomicRowOffset, 0), Arch::PositionGM{});
+                        using CopyL0CToDst = typename TileCopy_::template CopyL0CToDst<decltype(tensorC)>;
+                        AscendC::SetAtomicAdd<ElementAccumulator>();
+                        CopyL0CToDst{}(tensorC, tensorL0c, 0);
+                        AscendC::SetAtomicNone();
+                    }
+                } else {
+                    auto dstLayout = tla::MakeLayout<ElementC, LayoutTagDST>(nReal, kReal);
+                    auto tensorC = tla::MakeTensor(dstTensor, dstLayout, Arch::PositionUB{});
+                    using CopyL0CToDst = typename TileCopy_::template CopyL0CToDst<decltype(tensorC)>;
+                    CopyL0CToDst copyL0CToDst;
+                    TriggerFlushToDst(tensorC, tensorL0c, isFlush, copyL0CToDst);
+                }
             }
             AscendC::SetFlag<AscendC::HardEvent::FIX_M>(pingPongFlag);
 
-            pingPongFlag = (pingPongFlag + 1) % 2;  // 2 means pingPong
-            l0bFlag = (l0bFlag + 1) % 2;            // 2 means pingPong
+            pingPongFlag = pingPongFlag ^ 1U;  // 2 means pingPong
+            l0bFlag = l0bFlag ^ 1U;            // 2 means pingPong
             isInit = false;
         }
     }
 
 protected:
     Arch::CrossCoreFlag vecReady[STAGES];
-    Arch::CrossCoreFlag cubeReady;
-    Arch::CrossCoreFlag ubFree;
+    Arch::CrossCoreFlag cubeReady[2];
+    Arch::CrossCoreFlag ubFree[2];
 
     AscendC::LocalTensor<ElementA> l1ATensor[STAGES];
     AscendC::LocalTensor<ElementA> l0ATensor[STAGES];
@@ -298,6 +376,8 @@ protected:
     AscendC::LocalTensor<ElementB> l0BTensor[STAGES];
     AscendC::LocalTensor<ElementAccumulator> l0CTensor;
     AscendC::LocalTensor<ElementC> dstTensor;
+    AscendC::GlobalTensor<ElementAccumulator> atomicDst;
+    uint32_t atomicRowOffset{0};
 
     TileMmad tileMmad;
     CopyL1ToL0A copyL1ToL0A;

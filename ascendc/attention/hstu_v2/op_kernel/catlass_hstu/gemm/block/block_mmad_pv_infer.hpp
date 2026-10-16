@@ -18,15 +18,45 @@ See the License for the specific language governing permissions and
 
 #include "../../../catlass_hstu/gemm/dispatch_policy.hpp"
 #include "catlass/gemm/block/block_mmad.hpp"
+#include "buffer_position.hpp"
 
 namespace Catlass::Gemm::Block {
 
-template <class ArchTag_, bool PAGED_CACHE_FLAG_, bool ENABLE_UNIT_FLAG_, class L1TileShape_, class L0TileShape_,
-          class ElementA_, class ElementB_, class ElementC_, class TileBuffer_, class TileCopy_, class TileMmad_>
-struct BlockMmadTla<MmadHSTUPV<ArchTag_, PAGED_CACHE_FLAG_, ENABLE_UNIT_FLAG_, 0, false>, L1TileShape_, L0TileShape_,
-                    ElementA_, ElementB_, ElementC_, TileBuffer_, TileCopy_, TileMmad_> {
+template <class ArchTag, class L1TileShape, class L0TileShape, class Element, class Accumulator, uint32_t Stages>
+struct ForwardPvMmadBuffer {
+    static constexpr uint32_t STAGES = 3U;
+    static constexpr uint32_t L1_MK = tla::get<0>(L1TileShape{}) * tla::get<2>(L1TileShape{});
+    static constexpr uint32_t L0_MN = tla::get<0>(L0TileShape{}) * tla::get<1>(L0TileShape{});
+    static constexpr uint32_t L0_NK = tla::get<1>(L0TileShape{}) * tla::get<2>(L0TileShape{});
+    static constexpr uint32_t L0_MK = tla::get<0>(L0TileShape{}) * tla::get<2>(L0TileShape{});
+    using Query = detail::BufferPosition<Element, L1_MK, 0, Stages>;
+    using Key = detail::BufferPosition<Element, L0_NK, Query::lowerBound, Stages>;
+    using Value = detail::BufferPosition<Element, L0_NK, Key::lowerBound, Stages>;
+    using Prob = detail::BufferPosition<Element, L0_MN, Value::lowerBound, STAGES>;
+    using Score = detail::BufferPosition<Element, L0_MK / 2U, 0, 2>;
+    using UbProb = detail::BufferPosition<Accumulator, L0_MN / 2U, Score::lowerBound, STAGES>;
+    using Rab = detail::BufferPosition<Element, L0_MN / 2U, UbProb::lowerBound, 2>;
+    using TransOutScratch = detail::BufferPosition<Element, L0_MK / 2U, Rab::lowerBound>;
+    using TransIn = detail::BufferPosition<Accumulator, L0_MK / 2U, TransOutScratch::lowerBound, 2>;
+    static constexpr uint32_t L1P[STAGES] = {Prob::template Get<0>(), Prob::template Get<1>(), Prob::template Get<2>()};
+    static constexpr uint32_t L1V[2] = {Value::template Get<0>(), Value::template Get<1>()};
+    static constexpr uint32_t L0A[2] = {0U, ArchTag::L0A_SIZE / 2U};
+    static constexpr uint32_t L0B[2] = {0U, ArchTag::L0B_SIZE / 2U};
+    static constexpr uint32_t VACC = L0_MN * sizeof(Accumulator);
+    static constexpr uint32_t TRANS_OUT_CNT = 2U;
+    static constexpr uint32_t TRANS_OUT[2] = {TransIn::template Get<0>(), TransIn::template Get<1>()};
+    static_assert(Prob::lowerBound <= ArchTag::L1_SIZE, "forward PV L1 layout exceeds capacity");
+    static_assert(TransIn::lowerBound <= ArchTag::UB_SIZE, "forward PV UB layout exceeds capacity");
+};
+
+template <class ArchTag_, bool PAGED_CACHE_FLAG_, bool ENABLE_UNIT_FLAG_, bool STREAM_K_ATOMIC_, class L1TileShape_,
+          class L0TileShape_, class ElementA_, class ElementB_, class ElementC_, class TileBuffer_, class TileCopy_,
+          class TileMmad_>
+struct BlockMmadTla<MmadHSTUPV<ArchTag_, PAGED_CACHE_FLAG_, ENABLE_UNIT_FLAG_, 0, false, false, STREAM_K_ATOMIC_>,
+                    L1TileShape_, L0TileShape_, ElementA_, ElementB_, ElementC_, TileBuffer_, TileCopy_, TileMmad_> {
 public:
-    using DispatchPolicy = MmadHSTUPV<ArchTag_, PAGED_CACHE_FLAG_, ENABLE_UNIT_FLAG_, 0, false>;
+    using DispatchPolicy =
+        MmadHSTUPV<ArchTag_, PAGED_CACHE_FLAG_, ENABLE_UNIT_FLAG_, 0, false, false, STREAM_K_ATOMIC_>;
     using ArchTag = typename DispatchPolicy::ArchTag;
     using ElementA = ElementA_;
     using ElementB = ElementB_;
@@ -45,25 +75,32 @@ public:
     using LayoutTagDST = typename TileCopy::LayoutTagC;
 
     static constexpr uint32_t PROB_STAGES = TileBuffer::STAGES;
+    static constexpr bool STREAM_K_ATOMIC = DispatchPolicy::STREAM_K_ATOMIC;
 
     CATLASS_DEVICE
     BlockMmadTla(Arch::Resource<ArchTag>& resource, uint32_t headNum, uint32_t headDim,
                  uint32_t const (&V_L1_EVENT_ID_)[2], uint32_t const (&CUBE_CROSS_EVENT_ID_)[PROB_STAGES],
-                 uint32_t L0_HANDOFF_ID_, uint32_t L0C_FIX_ID_, uint32_t transReadyId_)
+                 uint32_t L0_HANDOFF_ID_, uint32_t L0C_FIX_ID_, uint32_t transReadyId_, uint32_t blockM,
+                 uint32_t blockN, uint32_t dimQk)
     {
+        detail::ForwardRuntimeBufferLayout<ElementA, ElementAccumulator> layout(blockM, blockN, dimQk, headDim);
+        const bool useStaticLayout = blockM == tla::get<0>(L1TileShape_{}) && blockN == tla::get<1>(L1TileShape_{});
         for (uint32_t i = 0; i < 2; i++) {
-            l1VTensor[i] = resource.l1Buf.template GetBufferByByte<ElementB>(TileBuffer::L1V[i]);
+            const uint32_t offset = useStaticLayout ? TileBuffer::L1V[i] : layout.l1.value[i];
+            l1VTensor[i] = resource.l1Buf.template GetBufferByByte<ElementB>(offset);
         }
         for (uint32_t i = 0; i < PROB_STAGES; i++) {
-            l1PTensor[i] = resource.l1Buf.template GetBufferByByte<ElementA>(TileBuffer::L1P[i]);
+            const uint32_t offset = useStaticLayout ? TileBuffer::L1P[i] : layout.l1.prob[i];
+            l1PTensor[i] = resource.l1Buf.template GetBufferByByte<ElementA>(offset);
         }
 
-        l0ATensor = resource.l0ABuf.template GetBufferByByte<ElementA>(TileBuffer::L0A[1]);
-        l0BTensor = resource.l0BBuf.template GetBufferByByte<ElementB>(TileBuffer::L0B[1]);
-        dstTensor = resource.l0CBuf.template GetBufferByByte<ElementAccumulator>(TileBuffer::VACC);
+        l0ATensor = resource.l0ABuf.template GetBufferByByte<ElementA>(layout.l0aP);
+        l0BTensor = resource.l0BBuf.template GetBufferByByte<ElementB>(layout.l0bV);
+        dstTensor = resource.l0CBuf.template GetBufferByByte<ElementAccumulator>(layout.l0cPv);
 
         for (uint32_t i = 0; i < TileBuffer::TRANS_OUT_CNT; i++) {
-            OutTensor[i] = resource.ubBuf.template GetBufferByByte<ElementAccumulator>(TileBuffer::TRANS_OUT[i]);
+            const uint32_t offset = useStaticLayout ? TileBuffer::TRANS_OUT[i] : layout.transIn[i];
+            OutTensor[i] = resource.ubBuf.template GetBufferByByte<ElementAccumulator>(offset);
         }
 
         this->stride = headNum * headDim;
@@ -81,6 +118,15 @@ public:
 
     CATLASS_DEVICE
     ~BlockMmadTla() = default;
+
+    CATLASS_DEVICE void SetStreamKDestination(GM_ADDR dst, uint32_t rowOffset)
+    {
+        if constexpr (STREAM_K_ATOMIC) {
+            if (dst != nullptr)
+                atomicDst.SetGlobalBuffer((__gm__ ElementAccumulator*)dst);
+            atomicRowOffset = rowOffset;
+        }
+    }
 
     // ============ public API ============
 
@@ -147,7 +193,18 @@ public:
         AscendC::WaitFlag<AscendC::HardEvent::M_FIX>(L0C_FIX_ID);
 
         if (isFlush) {
-            FlushL0CToDstPV(mReal, kReal, transInSlot);
+            if constexpr (STREAM_K_ATOMIC) {
+                auto dstLayout =
+                    tla::MakeLayout(tla::MakeShape(mReal, kReal), tla::MakeStride((int64_t)kReal, tla::Int<1>{}));
+                auto tensorDst = tla::MakeTensor(atomicDst, dstLayout, tla::MakeCoord((int64_t)atomicRowOffset, 0),
+                                                 Arch::PositionGM{});
+                using CopyL0CToDst = typename TileCopy_::template CopyL0CToDst<decltype(tensorDst)>;
+                AscendC::SetAtomicAdd<ElementAccumulator>();
+                CopyL0CToDst{}(tensorDst, tensorL0c, 0);
+                AscendC::SetAtomicNone();
+            } else {
+                FlushL0CToDstPV(mReal, kReal, transInSlot);
+            }
         }
 
         AscendC::SetFlag<AscendC::HardEvent::FIX_M>(L0C_FIX_ID);
@@ -198,6 +255,8 @@ protected:
     AscendC::LocalTensor<ElementB> l0BTensor;
     AscendC::LocalTensor<ElementAccumulator> dstTensor;
     AscendC::LocalTensor<ElementAccumulator> OutTensor[TileBuffer::TRANS_OUT_CNT];
+    AscendC::GlobalTensor<ElementAccumulator> atomicDst;
+    uint32_t atomicRowOffset{0};
 
     int64_t stride{0};
     uint32_t mReal{0};

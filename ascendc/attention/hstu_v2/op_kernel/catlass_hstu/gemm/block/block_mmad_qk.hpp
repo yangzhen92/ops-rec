@@ -29,8 +29,60 @@ See the License for the specific language governing permissions and
 #include "../../../catlass_hstu/gemm/dispatch_policy.hpp"
 #include "catlass/arch/cross_core_sync.hpp"
 #include "catlass/gemm/block/block_mmad.hpp"
+#include "buffer_position.hpp"
 
 namespace Catlass::Gemm::Block {
+
+template <class ArchTag, class L1TileShape, class L0TileShape, class Element, class Accumulator, uint32_t Stages>
+struct BackwardQkMmadBuffer {
+    static constexpr uint32_t STAGES = Stages;
+    static constexpr uint32_t L1_NK = tla::get<1>(L1TileShape{}) * tla::get<2>(L1TileShape{});
+    static constexpr uint32_t L0_MK = tla::get<0>(L0TileShape{}) * tla::get<2>(L0TileShape{});
+    static constexpr uint32_t L0_MN = tla::get<0>(L0TileShape{}) * tla::get<1>(L0TileShape{});
+    using Key = detail::BufferPosition<Element, L1_NK>;
+    using Query = detail::BufferPosition<Element, L0_MK, Key::lowerBound, Stages>;
+    static constexpr uint32_t L1B = Key::template Get<0>();
+    static constexpr uint32_t L1A[Stages] = {Query::template Get<0>(), Query::template Get<1>()};
+    static constexpr uint32_t L0A[Stages] = {0U, ArchTag::L0A_SIZE / 2U};
+    static constexpr uint32_t L0B[Stages] = {0U, ArchTag::L0B_SIZE / 2U};
+    static constexpr uint32_t L0C[Stages] = {0U, ArchTag::L0C_SIZE / 4U};
+    static constexpr uint32_t DST = 0U;
+    static_assert(Query::lowerBound <= ArchTag::L1_SIZE, "backward QK L1 layout exceeds capacity");
+    static_assert(L0_MN * sizeof(Accumulator) <= ArchTag::UB_SIZE, "backward QK UB layout exceeds capacity");
+};
+
+template <class ArchTag, class L1TileShape, class L0TileShape, class Element, class Accumulator, uint32_t Stages>
+struct BackwardGvMmadBuffer {
+    static constexpr uint32_t STAGES = Stages;
+    static constexpr uint32_t L1_NK = tla::get<1>(L1TileShape{}) * tla::get<2>(L1TileShape{});
+    static constexpr uint32_t L0_MK = tla::get<0>(L0TileShape{}) * tla::get<2>(L0TileShape{});
+    static constexpr uint32_t L0_MN = tla::get<0>(L0TileShape{}) * tla::get<1>(L0TileShape{});
+    using Key = detail::BufferPosition<Element, L1_NK>;
+    using Query = detail::BufferPosition<Element, L0_MK, Key::lowerBound, Stages>;
+    using Value = detail::BufferPosition<Element, L1_NK, Query::lowerBound>;
+    using Grad = detail::BufferPosition<Element, L0_MK, Value::lowerBound, Stages>;
+    using Prob = detail::BufferPosition<Element, L0_MN, Grad::lowerBound, Stages>;
+    using Grab = detail::BufferPosition<Element, L0_MN, Prob::lowerBound, Stages>;
+    using Score = detail::BufferPosition<Accumulator, L0_MN>;
+    using TransV = detail::BufferPosition<Accumulator, tla::get<1>(L0TileShape{}) * tla::get<2>(L0TileShape{}) / 2U,
+                                          Score::lowerBound>;
+    using TransOut = detail::BufferPosition<Element, tla::get<1>(L0TileShape{}) * tla::get<2>(L0TileShape{}) / 2U,
+                                            TransV::lowerBound>;
+    using ProbUb = detail::BufferPosition<Element, L0_MN, Score::lowerBound>;
+    using GrabUb =
+        detail::BufferPosition<Element, L0_MN,
+                               (TransOut::lowerBound > ProbUb::lowerBound ? TransOut::lowerBound : ProbUb::lowerBound)>;
+    using GrabPart = detail::BufferPosition<Element, L0_MN, GrabUb::lowerBound>;
+    using Gs = detail::BufferPosition<Accumulator, L0_MN, GrabPart::lowerBound>;
+    static constexpr uint32_t L1B = Value::template Get<0>();
+    static constexpr uint32_t L1A[Stages] = {Grad::template Get<0>(), Grad::template Get<1>()};
+    static constexpr uint32_t L0A[Stages] = {0U, ArchTag::L0A_SIZE / 2U};
+    static constexpr uint32_t L0B[Stages] = {0U, ArchTag::L0B_SIZE / 2U};
+    static constexpr uint32_t L0C[Stages] = {0U, ArchTag::L0C_SIZE / 4U};
+    static constexpr uint32_t DST = Gs::template Get<0>();
+    static_assert(Grab::lowerBound <= ArchTag::L1_SIZE, "backward GV L1 layout exceeds capacity");
+    static_assert(Gs::lowerBound <= ArchTag::UB_SIZE, "backward GV UB layout exceeds capacity");
+};
 
 /**
  • @brief HSTU QK^T 矩阵乘法的 Block MMAD 特化实现
@@ -261,9 +313,12 @@ public:
 
      ◦ @param l0bFlag L0 B 缓冲区标志
 
-     ◦ @param triggerSwizzle 是否触发 Swizzle 优化
+     ◦ @param triggerSwizzle L1 最终复用命中标志，由 L1BlockReuseCache::Probe().canReuse 传入；为 true 时跳过 GM ->
+     L1
 
-     ◦ @description 执行完整的 Q * K^T 矩阵乘法，包含以下步骤:
+ ◦ @param l1ReuseSlot Q/Grad block 在每个 L1 stage buffer 内的子槽位，生产者与消费者必须使用同一 slot
+ ◦
+     @description 执行完整的 Q * K^T 矩阵乘法，包含以下步骤:
 
      ◦              1. 等待 L1 B 数据就绪
 
@@ -284,7 +339,7 @@ public:
      */
     template <class TensorA, class TensorB>
     CATLASS_DEVICE void operator()(TensorA& tensorA, TensorB& tensorB, uint32_t& pingPongFlag, uint32_t& l0bFlag,
-                                   bool triggerSwizzle)
+                                   bool triggerSwizzle, uint32_t l1ReuseSlot = 0)
     {
         uint32_t mReal = tla::get<0>(tensorA.shape());
         uint32_t nReal = tla::get<0>(tensorB.shape());
@@ -313,9 +368,13 @@ public:
 
             // copy ga -> l1a
             AscendC::WaitFlag<AscendC::HardEvent::M_MTE1>(pingPongFlag);
-            AscendC::WaitFlag<AscendC::HardEvent::MTE1_MTE2>(L1A_EVENT_ID[m % STAGES]);
+            AscendC::WaitFlag<AscendC::HardEvent::MTE1_MTE2>(L1A_EVENT_ID[m & (STAGES - 1)]);
             auto l1aLayout = tla::MakeLayout<ElementA, LayoutTagL1A>(mSize, kReal);
-            auto tensorL1a = tla::MakeTensor(l1ATensor[m % STAGES], l1aLayout, coord, Arch::PositionL1{});
+            // 在原有 L0_TILE_M * L0_TILE_K 的单个 stage buffer 中打包多个窄维 Q/Grad block。
+            auto l1SlotOffset = l1ReuseSlot * L0_TILE_M * kReal;
+            auto l1aSlot = l1ATensor[m & (STAGES - 1)][l1SlotOffset];
+            auto tensorL1a = tla::MakeTensor(l1aSlot, l1aLayout, coord, Arch::PositionL1{});
+            // triggerSwizzle 是 cache 计算出的最终 canReuse；命中时保留 slot 中的数据并跳过 GM -> L1。
             if (!triggerSwizzle) {
                 copyGmToL1A(tensorL1a, tensorATile, mSize, kReal, stride);
             }
@@ -342,19 +401,19 @@ public:
             auto dstLayout = tla::MakeLayout<ElementA, LayoutTagDST>(mSize, nRound);
             auto tensorC = tla::MakeTensor(dstTensor, dstLayout, Arch::PositionUB{});
             if constexpr (ENABLE_SCALAR_QUANT) {
-                copyL0CToDst(tensorC, tensorL0c, 0, deqScalar, m % STAGES);
+                copyL0CToDst(tensorC, tensorL0c, 0, deqScalar, m & (STAGES - 1));
             } else {
-                copyL0CToDst(tensorC, tensorL0c, 0, m % STAGES);
+                copyL0CToDst(tensorC, tensorL0c, 0, m & (STAGES - 1));
             }
             AscendC::SetFlag<AscendC::HardEvent::FIX_M>(pingPongFlag);
 
-            AscendC::CrossCoreSetFlag<0x4, PIPE_FIX>(cubeReady[m % STAGES].id);
+            AscendC::CrossCoreSetFlag<0x4, PIPE_FIX>(cubeReady[m & (STAGES - 1)].id);
 
-            pingPongFlag = (pingPongFlag + 1) % STAGES;
+            pingPongFlag = pingPongFlag ^ 1U;
         }
 
         AscendC::SetFlag<AscendC::HardEvent::M_MTE1>(l0bFlag + 2);
-        l0bFlag = (l0bFlag + 1) % STAGES;
+        l0bFlag = l0bFlag ^ 1U;
     }
 
 protected:

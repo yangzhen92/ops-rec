@@ -21,7 +21,6 @@ See the License for the specific language governing permissions and
  *     1. BlockPredParams         — per-block 参数 (嵌套 struct, 纯数据)
  *     2. MakeBlockPredParams()   — static 方法, 从 coord + kernel 构造参数
  *     3. classifier() / isSkip() — 分类 & 跳过判断
- *     4. ApplyMask()             — 写入 RAB mask (本题: no-op)
  */
 
 #pragma once
@@ -41,6 +40,15 @@ struct NoMaskPredictor {
     };
 
     // =========================================================================
+    // 1.5. Construct — mainloop 侧 predictor 初始化 (nomask 无需初始化)
+    //   与 Arbitrary/Causal predictor 同构签名, mainloop 可统一调用
+    // =========================================================================
+    template <typename Kernel>
+    CATLASS_DEVICE void Construct(Kernel* kernel, const typename Kernel::Params& params)
+    {
+    }
+
+    // =========================================================================
     // 2. MakeBlockPredParams — static, 从 coord + kernel 构造参数
     // =========================================================================
     template <typename Kernel, typename Coord>
@@ -51,7 +59,7 @@ struct NoMaskPredictor {
         uint32_t sq = tla::get<2>(blockCoord);
 
         bp.qSeqId = sq;
-        bp.blockHeight = BLOCK_M;
+        bp.blockHeight = kernel->blockM;
         bp.seqlenQ = seqlenQ;
         bp.swizzleDir = swizzleDir;
         return bp;
@@ -68,15 +76,6 @@ struct NoMaskPredictor {
     CATLASS_DEVICE bool IsSkip()
     {
         return false;
-    }
-
-    // =========================================================================
-    // 4. ApplyMask — 写入 RAB mask
-    // =========================================================================
-    template <typename Elem, class Coord, class Shape>
-    CATLASS_DEVICE void ApplyMask(AscendC::LocalTensor<Elem>& mask, Coord const& coord, Shape const& shape,
-                                  uint32_t alignRows, uint32_t alignCols) const
-    {
     }
 
     CATLASS_DEVICE bool IsInnerLoopFirstQBlock(BlockPredParams& bp)

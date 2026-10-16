@@ -59,7 +59,7 @@ aclnnStatus aclnnHstuBackwardV2(
 
 - **seq_offset_k** (*Tensor*) – Key/Value 序列偏移量。形状: `[batchSize + 1]`，数据类型: `int32`
 
-- **rab** (*Tensor, optional*) – RAB。形状: `[batchSize, heads, maxSeqLenQ, maxSeqLenK]`，数据类型: `float16, bfloat16`。默认值: `None`
+- **rab** (*Tensor, optional*) – RAB。形状: `[batchSize, 1|heads, maxSeqLenQ, maxSeqLenK]`，head 为 1 时广播。
 
 - **num_context** (*Tensor, optional*) – 每个 batch 的 Context 长度。形状: `[batchSize]`。默认值: `None`
 
@@ -88,13 +88,13 @@ aclnnStatus aclnnHstuBackwardV2(
     - `v`: `(totalSeqLenK, heads, dimGV)`
     - `seq_offset_q`: `(batchSize + 1)`
     - `seq_offset_k`: `(batchSize + 1)`
-    - `rab` (optional): `(batchSize, heads, maxSeqLenQ, maxSeqLenK)`
+    - `rab` (optional): `(batchSize, 1|heads, maxSeqLenQ, maxSeqLenK)`
 
 - **输出**: 4 个 Tensor 的元组
     - `qGrad`: `(totalSeqLenQ, heads, dimQK)`，dtype: `float16, bfloat16`
     - `kGrad`: `(totalSeqLenK, heads, dimQK)`，dtype: `float16, bfloat16`
     - `vGrad`: `(totalSeqLenK, heads, dimGV)`，dtype: `float16, bfloat16`
-    - `rabGrad`: `(batchSize, heads, maxSeqLenQ, maxSeqLenK)`，dtype: `float16, bfloat16`（仅当 `rab` 不为 None 时返回）
+    - `rabGrad`: 与输入 `rab` shape 相同，dtype: `float16, bfloat16`（仅当 `rab` 不为 None 时返回）
 
 ## 约束条件
 
@@ -104,7 +104,7 @@ aclnnStatus aclnnHstuBackwardV2(
 - 当 `num_context` 或 `num_target` 不为 None 时，`target_group_size` 必须为 `1` 或 `3`
 - `headQ` 必须等于 `headK`（当前仅支持 MHA，不支持 GQA）
 - `window_size_left` 和 `window_size_right` 必须 ≥ -1
-- 当前仅支持 `(-1, 0)`（causal mask）和 `(-1, -1)`（no mask）两种 `(window_size_left, window_size_right)` 组合
+- 支持 `(-1, 0)` causal、`(-1, -1)` no-mask 和任一边为 `-1` 或非负整数的 local window
 - 当提供 `num_context` 或 `num_target` 时，必须使用 causal mask（`window_size_left=-1, window_size_right=0`）, 同时需满足num_context + num_target < max_seqlen_q
 
 ## mask 行为说明

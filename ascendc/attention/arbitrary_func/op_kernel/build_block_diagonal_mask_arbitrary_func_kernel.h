@@ -29,7 +29,7 @@ __simt_vf__ __aicore__ LAUNCH_BOUND(BLOCK_THREAD_NUM_1024) inline void SimtBuild
     __gm__ int32_t* __restrict__ output, const __gm__ int32_t* __restrict__ offsets, int32_t totalSeqLen,
     int32_t batchSize, const uint32_t totalThread)
 {
-    int32_t globalPos = static_cast<int32_t>(blockId * blockDim.x + threadIdx.x);
+    int32_t globalPos = blockIdx.x * blockDim.x + threadIdx.x;
     for (; globalPos < totalSeqLen; globalPos += static_cast<int32_t>(totalThread)) {
         int32_t low = 0;
         int32_t high = batchSize;

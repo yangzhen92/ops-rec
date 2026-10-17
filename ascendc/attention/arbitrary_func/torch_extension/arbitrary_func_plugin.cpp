@@ -23,6 +23,7 @@
 using namespace at;
 
 constexpr uint32_t N_FUNC = 4;
+constexpr uint32_t N_FUNC_BLOCK_DIAGONAL = 2;
 
 at::Tensor build_hstu_mask_arbitrary_func_impl_npu(const at::Tensor& offsets, const at::Tensor& ctx_lens,
                                                    const at::Tensor& tgt_lens, int64_t target_group_size,
@@ -114,12 +115,36 @@ at::Tensor build_sla_mask_arbitrary_func_impl_npu(const at::Tensor& offsets, int
     return arbitrary_func;
 }
 
+at::Tensor build_block_diagonal_mask_arbitrary_func_impl_npu(const at::Tensor& offsets, int64_t total_seqlen)
+{
+    check_tensor_non_empty(offsets, "offsets");
+    check_tensor_npu_device({offsets}, {"offsets"});
+
+    TORCH_CHECK(offsets.scalar_type() == at::kInt, "offsets must be int32");
+    TORCH_CHECK(offsets.dim() == 1, "offsets must be 1D");
+    TORCH_CHECK(total_seqlen >= 0 && total_seqlen <= INT32_MAX, "total_seqlen must be in [0, INT32_MAX]");
+
+    auto offsets_conti = offsets.contiguous();
+
+    const int32_t offsetsTotal = offsets[-1].item<int32_t>();
+    TORCH_CHECK(total_seqlen == offsetsTotal, "total_seqlen must equal offsets[-1] (total tokens), got ", total_seqlen,
+                " vs ", offsetsTotal);
+
+    at::Tensor arbitrary_func = at::empty({1, 1, total_seqlen, N_FUNC_BLOCK_DIAGONAL}, offsets_conti.options());
+    if (total_seqlen == 0)
+        return arbitrary_func;
+
+    EXEC_NPU_CMD(aclnnBuildBlockDiagonalMaskArbitraryFunc, offsets_conti, total_seqlen, arbitrary_func);
+    return arbitrary_func;
+}
+
 TORCH_LIBRARY_FRAGMENT(ops_rec, m)
 {
     m.def("build_hstu_mask_arbitrary_func(Tensor offsets, Tensor ctx_lens, Tensor tgt_lens, "
           "int target_group_size, int total_seqlen) -> Tensor");
     m.def("build_sla_mask_arbitrary_func(Tensor offsets, int total_seqlen, int sla_k1, int sla_k2, "
           "int contextual_seq_len, Tensor? num_targets=None) -> Tensor");
+    m.def("build_block_diagonal_mask_arbitrary_func(Tensor offsets, int total_seqlen) -> Tensor");
 }
 
 // NPU 设备实现
@@ -127,6 +152,7 @@ TORCH_LIBRARY_IMPL(ops_rec, PrivateUse1, m)
 {
     m.impl("build_hstu_mask_arbitrary_func", &build_hstu_mask_arbitrary_func_impl_npu);
     m.impl("build_sla_mask_arbitrary_func", &build_sla_mask_arbitrary_func_impl_npu);
+    m.impl("build_block_diagonal_mask_arbitrary_func", &build_block_diagonal_mask_arbitrary_func_impl_npu);
 }
 
 namespace {
@@ -146,10 +172,17 @@ at::Tensor build_sla_mask_arbitrary_func_meta(const at::Tensor& offsets, int64_t
     TORCH_CHECK(total_seqlen >= 0, "total_seqlen must be non-negative");
     return at::empty_symint({1, 1, total_seqlen, N_FUNC}, offsets.options());
 }
+
+at::Tensor build_block_diagonal_mask_arbitrary_func_meta(const at::Tensor& offsets, int64_t total_seqlen)
+{
+    TORCH_CHECK(total_seqlen >= 0, "total_seqlen must be non-negative");
+    return at::empty_symint({1, 1, total_seqlen, N_FUNC_BLOCK_DIAGONAL}, offsets.options());
+}
 }  // anonymous namespace
 
 TORCH_LIBRARY_IMPL(ops_rec, Meta, m)
 {
     m.impl("build_hstu_mask_arbitrary_func", &build_hstu_mask_arbitrary_func_meta);
     m.impl("build_sla_mask_arbitrary_func", &build_sla_mask_arbitrary_func_meta);
+    m.impl("build_block_diagonal_mask_arbitrary_func", &build_block_diagonal_mask_arbitrary_func_meta);
 }

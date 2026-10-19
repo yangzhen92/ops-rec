@@ -1,1 +1,0 @@
-add_subdirectory(fa_infer_with_arbitrary_func_forward)

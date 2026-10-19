@@ -107,7 +107,7 @@ unset _ops_rec_opp_path
 
 # example 文件路径查找：命名约定 test_<kind>_<op>.<ext> under examples/<kind>/<op>/
 _example_paths() {
-    find "${SCRIPT_DIR}/ascendc" \
+    find "${SCRIPT_DIR}/src/ascendc" \
         -path "*/${2}/examples/${1}/test_${1}_*${3}" 2>/dev/null | sort
 }
 

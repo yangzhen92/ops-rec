@@ -48,7 +48,7 @@ set(OPS_REC_OPS_ATLAS_A2
 get_filename_component(OPS_REC_REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 
 function(ops_rec_find_op_dir op_name out_var)
-    file(GLOB _grp_dirs LIST_DIRECTORIES true "${OPS_REC_REPO_ROOT}/ascendc/*")
+    file(GLOB _grp_dirs LIST_DIRECTORIES true "${OPS_REC_REPO_ROOT}/src/ascendc/*")
     set(_found_dir)
     foreach(_gd ${_grp_dirs})
         if(EXISTS "${_gd}/${op_name}")
@@ -60,7 +60,7 @@ function(ops_rec_find_op_dir op_name out_var)
 endfunction()
 
 function(ops_rec_vendor_dir vendor out_var)
-    file(GLOB _grp_dirs LIST_DIRECTORIES true "${OPS_REC_REPO_ROOT}/ascendc/*")
+    file(GLOB _grp_dirs LIST_DIRECTORIES true "${OPS_REC_REPO_ROOT}/src/ascendc/*")
     set(_found_dir)
     foreach(_gd ${_grp_dirs})
         if(EXISTS "${_gd}/${vendor}" AND IS_DIRECTORY "${_gd}/${vendor}")

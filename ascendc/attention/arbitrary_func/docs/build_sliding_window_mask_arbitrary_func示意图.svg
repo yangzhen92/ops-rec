@@ -1,0 +1,223 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="920" viewBox="0 0 980 920">
+  <defs><style>
+    .title{font:bold 22px Arial,sans-serif;fill:#203040}.subtitle{font:14px Arial,sans-serif;fill:#52616b}.label{font:13px Arial,sans-serif;fill:#203040}.small{font:11px Arial,sans-serif;fill:#52616b}.formula{font:12px Consolas,monospace;fill:#203040}.segA{fill:#3b82f6}.segC{fill:#10b981}.visA{fill:#3b82f6}.visC{fill:#10b981}.hidden{fill:#eef2f7}.grid{stroke:#cbd5e1;stroke-width:1}.boundary{stroke:#2c3e50;stroke-width:2}
+  </style></defs>
+  <rect width="100%" height="100%" fill="#f7f9fb"/>
+  <text x="490" y="32" text-anchor="middle" class="title">build_sliding_window_mask_arbitrary_func：滑窗掩码 af 编码与注意力 mask 对应关系</text>
+  <text x="490" y="56" text-anchor="middle" class="subtitle">示例: batch=2, offsets=[0,6,12], window_sizes=[3,2], total_seqlen=12</text>
+
+  <!-- ========== 1. 序列分块 ========== -->
+  <text x="80" y="88" class="subtitle">1. 序列分块（因果滑窗，两个序列）</text>
+
+  <!-- Seq0 / Seq1 序列条（同一行） -->
+  <text x="170" y="104" text-anchor="middle" class="small">Seq 0 (len=6)  全局 [0,6)  window=3</text>
+  <text x="386" y="104" text-anchor="middle" class="small">Seq 1 (len=6)  全局 [6,12)  window=2</text>
+  <rect x="80" y="108" width="216" height="26" class="segA" rx="2"/>
+  <rect x="296" y="108" width="216" height="26" class="segC" rx="2"/>
+  <g style="font:bold 12px Arial,sans-serif;fill:white" text-anchor="middle">
+    <text x="188" y="125">Seq 0</text><text x="404" y="125">Seq 1</text>
+  </g>
+
+  <!-- 全局位置坐标轴 -->
+  <g class="small" text-anchor="middle">
+    <text x="98" y="149">0</text><text x="134" y="149">1</text><text x="170" y="149">2</text>
+    <text x="206" y="149">3</text><text x="242" y="149">4</text><text x="278" y="149">5</text>
+    <text x="314" y="149">6</text><text x="350" y="149">7</text><text x="386" y="149">8</text>
+    <text x="422" y="149">9</text><text x="458" y="149">10</text><text x="494" y="149">11</text>
+  </g>
+
+  <!-- ========== 2. af 编码表 ========== -->
+  <text x="80" y="214" class="subtitle">2. af 编码表：af[pos] = [col0, col1]（全局坐标，半开区间）</text>
+
+  <rect x="80" y="230" width="70" height="28" fill="#34495e"/>
+  <text x="115" y="248" text-anchor="middle" style="fill:white" font-weight="bold" class="label">pos</text>
+  <rect x="150" y="230" width="70" height="28" fill="#34495e"/>
+  <text x="185" y="248" text-anchor="middle" style="fill:white" font-weight="bold" class="label">win</text>
+  <rect x="220" y="230" width="70" height="28" fill="#34495e"/>
+  <text x="255" y="248" text-anchor="middle" style="fill:white" font-weight="bold" class="label">col0</text>
+  <rect x="290" y="230" width="70" height="28" fill="#34495e"/>
+  <text x="325" y="248" text-anchor="middle" style="fill:white" font-weight="bold" class="label">col1</text>
+  <rect x="360" y="230" width="230" height="28" fill="#34495e"/>
+  <text x="475" y="248" text-anchor="middle" style="fill:white" font-weight="bold" class="label">可见区间</text>
+
+  <!-- Seq0 行 (win=3) -->
+  <rect x="80" y="258" width="510" height="24" class="segA" opacity="0.22"/>
+  <text x="115" y="274" text-anchor="middle" class="label">0</text>
+  <text x="185" y="274" text-anchor="middle" class="label">W3</text>
+  <text x="255" y="274" text-anchor="middle" class="label">0</text>
+  <text x="325" y="274" text-anchor="middle" class="label">1</text>
+  <text x="475" y="274" text-anchor="middle" class="formula">[0, 1)  可见key: 0</text>
+
+  <rect x="80" y="282" width="510" height="24" class="segA" opacity="0.22"/>
+  <text x="115" y="298" text-anchor="middle" class="label">1</text>
+  <text x="185" y="298" text-anchor="middle" class="label">W3</text>
+  <text x="255" y="298" text-anchor="middle" class="label">0</text>
+  <text x="325" y="298" text-anchor="middle" class="label">2</text>
+  <text x="475" y="298" text-anchor="middle" class="formula">[0, 2)  可见key: 0..1</text>
+
+  <rect x="80" y="306" width="510" height="24" class="segA" opacity="0.22"/>
+  <text x="115" y="322" text-anchor="middle" class="label">2</text>
+  <text x="185" y="322" text-anchor="middle" class="label">W3</text>
+  <text x="255" y="322" text-anchor="middle" class="label">0</text>
+  <text x="325" y="322" text-anchor="middle" class="label">3</text>
+  <text x="475" y="322" text-anchor="middle" class="formula">[0, 3)  可见key: 0..2</text>
+
+  <rect x="80" y="330" width="510" height="24" class="segA" opacity="0.22"/>
+  <text x="115" y="346" text-anchor="middle" class="label">3</text>
+  <text x="185" y="346" text-anchor="middle" class="label">W3</text>
+  <text x="255" y="346" text-anchor="middle" class="label">1</text>
+  <text x="325" y="346" text-anchor="middle" class="label">4</text>
+  <text x="475" y="346" text-anchor="middle" class="formula">[1, 4)  可见key: 1..3</text>
+
+  <rect x="80" y="354" width="510" height="24" class="segA" opacity="0.22"/>
+  <text x="115" y="370" text-anchor="middle" class="label">4</text>
+  <text x="185" y="370" text-anchor="middle" class="label">W3</text>
+  <text x="255" y="370" text-anchor="middle" class="label">2</text>
+  <text x="325" y="370" text-anchor="middle" class="label">5</text>
+  <text x="475" y="370" text-anchor="middle" class="formula">[2, 5)  可见key: 2..4</text>
+
+  <rect x="80" y="378" width="510" height="24" class="segA" opacity="0.22"/>
+  <text x="115" y="394" text-anchor="middle" class="label">5</text>
+  <text x="185" y="394" text-anchor="middle" class="label">W3</text>
+  <text x="255" y="394" text-anchor="middle" class="label">3</text>
+  <text x="325" y="394" text-anchor="middle" class="label">6</text>
+  <text x="475" y="394" text-anchor="middle" class="formula">[3, 6)  可见key: 3..5</text>
+
+  <!-- Seq1 行 (win=2) -->
+  <rect x="80" y="402" width="510" height="24" class="segC" opacity="0.22"/>
+  <text x="115" y="418" text-anchor="middle" class="label">6</text>
+  <text x="185" y="418" text-anchor="middle" class="label">W2</text>
+  <text x="255" y="418" text-anchor="middle" class="label">6</text>
+  <text x="325" y="418" text-anchor="middle" class="label">7</text>
+  <text x="475" y="418" text-anchor="middle" class="formula">[6, 7)  可见key: 6</text>
+
+  <rect x="80" y="426" width="510" height="24" class="segC" opacity="0.22"/>
+  <text x="115" y="442" text-anchor="middle" class="label">7</text>
+  <text x="185" y="442" text-anchor="middle" class="label">W2</text>
+  <text x="255" y="442" text-anchor="middle" class="label">6</text>
+  <text x="325" y="442" text-anchor="middle" class="label">8</text>
+  <text x="475" y="442" text-anchor="middle" class="formula">[6, 8)  可见key: 6..7</text>
+
+  <rect x="80" y="450" width="510" height="24" class="segC" opacity="0.22"/>
+  <text x="115" y="466" text-anchor="middle" class="label">8</text>
+  <text x="185" y="466" text-anchor="middle" class="label">W2</text>
+  <text x="255" y="466" text-anchor="middle" class="label">7</text>
+  <text x="325" y="466" text-anchor="middle" class="label">9</text>
+  <text x="475" y="466" text-anchor="middle" class="formula">[7, 9)  可见key: 7..8</text>
+
+  <rect x="80" y="474" width="510" height="24" class="segC" opacity="0.22"/>
+  <text x="115" y="490" text-anchor="middle" class="label">9</text>
+  <text x="185" y="490" text-anchor="middle" class="label">W2</text>
+  <text x="255" y="490" text-anchor="middle" class="label">8</text>
+  <text x="325" y="490" text-anchor="middle" class="label">10</text>
+  <text x="475" y="490" text-anchor="middle" class="formula">[8, 10)  可见key: 8..9</text>
+
+  <rect x="80" y="498" width="510" height="24" class="segC" opacity="0.22"/>
+  <text x="115" y="514" text-anchor="middle" class="label">10</text>
+  <text x="185" y="514" text-anchor="middle" class="label">W2</text>
+  <text x="255" y="514" text-anchor="middle" class="label">9</text>
+  <text x="325" y="514" text-anchor="middle" class="label">11</text>
+  <text x="475" y="514" text-anchor="middle" class="formula">[9, 11)  可见key: 9..10</text>
+
+  <rect x="80" y="522" width="510" height="24" class="segC" opacity="0.22"/>
+  <text x="115" y="538" text-anchor="middle" class="label">11</text>
+  <text x="185" y="538" text-anchor="middle" class="label">W2</text>
+  <text x="255" y="538" text-anchor="middle" class="label">10</text>
+  <text x="325" y="538" text-anchor="middle" class="label">12</text>
+  <text x="475" y="538" text-anchor="middle" class="formula">[10, 12)  可见key: 10..11</text>
+
+  <g class="grid">
+    <line x1="150" y1="230" x2="150" y2="546"/>
+    <line x1="220" y1="230" x2="220" y2="546"/>
+    <line x1="290" y1="230" x2="290" y2="546"/>
+    <line x1="360" y1="230" x2="360" y2="546"/>
+    <line x1="80" y1="258" x2="590" y2="258"/>
+    <line x1="80" y1="282" x2="590" y2="282"/>
+    <line x1="80" y1="306" x2="590" y2="306"/>
+    <line x1="80" y1="330" x2="590" y2="330"/>
+    <line x1="80" y1="354" x2="590" y2="354"/>
+    <line x1="80" y1="378" x2="590" y2="378"/>
+    <line x1="80" y1="402" x2="590" y2="402"/>
+    <line x1="80" y1="426" x2="590" y2="426"/>
+    <line x1="80" y1="450" x2="590" y2="450"/>
+    <line x1="80" y1="474" x2="590" y2="474"/>
+    <line x1="80" y1="498" x2="590" y2="498"/>
+    <line x1="80" y1="522" x2="590" y2="522"/>
+  </g>
+
+  <!-- ========== 3. 注意力 mask 矩阵 ========== -->
+  <text x="80" y="582" class="subtitle">3. 对应的注意力 mask 矩阵（query × key，蓝=Seq0 可见 / 绿=Seq1 可见 / 灰=不可见）</text>
+
+  <text x="315" y="599" text-anchor="middle" class="label">key (pos)</text>
+  <text x="135" y="740" text-anchor="middle" class="label" transform="rotate(-90,140,750)">query (pos)</text>
+
+  <!-- 每行: 隐藏前缀 + 可见滑窗带(序列色) + 隐藏后缀 -->
+
+  <g transform="translate(0,10)">
+    <rect x="170" y="606" width="24" height="24" class="visA"/><rect x="194" y="606" width="264" height="24" class="hidden"/>
+    <rect x="170" y="630" width="48" height="24" class="visA"/><rect x="218" y="630" width="240" height="24" class="hidden"/>
+    <rect x="170" y="654" width="72" height="24" class="visA"/><rect x="242" y="654" width="216" height="24" class="hidden"/>
+    <rect x="170" y="678" width="24" height="24" class="hidden"/><rect x="194" y="678" width="72" height="24" class="visA"/><rect x="266" y="678" width="192" height="24" class="hidden"/>
+    <rect x="170" y="702" width="48" height="24" class="hidden"/><rect x="218" y="702" width="72" height="24" class="visA"/><rect x="290" y="702" width="168" height="24" class="hidden"/>
+    <rect x="170" y="726" width="72" height="24" class="hidden"/><rect x="242" y="726" width="72" height="24" class="visA"/><rect x="314" y="726" width="144" height="24" class="hidden"/>
+    <rect x="170" y="750" width="144" height="24" class="hidden"/><rect x="314" y="750" width="24" height="24" class="visC"/><rect x="338" y="750" width="120" height="24" class="hidden"/>
+    <rect x="170" y="774" width="144" height="24" class="hidden"/><rect x="314" y="774" width="48" height="24" class="visC"/><rect x="362" y="774" width="96" height="24" class="hidden"/>
+    <rect x="170" y="798" width="168" height="24" class="hidden"/><rect x="338" y="798" width="48" height="24" class="visC"/><rect x="386" y="798" width="72" height="24" class="hidden"/>
+    <rect x="170" y="822" width="192" height="24" class="hidden"/><rect x="362" y="822" width="48" height="24" class="visC"/><rect x="410" y="822" width="48" height="24" class="hidden"/>
+    <rect x="170" y="846" width="216" height="24" class="hidden"/><rect x="386" y="846" width="48" height="24" class="visC"/><rect x="434" y="846" width="24" height="24" class="hidden"/>
+    <rect x="170" y="870" width="240" height="24" class="hidden"/><rect x="410" y="870" width="48" height="24" class="visC"/>
+    <!-- 网格线 -->
+    <g class="grid">
+      <line x1="194" y1="606" x2="194" y2="894"/><line x1="218" y1="606" x2="218" y2="894"/>
+      <line x1="242" y1="606" x2="242" y2="894"/><line x1="266" y1="606" x2="266" y2="894"/>
+      <line x1="290" y1="606" x2="290" y2="894"/><line x1="314" y1="606" x2="314" y2="894"/>
+      <line x1="338" y1="606" x2="338" y2="894"/><line x1="362" y1="606" x2="362" y2="894"/>
+      <line x1="386" y1="606" x2="386" y2="894"/><line x1="410" y1="606" x2="410" y2="894"/>
+      <line x1="434" y1="606" x2="434" y2="894"/>
+      <line x1="170" y1="630" x2="458" y2="630"/><line x1="170" y1="654" x2="458" y2="654"/>
+      <line x1="170" y1="678" x2="458" y2="678"/><line x1="170" y1="702" x2="458" y2="702"/>
+      <line x1="170" y1="726" x2="458" y2="726"/><line x1="170" y1="750" x2="458" y2="750"/>
+      <line x1="170" y1="774" x2="458" y2="774"/><line x1="170" y1="798" x2="458" y2="798"/>
+      <line x1="170" y1="822" x2="458" y2="822"/><line x1="170" y1="846" x2="458" y2="846"/>
+      <line x1="170" y1="870" x2="458" y2="870"/>
+    </g>
+    <!-- 序列边界 -->
+    <g class="boundary">
+      <line x1="315" y1="606" x2="315" y2="894"/>
+      <line x1="170" y1="751" x2="458" y2="751"/>
+    </g>
+    <rect x="170" y="606" width="288" height="288" fill="none" stroke="#2c3e50" stroke-width="2"/>
+    <!-- key 轴刻度 -->
+    <g class="small" text-anchor="middle">
+      <text x="182" y="601">0</text><text x="206" y="601">1</text><text x="230" y="601">2</text>
+      <text x="254" y="601">3</text><text x="278" y="601">4</text><text x="302" y="601">5</text>
+      <text x="326" y="601">6</text><text x="350" y="601">7</text><text x="374" y="601">8</text>
+      <text x="398" y="601">9</text><text x="422" y="601">10</text><text x="446" y="601">11</text>
+    </g>
+    <!-- query 轴刻度 -->
+    <g class="small" text-anchor="end">
+      <text x="162" y="622">0</text><text x="162" y="646">1</text><text x="162" y="670">2</text>
+      <text x="162" y="694">3</text><text x="162" y="718">4</text><text x="162" y="742">5</text>
+      <text x="162" y="766">6</text><text x="162" y="790">7</text><text x="162" y="814">8</text>
+      <text x="162" y="838">9</text><text x="162" y="862">10</text><text x="162" y="886">11</text>
+    </g>
+  </g>
+
+  <!-- ========== 图例 ========== -->
+  <text x="530" y="610" class="subtitle">图例</text>
+  <rect x="530" y="622" width="18" height="18" class="visA"/>
+  <text x="556" y="636" class="label">Seq 0 可见块（窗口内 key，win=3）</text>
+  <rect x="530" y="646" width="18" height="18" class="visC"/>
+  <text x="556" y="660" class="label">Seq 1 可见块（窗口内 key，win=2）</text>
+  <rect x="530" y="670" width="18" height="18" class="hidden"/>
+  <text x="556" y="684" class="label">不可见（窗口外 / 其他序列 / 未来 key）</text>
+
+  <!-- ========== 编码规则 ========== -->
+  <text x="530" y="766" class="subtitle">编码规则</text>
+  <text x="530" y="788" class="small">· 二分查找 offsets 定位 pos 所属 seq_id</text>
+  <text x="530" y="806" class="small">· pos_local = pos - offsets[seq_id]</text>
+  <text x="530" y="824" class="small">· window = max(window_sizes[seq_id], 1)</text>
+  <text x="530" y="842" class="small">· col0 = offsets[seq_id] + max(pos_local - window + 1, 0)</text>
+  <text x="530" y="860" class="small">· col1 = pos + 1</text>
+  <text x="530" y="878" class="small">· 可见 key = [col0, col1)：大小 window 的因果滑窗</text>
+</svg>

@@ -1,0 +1,275 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="820" viewBox="0 0 1000 820">
+  <defs>
+    <style>
+      .title { font-family: Arial, sans-serif; font-size: 20px; font-weight: bold; fill: #2c3e50; }
+      .subtitle { font-family: Arial, sans-serif; font-size: 16px; font-weight: bold; fill: #34495e; }
+      .label { font-family: Arial, sans-serif; font-size: 13px; fill: #2c3e50; }
+      .small { font-family: Arial, sans-serif; font-size: 11px; fill: #7f8c8d; }
+      .block0 { fill: #3498db; }
+      .block1 { fill: #2ecc71; }
+      .hidden { fill: #ecf0f1; }
+      .grid { stroke: #bdc3c7; stroke-width: 1; }
+      .region-box { stroke: #2c3e50; stroke-width: 2; fill: none; }
+    </style>
+  </defs>
+
+  <!-- 白色背景 -->
+  <rect width="100%" height="100%" fill="white"/>
+
+  <!-- 标题 -->
+  <text x="500" y="35" text-anchor="middle" class="title">build_block_diagonal_mask_arbitrary_func: af编码 与 注意力mask对应关系示例</text>
+  <text x="500" y="58" text-anchor="middle" class="small">示例: batch=2, seq_lens=[3,4], total_seqlen=7</text>
+
+  <!-- ========== 第一部分：序列区域划分 ========== -->
+  <text x="50" y="90" class="subtitle">1. 序列区域划分 (位置 0~6)</text>
+
+  <g transform="translate(180, 105)">
+    <!-- 位置标签 -->
+    <text x="30" y="-5" text-anchor="middle" class="label">0</text>
+    <text x="90" y="-5" text-anchor="middle" class="label">1</text>
+    <text x="150" y="-5" text-anchor="middle" class="label">2</text>
+    <text x="210" y="-5" text-anchor="middle" class="label">3</text>
+    <text x="270" y="-5" text-anchor="middle" class="label">4</text>
+    <text x="330" y="-5" text-anchor="middle" class="label">5</text>
+    <text x="390" y="-5" text-anchor="middle" class="label">6</text>
+
+    <!-- 序列0: pos 0,1,2 -->
+    <rect x="0" y="0" width="180" height="25" class="block0" rx="3"/>
+    <text x="90" y="17" text-anchor="middle" fill="white" font-weight="bold" font-size="12">Seq0 (pos 0~2)</text>
+    <!-- 序列1: pos 3,4,5,6 -->
+    <rect x="180" y="0" width="240" height="25" class="block1" rx="3"/>
+    <text x="300" y="17" text-anchor="middle" fill="white" font-weight="bold" font-size="12">Seq1 (pos 3~6)</text>
+
+    <!-- 边框 -->
+    <rect x="0" y="0" width="420" height="25" class="region-box" rx="3"/>
+  </g>
+
+  <!-- ========== 第二部分：af编码表 ========== -->
+  <text x="50" y="175" class="subtitle">2. af (arbitrary function) 编码表: af[pos] = [col0, col1]</text>
+  <text x="50" y="195" class="small">每个位置编码1个可见区间: [col0, col1) 表示query仅能看到序列内[col0, col1)的所有key</text>
+
+  <g transform="translate(50, 210)">
+    <!-- 表头 -->
+    <rect x="0" y="0" width="70" height="30" fill="#34495e"/>
+    <text x="35" y="20" text-anchor="middle" style="fill: white; font-weight: bold;" class="label">pos</text>
+    <rect x="70" y="0" width="170" height="30" fill="#34495e"/>
+    <text x="155" y="20" text-anchor="middle" style="fill: white; font-weight: bold;" class="label">col0 (seq_start)</text>
+    <rect x="240" y="0" width="170" height="30" fill="#34495e"/>
+    <text x="325" y="20" text-anchor="middle" style="fill: white; font-weight: bold;" class="label">col1 (seq_end)</text>
+    <rect x="410" y="0" width="350" height="30" fill="#34495e"/>
+    <text x="585" y="20" text-anchor="middle" style="fill: white; font-weight: bold;" class="label">可见区间说明</text>
+
+    <!-- pos 0: Seq0 -->
+    <rect x="0" y="30" width="70" height="30" class="block0" opacity="0.3"/>
+    <text x="35" y="50" text-anchor="middle" class="label">0</text>
+    <rect x="70" y="30" width="170" height="30" fill="#f8f9fa"/>
+    <text x="155" y="50" text-anchor="middle" class="label">0</text>
+    <rect x="240" y="30" width="170" height="30" fill="#f8f9fa"/>
+    <text x="325" y="50" text-anchor="middle" class="label">3</text>
+    <rect x="410" y="30" width="350" height="30" fill="#f8f9fa"/>
+    <text x="585" y="50" text-anchor="middle" class="label">Seq0: pos0可见[0,3), key=0,1,2</text>
+
+    <!-- pos 1: Seq0 -->
+    <rect x="0" y="60" width="70" height="30" class="block0" opacity="0.3"/>
+    <text x="35" y="80" text-anchor="middle" class="label">1</text>
+    <rect x="70" y="60" width="170" height="30" fill="#f8f9fa"/>
+    <text x="155" y="80" text-anchor="middle" class="label">0</text>
+    <rect x="240" y="60" width="170" height="30" fill="#f8f9fa"/>
+    <text x="325" y="80" text-anchor="middle" class="label">3</text>
+    <rect x="410" y="60" width="350" height="30" fill="#f8f9fa"/>
+    <text x="585" y="80" text-anchor="middle" class="label">Seq0: pos1可见[0,3), key=0,1,2</text>
+
+    <!-- pos 2: Seq0 -->
+    <rect x="0" y="90" width="70" height="30" class="block0" opacity="0.3"/>
+    <text x="35" y="110" text-anchor="middle" class="label">2</text>
+    <rect x="70" y="90" width="170" height="30" fill="#f8f9fa"/>
+    <text x="155" y="110" text-anchor="middle" class="label">0</text>
+    <rect x="240" y="90" width="170" height="30" fill="#f8f9fa"/>
+    <text x="325" y="110" text-anchor="middle" class="label">3</text>
+    <rect x="410" y="90" width="350" height="30" fill="#f8f9fa"/>
+    <text x="585" y="110" text-anchor="middle" class="label">Seq0: pos2可见[0,3), key=0,1,2</text>
+
+    <!-- pos 3: Seq1 -->
+    <rect x="0" y="120" width="70" height="30" class="block1" opacity="0.3"/>
+    <text x="35" y="140" text-anchor="middle" class="label">3</text>
+    <rect x="70" y="120" width="170" height="30" fill="#f8f9fa"/>
+    <text x="155" y="140" text-anchor="middle" class="label">3</text>
+    <rect x="240" y="120" width="170" height="30" fill="#f8f9fa"/>
+    <text x="325" y="140" text-anchor="middle" class="label">7</text>
+    <rect x="410" y="120" width="350" height="30" fill="#f8f9fa"/>
+    <text x="585" y="140" text-anchor="middle" class="label">Seq1: pos3可见[3,7), key=3,4,5,6</text>
+
+    <!-- pos 4: Seq1 -->
+    <rect x="0" y="150" width="70" height="30" class="block1" opacity="0.3"/>
+    <text x="35" y="170" text-anchor="middle" class="label">4</text>
+    <rect x="70" y="150" width="170" height="30" fill="#f8f9fa"/>
+    <text x="155" y="170" text-anchor="middle" class="label">3</text>
+    <rect x="240" y="150" width="170" height="30" fill="#f8f9fa"/>
+    <text x="325" y="170" text-anchor="middle" class="label">7</text>
+    <rect x="410" y="150" width="350" height="30" fill="#f8f9fa"/>
+    <text x="585" y="170" text-anchor="middle" class="label">Seq1: pos4可见[3,7), key=3,4,5,6</text>
+
+    <!-- pos 5: Seq1 -->
+    <rect x="0" y="180" width="70" height="30" class="block1" opacity="0.3"/>
+    <text x="35" y="200" text-anchor="middle" class="label">5</text>
+    <rect x="70" y="180" width="170" height="30" fill="#f8f9fa"/>
+    <text x="155" y="200" text-anchor="middle" class="label">3</text>
+    <rect x="240" y="180" width="170" height="30" fill="#f8f9fa"/>
+    <text x="325" y="200" text-anchor="middle" class="label">7</text>
+    <rect x="410" y="180" width="350" height="30" fill="#f8f9fa"/>
+    <text x="585" y="200" text-anchor="middle" class="label">Seq1: pos5可见[3,7), key=3,4,5,6</text>
+
+    <!-- pos 6: Seq1 -->
+    <rect x="0" y="210" width="70" height="30" class="block1" opacity="0.3"/>
+    <text x="35" y="230" text-anchor="middle" class="label">6</text>
+    <rect x="70" y="210" width="170" height="30" fill="#f8f9fa"/>
+    <text x="155" y="230" text-anchor="middle" class="label">3</text>
+    <rect x="240" y="210" width="170" height="30" fill="#f8f9fa"/>
+    <text x="325" y="230" text-anchor="middle" class="label">7</text>
+    <rect x="410" y="210" width="350" height="30" fill="#f8f9fa"/>
+    <text x="585" y="230" text-anchor="middle" class="label">Seq1: pos6可见[3,7), key=3,4,5,6</text>
+
+    <!-- 网格线 -->
+    <rect x="0" y="0" width="760" height="240" class="region-box"/>
+    <line x1="70" y1="0" x2="70" y2="240" class="grid"/>
+    <line x1="240" y1="0" x2="240" y2="240" class="grid"/>
+    <line x1="410" y1="0" x2="410" y2="240" class="grid"/>
+    <line x1="0" y1="30" x2="760" y2="30" class="grid"/>
+    <line x1="0" y1="60" x2="760" y2="60" class="grid"/>
+    <line x1="0" y1="90" x2="760" y2="90" class="grid"/>
+    <line x1="0" y1="120" x2="760" y2="120" class="grid"/>
+    <line x1="0" y1="150" x2="760" y2="150" class="grid"/>
+    <line x1="0" y1="180" x2="760" y2="180" class="grid"/>
+    <line x1="0" y1="210" x2="760" y2="210" class="grid"/>
+  </g>
+
+  <!-- ========== 第三部分：注意力Mask矩阵 ========== -->
+  <text x="50" y="510" class="subtitle">3. 对应的注意力Mask矩阵 (query行 × key列, 有色=可见, 灰色=不可见)</text>
+
+  <g transform="translate(120, 550)">
+    <!-- 坐标轴标签 -->
+    <text x="-30" y="100" text-anchor="middle" class="label" transform="rotate(-90, -30, 100)">query (pos)</text>
+    <text x="100" y="-25" text-anchor="middle" class="label">key (pos)</text>
+
+    <!-- key 轴标签 -->
+    <g>
+      <text x="15" y="-10" text-anchor="middle" class="label">0</text>
+      <text x="45" y="-10" text-anchor="middle" class="label">1</text>
+      <text x="75" y="-10" text-anchor="middle" class="label">2</text>
+      <text x="105" y="-10" text-anchor="middle" class="label">3</text>
+      <text x="135" y="-10" text-anchor="middle" class="label">4</text>
+      <text x="165" y="-10" text-anchor="middle" class="label">5</text>
+      <text x="195" y="-10" text-anchor="middle" class="label">6</text>
+    </g>
+
+    <!-- query 轴标签 -->
+    <g>
+      <text x="-10" y="18" text-anchor="end" class="label">0</text>
+      <text x="-10" y="48" text-anchor="end" class="label">1</text>
+      <text x="-10" y="78" text-anchor="end" class="label">2</text>
+      <text x="-10" y="108" text-anchor="end" class="label">3</text>
+      <text x="-10" y="138" text-anchor="end" class="label">4</text>
+      <text x="-10" y="168" text-anchor="end" class="label">5</text>
+      <text x="-10" y="198" text-anchor="end" class="label">6</text>
+    </g>
+
+    <!-- Mask 矩阵: 7x7, 每格30px -->
+    <!-- Row 0 (query=0, Seq0) -->
+    <rect x="0" y="0" width="30" height="30" class="block0"/>
+    <rect x="30" y="0" width="30" height="30" class="block0"/>
+    <rect x="60" y="0" width="30" height="30" class="block0"/>
+    <rect x="90" y="0" width="30" height="30" class="hidden"/>
+    <rect x="120" y="0" width="30" height="30" class="hidden"/>
+    <rect x="150" y="0" width="30" height="30" class="hidden"/>
+    <rect x="180" y="0" width="30" height="30" class="hidden"/>
+
+    <!-- Row 1 (query=1, Seq0) -->
+    <rect x="0" y="30" width="30" height="30" class="block0"/>
+    <rect x="30" y="30" width="30" height="30" class="block0"/>
+    <rect x="60" y="30" width="30" height="30" class="block0"/>
+    <rect x="90" y="30" width="30" height="30" class="hidden"/>
+    <rect x="120" y="30" width="30" height="30" class="hidden"/>
+    <rect x="150" y="30" width="30" height="30" class="hidden"/>
+    <rect x="180" y="30" width="30" height="30" class="hidden"/>
+
+    <!-- Row 2 (query=2, Seq0) -->
+    <rect x="0" y="60" width="30" height="30" class="block0"/>
+    <rect x="30" y="60" width="30" height="30" class="block0"/>
+    <rect x="60" y="60" width="30" height="30" class="block0"/>
+    <rect x="90" y="60" width="30" height="30" class="hidden"/>
+    <rect x="120" y="60" width="30" height="30" class="hidden"/>
+    <rect x="150" y="60" width="30" height="30" class="hidden"/>
+    <rect x="180" y="60" width="30" height="30" class="hidden"/>
+
+    <!-- Row 3 (query=3, Seq1) -->
+    <rect x="0" y="90" width="30" height="30" class="hidden"/>
+    <rect x="30" y="90" width="30" height="30" class="hidden"/>
+    <rect x="60" y="90" width="30" height="30" class="hidden"/>
+    <rect x="90" y="90" width="30" height="30" class="block1"/>
+    <rect x="120" y="90" width="30" height="30" class="block1"/>
+    <rect x="150" y="90" width="30" height="30" class="block1"/>
+    <rect x="180" y="90" width="30" height="30" class="block1"/>
+
+    <!-- Row 4 (query=4, Seq1) -->
+    <rect x="0" y="120" width="30" height="30" class="hidden"/>
+    <rect x="30" y="120" width="30" height="30" class="hidden"/>
+    <rect x="60" y="120" width="30" height="30" class="hidden"/>
+    <rect x="90" y="120" width="30" height="30" class="block1"/>
+    <rect x="120" y="120" width="30" height="30" class="block1"/>
+    <rect x="150" y="120" width="30" height="30" class="block1"/>
+    <rect x="180" y="120" width="30" height="30" class="block1"/>
+
+    <!-- Row 5 (query=5, Seq1) -->
+    <rect x="0" y="150" width="30" height="30" class="hidden"/>
+    <rect x="30" y="150" width="30" height="30" class="hidden"/>
+    <rect x="60" y="150" width="30" height="30" class="hidden"/>
+    <rect x="90" y="150" width="30" height="30" class="block1"/>
+    <rect x="120" y="150" width="30" height="30" class="block1"/>
+    <rect x="150" y="150" width="30" height="30" class="block1"/>
+    <rect x="180" y="150" width="30" height="30" class="block1"/>
+
+    <!-- Row 6 (query=6, Seq1) -->
+    <rect x="0" y="180" width="30" height="30" class="hidden"/>
+    <rect x="30" y="180" width="30" height="30" class="hidden"/>
+    <rect x="60" y="180" width="30" height="30" class="hidden"/>
+    <rect x="90" y="180" width="30" height="30" class="block1"/>
+    <rect x="120" y="180" width="30" height="30" class="block1"/>
+    <rect x="150" y="180" width="30" height="30" class="block1"/>
+    <rect x="180" y="180" width="30" height="30" class="block1"/>
+
+    <!-- 网格边框 -->
+    <rect x="0" y="0" width="210" height="210" class="region-box"/>
+    <line x1="30" y1="0" x2="30" y2="210" class="grid"/>
+    <line x1="60" y1="0" x2="60" y2="210" class="grid"/>
+    <line x1="90" y1="0" x2="90" y2="210" class="grid"/>
+    <line x1="120" y1="0" x2="120" y2="210" class="grid"/>
+    <line x1="150" y1="0" x2="150" y2="210" class="grid"/>
+    <line x1="180" y1="0" x2="180" y2="210" class="grid"/>
+    <line x1="0" y1="30" x2="210" y2="30" class="grid"/>
+    <line x1="0" y1="60" x2="210" y2="60" class="grid"/>
+    <line x1="0" y1="90" x2="210" y2="90" class="grid"/>
+    <line x1="0" y1="120" x2="210" y2="120" class="grid"/>
+    <line x1="0" y1="150" x2="210" y2="150" class="grid"/>
+    <line x1="0" y1="180" x2="210" y2="180" class="grid"/>
+  </g>
+
+  <!-- 图例 -->
+  <g transform="translate(370, 555)">
+    <rect x="0" y="0" width="20" height="20" class="block0" rx="2"/>
+    <text x="30" y="15" class="label">Seq0: query所在序列0, 可见[0,3)</text>
+    <rect x="0" y="30" width="20" height="20" class="block1" rx="2"/>
+    <text x="30" y="45" class="label">Seq1: query所在序列1, 可见[3,7)</text>
+    <rect x="0" y="60" width="20" height="20" class="hidden" rx="2"/>
+    <text x="30" y="75" class="label">不可见 (masked, 浅灰色)</text>
+  </g>
+
+  <!-- 规则说明 -->
+  <g transform="translate(620, 555)">
+    <text x="0" y="0" class="subtitle" font-size="14">编码规则:</text>
+    <text x="0" y="25" class="small">• 按 offsets 将全局位置划分为多个独立序列</text>
+    <text x="0" y="45" class="small">• 每个 query 仅能看到自身所在序列的所有 key</text>
+    <text x="0" y="65" class="small">• 序列内全连接, 序列间完全隔离 (block diagonal 结构)</text>
+    <text x="0" y="85" class="small">• 编码仅两列: col0=seq_start, col1=seq_end</text>
+  </g>
+
+</svg>

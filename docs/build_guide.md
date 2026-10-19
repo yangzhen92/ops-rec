@@ -7,13 +7,13 @@
 构建流程核心链路：
 
 ```text
-build.sh                                  ← 统一构建入口，对每个 SOC 变体依次执行
-  ├─ 逐算子并行编译（各自独立 cmake configure + build + install 到独立 staging）
+build.sh                                  ← 统一构建入口
+  ├─ 全局滚动池并行编译所有 (SOC, 算子)（各自独立 cmake configure + build + install 到独立 staging）
   │    cmake configure (OPS_REC_TARGET_OP 过滤 + 跳过 torch 适配层)
   │    make (kernel .o/.json, op_api .so)
   │    cmake --install (安装到 stage/opp/<variant>/vendors/)
-  ├─ 适配层单次 pass（OPS_REC_SKIP_OPS=ON，产出 ops_rec_atlas_<variant>.so）
-  └─ 串行收集各 op staging -> 合并目录 dist_merge/ops_rec/
+  ├─ 逐 SOC 串行：适配层 pass（OPS_REC_SKIP_OPS=ON，产出 ops_rec_atlas_<variant>.so）
+  └─ 逐 SOC 串行收集各 op staging -> 合并目录 dist_merge/ops_rec/
 
 merge_wheel.py --build-final              ← 打包合并目录为多 SOC whl
   └─ dist/ops_rec-<version>-<py>-<abi>-<plat>.whl
@@ -42,16 +42,16 @@ bash build.sh [--install] [-j<N>] [--socs <list>]
 
 ```bash
 # 完整构建并安装（编译三个 SOC 变体并合并为多 SOC whl）
-bash build.sh --install -j16
+bash build.sh --install
 
 # 仅编译指定 SOC，不安装
-bash build.sh --socs atlas_950 -j16
+bash build.sh --socs atlas_950
 
 # 编译多个指定 SOC 并安装
-bash build.sh --socs atlas_a2,atlas_a3 --install -j16
+bash build.sh --socs atlas_a2,atlas_a3 --install
 
 # 运行算子示例（需先安装 ops_rec whl）
-bash run_examples.sh [-j<N>] [--type aclnn|torch|all] [--ops <list>]
+bash run_examples.sh [--type aclnn|torch|all] [--ops <list>]
 ```
 
 ## 参数说明
@@ -61,7 +61,7 @@ build.sh 共支持以下 4 个 CLI 选项，均为可选：
 | 参数名 | 缩写 | 是否必选 | 默认值 | 说明 |
 |---|---|---|---|---|
 | `--install` | — | 否 | 不安装（仅产出 whl） | 编译完成后自动 `pip install` 生成的 whl，安装前会自动 `pip uninstall -y ops_rec` |
-| `-j<N>` / `-j <N>` | — | 否 | `CMAKE_BUILD_PARALLEL_LEVEL`（缺省 CPU 核数 / 2） | 指定编译线程数；支持 `-j16`（连写）或 `-j 16`（空格分隔）两种形式 |
+| `-j<N>` / `-j <N>` | — | 否 | 自动（见说明） | **并行编译的算子数**，**非总并行 job 数**。每个算子里还会跑内层 make：`内层 -j = clamp(总预算/算子数, 1, 64)`，总预算由本机核数/内存推导（`min(3/4核, 内存可支撑job数)`）。因此 `-j1` 是一次编 1 个算子（该算子内部仍并行多个 job），而非整体串行；支持 `-j6`（连写）或 `-j 6`（空格分隔） |
 | `--socs <list>` / `--socs=<list>` | — | 否 | `atlas_950,atlas_a2,atlas_a3`（全量编译） | 指定 SOC 变体列表，英文逗号分隔（如 `--socs atlas_950` 或 `--socs atlas_a2,atlas_a3`） |
 | `--help` / `-h` | — | 否 | — | 打印脚本使用帮助信息并退出 |
 
@@ -73,7 +73,6 @@ build.sh 共支持以下 4 个 CLI 选项，均为可选：
 |---|---|---|
 | `ASCEND_HOME_PATH` | CANN 安装路径 | `/usr/local/Ascend/latest` |
 | `OPS_REC_FORCE_VARIANT` | 强制指定运行时 SOC variant | 自动检测 |
-| `CMAKE_BUILD_PARALLEL_LEVEL` | 编译并行度 | CPU 核数 / 2 |
 | `CMAKE_GENERATOR` | CMake 生成器 | `Unix Makefiles`|
 
 ## 编译产物结构

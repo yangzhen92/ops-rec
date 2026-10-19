@@ -23,9 +23,9 @@
 
 完成以上流程并提交 PR 前，请确认：
 
-- [ ] 本地编译通过：`bash build.sh --socs <variant> --install -j<N>`
+- [ ] 本地编译通过：`bash build.sh --socs <variant> --install`
 - [ ] 示例运行正确：`bash run_examples.sh --ops <vendor>`
-- [ ] pytest 用例通过：`cd ascendc/<group>/<vendor>/test/pytest && pytest test_*.py -x -v`
+- [ ] pytest 用例通过：`cd src/ascendc/<group>/<vendor>/test/pytest && pytest test_*.py -x -v`
 - [ ] 文档齐全：`README.md` + `docs/aclnn_<op_name>.md` + `docs/torch_<op_name>.md`
 - [ ] 代码风格与仓库一致（参考 `.clang-format` / `.clang-tidy` / `.pre-commit-config.yaml`）
 
@@ -47,19 +47,19 @@ ops-rec 的算子按 `<group>/<vendor>` 组织：`group` 是功能分组（如 `
 VENDOR=<vendor_name>           # 小写下划线，如 ln_mul
 GROUP=<group_name>             # 功能分组，如 activation
 
-mkdir -p ascendc/${GROUP}/${VENDOR}/op_host
-mkdir -p ascendc/${GROUP}/${VENDOR}/op_kernel
-mkdir -p ascendc/${GROUP}/${VENDOR}/torch_extension
-mkdir -p ascendc/${GROUP}/${VENDOR}/examples/aclnn
-mkdir -p ascendc/${GROUP}/${VENDOR}/examples/torch
-mkdir -p ascendc/${GROUP}/${VENDOR}/docs
-mkdir -p ascendc/${GROUP}/${VENDOR}/test/pytest
+mkdir -p src/ascendc/${GROUP}/${VENDOR}/op_host
+mkdir -p src/ascendc/${GROUP}/${VENDOR}/op_kernel
+mkdir -p src/ascendc/${GROUP}/${VENDOR}/torch_extension
+mkdir -p src/ascendc/${GROUP}/${VENDOR}/examples/aclnn
+mkdir -p src/ascendc/${GROUP}/${VENDOR}/examples/torch
+mkdir -p src/ascendc/${GROUP}/${VENDOR}/docs
+mkdir -p src/ascendc/${GROUP}/${VENDOR}/test/pytest
 ```
 
 最终目录结构：
 
 ```text
-ascendc/<group>/<vendor>/
+src/ascendc/<group>/<vendor>/
 ├── CMakeLists.txt                  # 聚合编译 + vendor 名设置
 ├── op_host/
 │   ├── CMakeLists.txt              # npu_op_code_gen + npu_op_library
@@ -187,11 +187,11 @@ extern "C" __global__ __aicore__ void my_op(GM_ADDR xGm, GM_ADDR yGm,
 
 ### SOC 架构特化代码
 
-如同一算子在Ascend 950PR&950DT系列产品与Atlas A2系列产品/Atlas A3系列产品上实现差异较大，可将特化代码放入子目录：
+如同一算子在Ascend 950PR&950DT系列产品与Atlas A2/A3 系列产品上实现差异较大，可将特化代码放入子目录：
 
 ```text
-op_host/atlas950/<op_name>_tiling.cpp    # Ascend 950PR&950DT系列产品SOC编译
-op_host/atlasA2/<op_name>_tiling.cpp     # 仅Atlas A2系列产品/Atlas A3系列产品SOC编译
+op_host/atlas950/<op_name>_tiling.cpp    # Ascend 950PR&950DT系列产品 SOC 编译
+op_host/atlasA2/<op_name>_tiling.cpp     # 仅 Atlas A2/A3 系列产品 SOC 编译
 op_kernel/atlas950/<op_name>.cpp
 op_kernel/atlasA2/<op_name>.cpp
 ```
@@ -208,7 +208,7 @@ ops_rec_collect_arch_sources(ops_srcs)
 
 ## 实现 torch_extension
 
-所有算子统一通过 `TORCH_LIBRARY_FRAGMENT` + `TORCH_LIBRARY_IMPL` 注册到 `ops_rec` 命名空间，编译时由根 `CMakeLists.txt` 自动收集所有 `ascendc/*/*/torch_extension/*.cpp` 链接到统一的 `ops_rec_atlas_<variant>.so`。
+所有算子统一通过 `TORCH_LIBRARY_FRAGMENT` + `TORCH_LIBRARY_IMPL` 注册到 `ops_rec` 命名空间，编译时由根 `CMakeLists.txt` 自动收集所有 `src/ascendc/*/*/torch_extension/*.cpp` 链接到统一的 `ops_rec_atlas_<variant>.so`。
 
 ### 示例
 
@@ -265,12 +265,12 @@ TORCH_LIBRARY_IMPL(ops_rec, Meta, m)
 - **`TORCH_LIBRARY_FRAGMENT`**：声明算子的 schema（入参类型 + 返回值）。
 - **`TORCH_LIBRARY_IMPL(..., PrivateUse1, ...)`**：注册 NPU 设备实现。
 - **`TORCH_LIBRARY_IMPL(..., Meta, ...)`**（可选）：注册 Meta 实现，支持 `torch.compile` shape 推断。
-- **`EXEC_NPU_CMD(aclnnXxx, ...)`**：定义在 `ascendc/common/torch_plugin/pytorch_npu_helper.hpp`，封装 workspace 申请、执行器管理、流绑定等。它通过宏 `OPS_REC_CUST_VENDORS` 定位 `aclnnXxx` 符号所在的 op_api 库（vendor）。
+- **`EXEC_NPU_CMD(aclnnXxx, ...)`**：定义在 `src/ascendc/common/torch_plugin/pytorch_npu_helper.hpp`，封装 workspace 申请、执行器管理、流绑定等。它通过宏 `OPS_REC_CUST_VENDORS` 定位 `aclnnXxx` 符号所在的 op_api 库（vendor）。
 - **`OPS_REC_CUST_VENDORS`（必填）**：每个插件**必须**在包含 `pytorch_npu_helper.hpp` **之前** `#define OPS_REC_CUST_VENDORS "..."`，值是该插件 aclnn 接口所在的一个或多个 vendor（逗号分隔，如 `"hstu_forward_v1,hstu_backward_v1"`）。运行时会按逗号拆分、依次在各 vendor 中查找 aclnn 符号。该宏未定义会直接编译报错，多个 vendor 只能通过逗号分隔声明，不再由 CMake 目录结构推断。
 
 ### Python 代理
 
-`<group>/__init__.py`（如 `ascendc/activation/__init__.py`）通过 `__getattr__` 代理到 `torch.ops.ops_rec`，无需为每个算子单独写 Python 文件。
+`<group>/__init__.py`（如 `ops_rec/ascendc/activation/__init__.py`）通过 `__getattr__` 代理到 `torch.ops.ops_rec`，无需为每个算子单独写 Python 文件。
 
 ---
 
@@ -304,7 +304,7 @@ examples/torch/test_torch_<op_name>_<case>.py       # 多个 torch 示例时加�
 ### 运行示例
 
 ```bash
-bash build.sh --socs atlas_950 --install -j16    # 先安装
+bash build.sh --socs atlas_950 --install    # 先安装
 
 bash run_examples.sh --type torch --ops <vendor>
 bash run_examples.sh --type aclnn --ops <vendor>
@@ -317,11 +317,11 @@ bash run_examples.sh --type all   --ops <vendor>
 
 | 文档 | 位置 | 内容 |
 |---|---|---|
-| 算子 README | `ascendc/<group>/<vendor>/README.md` | 产品支持、功能、参数、约束、调用示例入口 |
-| aclnn API 参考 | `ascendc/<group>/<vendor>/docs/aclnn_<op_name>.md` | `aclnnXxxGetWorkspaceSize` / `aclnnXxx` 签名、参数表、错误码 |
-| torch API 参考 | `ascendc/<group>/<vendor>/docs/torch_<op_name>.md` | `ops_rec.ascendc.<group>.<op_name>` 签名、参数表、torch 扩展层额外校验 |
+| 算子 README | `src/ascendc/<group>/<vendor>/README.md` | 产品支持、功能、参数、约束、调用示例入口 |
+| aclnn API 参考 | `src/ascendc/<group>/<vendor>/docs/aclnn_<op_name>.md` | `aclnnXxxGetWorkspaceSize` / `aclnnXxx` 签名、参数表、错误码 |
+| torch API 参考 | `src/ascendc/<group>/<vendor>/docs/torch_<op_name>.md` | `ops_rec.ascendc.<group>.<op_name>` 签名、参数表、torch 扩展层额外校验 |
 
-参考 `ascendc/activation/ln_mul/` 下的文档模板。
+参考 `src/ascendc/activation/ln_mul/` 下的文档模板。
 
 ---
 
@@ -330,12 +330,12 @@ bash run_examples.sh --type all   --ops <vendor>
 在 `test/pytest/` 下编写 pytest 用例：
 
 ```text
-ascendc/<group>/<vendor>/test/pytest/
+src/ascendc/<group>/<vendor>/test/pytest/
 ├── pytest.ini                    # 测试标记配置（ci / graph）
 └── test_<op_name>.py             # 用例主体
 ```
 
-用例示例参考 `ascendc/activation/ln_mul/test/pytest/test_ln_mul.py`，通常覆盖：
+用例示例参考 `src/ascendc/activation/ln_mul/test/pytest/test_ln_mul.py`，通常覆盖：
 
 - 多种 shape 组合的 eager 模式（`@pytest.mark.parametrize`）。
 - `@pytest.mark.graph` 修饰的 `torch.compile` 图模式用例。
@@ -344,7 +344,7 @@ ascendc/<group>/<vendor>/test/pytest/
 运行：
 
 ```bash
-cd ascendc/<group>/<vendor>/test/pytest && pytest test_*.py -x -v
+cd src/ascendc/<group>/<vendor>/test/pytest && pytest test_*.py -x -v
 ```
 
 ---
@@ -355,7 +355,7 @@ cd ascendc/<group>/<vendor>/test/pytest && pytest test_*.py -x -v
 
 ```bash
 # 1. 编译安装（指定目标 SOC）
-bash build.sh --socs atlas_950 --install -j16
+bash build.sh --socs atlas_950 --install
 
 # 2. 运行示例
 bash run_examples.sh --type torch --ops <vendor>
@@ -368,7 +368,7 @@ ops_rec.ascendc.<group>.<op_name>(...)
 "
 
 # 4. 跑测试
-cd ascendc/<group>/<vendor>/test/pytest && pytest test_*.py -x -v
+cd src/ascendc/<group>/<vendor>/test/pytest && pytest test_*.py -x -v
 ```
 
 ---

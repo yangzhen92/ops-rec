@@ -18,8 +18,8 @@ ops‑rec 是面向大规模推荐场景的高性能算子库，基于昇腾 CAN
 
 | 功能 | 描述 | 文档 |
 | --- | --- | --- |
-| AscendC 静态高性能算子 | 面向推荐核心场景的高性能 AscendC 算子及其 aclnn 接口，覆盖特征预处理、多特征融合、矩阵计算、高阶非线性计算等 | [构建指南](docs/build_guide.md) |
-| Triton JIT 动态算子 | 与 ascendc/ 平级的 Triton 算子源码，支持动态可编程算子开发部署，兼顾快速迭代 | [算子贡献指南](docs/contribute_guide.md) |
+| AscendC 静态高性能算子 | 面向推荐核心场景的高性能静态算子及其 aclnn 接口，覆盖特征预处理、多特征融合、矩阵计算、高阶非线性计算等 | [构建指南](docs/build_guide.md) |
+| Triton JIT 动态算子 | 面向推荐核心场景的 Triton 动态可编程算子，支持 JIT 编译与快速迭代开发部署 | [算子贡献指南](docs/contribute_guide.md) |
 | 统一 Python 调用接口 | 屏蔽 SOC 差异与编译细节，`import ops_rec` 自动按本机 SOC 加载对应算子实现 | [运行时 SOC 检测](docs/build_guide.md#运行时-soc-检测) |
 | 多 SOC 构建与打包 | 一套源码编译全部 SOC 变体并合并为多 SOC whl，安装后自动选择当前芯片对应实现 | [编译产物结构](docs/build_guide.md#编译产物结构) |
 
@@ -51,13 +51,13 @@ git submodule update --init --recursive
 
 ```bash
 # 默认编译三个 SOC 变体并安装（推荐）：atlas_950、atlas_a2、atlas_a3
-bash build.sh --install -j16
+bash build.sh --install
 
 # 仅编译指定 SOC
-bash build.sh --socs atlas_950 --install -j16
+bash build.sh --socs atlas_950 --install
 
 # 编译多个指定 SOC 并安装
-bash build.sh --socs atlas_a2,atlas_a3 --install -j16
+bash build.sh --socs atlas_a2,atlas_a3 --install
 ```
 
 生成的 whl 位于 `dist/`，可直接 `pip install dist/ops_rec-*.whl`。多 SOC 产物合并打包说明见 [构建指南](docs/build_guide.md)。
@@ -94,8 +94,7 @@ bash run_examples.sh --ops ln_mul
 
 ```text
 ops-rec/                                  # 项目根目录
-├── ascendc/                              # AscendC 算子源码
-├── triton/                               # Triton 算子源码（与 ascendc/ 平级，按后端组织）
+├── src/                                  # 算子源码（含 ascendc/ 与 triton/ 两个后端目录）
 ├── cmake/                                # CMake 模块（soc_config、toolchain 等）
 ├── docs/                                 # 开发指南和参考文档
 ├── examples/                             # 算子样例

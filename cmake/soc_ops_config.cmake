@@ -9,6 +9,7 @@ set(OPS_REC_OPS_ATLAS_950
     block_sparse_func
     packed_block_sparse
     arbitrary_func
+    atten_metadata
     hstu_v1
     hstu_v2
     reverse_sequence

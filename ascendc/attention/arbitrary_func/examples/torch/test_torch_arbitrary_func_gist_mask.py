@@ -96,7 +96,13 @@ def test_build_gist_mask_arbitrary_func():
     y_np = y.cpu().numpy()
     cpu = build_gist_mask_arbitrary_func_cpu(offsets, pre_doc_lens, gist_starts, gist_ends, total_seqlen)
     assert y_np.shape == (1, 1, total_seqlen, 4), f"shape {y_np.shape}"
-    assert np.array_equal(y_np, cpu), "build_gist_mask_arbitrary_func result mismatch with CPU reference"
+    if not np.array_equal(y_np, cpu):
+        diffs = np.where(y_np != cpu)
+        print(f"[DEBUG] Mismatch at positions: {list(zip(*diffs[2:3]))}")
+        for pos in range(total_seqlen):
+            if not np.array_equal(y_np[0, 0, pos], cpu[0, 0, pos]):
+                print(f"  pos={pos}: kernel={y_np[0,0,pos].tolist()}, cpu={cpu[0,0,pos].tolist()}")
+        raise AssertionError("build_gist_mask_arbitrary_func result mismatch with CPU reference")
 
     # 抽查: pos0(pre_doc) expect [0,1,1,1] (1区间+end填充)
     assert y_np[0, 0, 0].tolist() == [0, 1, 1, 1], y_np[0, 0, 0]
@@ -104,8 +110,12 @@ def test_build_gist_mask_arbitrary_func():
     assert y_np[0, 0, 4].tolist() == [0, 5, 5, 5], y_np[0, 0, 4]
     # pos6(gist) expect [0,7,7,7] (1区间+end填充)
     assert y_np[0, 0, 6].tolist() == [0, 7, 7, 7], y_np[0, 0, 6]
-    # pos9(post-gist): 仅编码2个区间 [0,3)∪[5,7), 第三区间因 N_FUNC/2=2 被丢弃
-    assert y_np[0, 0, 9].tolist() == [0, 3, 5, 7], y_np[0, 0, 9]
+    # pos7(post-gist): [5,7)∪[7,8) 合并为 [5,8)
+    assert y_np[0, 0, 7].tolist() == [0, 3, 5, 8], y_np[0, 0, 7]
+    # pos8(post-gist): [5,7)∪[7,9) 合并为 [5,9)
+    assert y_np[0, 0, 8].tolist() == [0, 3, 5, 9], y_np[0, 0, 8]
+    # pos9(post-gist): [5,7)∪[7,10) 合并为 [5,10)
+    assert y_np[0, 0, 9].tolist() == [0, 3, 5, 10], y_np[0, 0, 9]
     print("[torch] build_gist_mask_arbitrary_func example PASSED")
 
 

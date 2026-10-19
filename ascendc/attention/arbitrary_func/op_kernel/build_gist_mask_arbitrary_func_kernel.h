@@ -33,11 +33,14 @@ __forceinline__ __simt_callee__ void AppendInterval(int32_t begin, int32_t end, 
     if (begin >= end) {
         return;
     }
-    if (count > 0 && intervals[(count - 1) * 2 + 1] == begin) {
-        intervals[(count - 1) * 2 + 1] = end;
+    if (count >= N_FUNC / 2) {
+        if (count > 0 && intervals[(count - 1) * 2 + 1] == begin) {
+            intervals[(count - 1) * 2 + 1] = end;
+        }
         return;
     }
-    if (count >= N_FUNC / 2) {
+    if (count > 0 && intervals[(count - 1) * 2 + 1] == begin) {
+        intervals[(count - 1) * 2 + 1] = end;
         return;
     }
     intervals[count * 2] = begin;

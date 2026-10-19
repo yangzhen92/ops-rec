@@ -23,44 +23,6 @@
 using namespace at;
 
 constexpr uint32_t N_FUNC = 4;
-constexpr uint32_t N_FUNC_BLOCK_CAUSAL = 2;
-
-at::Tensor build_block_causal_mask_arbitrary_func_impl_npu(const at::Tensor& offsets, const at::Tensor& block_sizes,
-                                                           int64_t total_seqlen)
-{
-    check_tensor_non_empty(offsets, "offsets");
-    check_tensor_non_empty(block_sizes, "block_sizes");
-
-    std::vector<at::Tensor> tensors = {offsets, block_sizes};
-    std::vector<std::string> names = {"offsets", "block_sizes"};
-    check_tensor_npu_device(tensors, names);
-
-    TORCH_CHECK(offsets.scalar_type() == at::kInt, "offsets must be int32");
-    TORCH_CHECK(block_sizes.scalar_type() == at::kInt, "block_sizes must be int32");
-    TORCH_CHECK(offsets.dim() == 1, "offsets must be 1D");
-    TORCH_CHECK(block_sizes.dim() == 1, "block_sizes must be 1D");
-    TORCH_CHECK(total_seqlen >= 0, "total_seqlen must be non-negative");
-
-    const int64_t batch_size = offsets.size(0) - 1;
-    TORCH_CHECK(batch_size >= 0, "offsets.size(0) must be >= 1, i.e. offsets shape must be [batch_size+1]");
-    TORCH_CHECK(block_sizes.size(0) == batch_size, "block_sizes.size(0) (", block_sizes.size(0),
-                ") must equal offsets.size(0)-1 (", batch_size, "), i.e. block_sizes shape must be [batch_size]");
-
-    const int32_t offsets_last = offsets[-1].item<int32_t>();
-    TORCH_CHECK(total_seqlen == offsets_last, "total_seqlen (", total_seqlen, ") must equal offsets[-1] (",
-                offsets_last, ")");
-
-    auto offsets_conti = offsets.contiguous();
-    auto block_sizes_conti = block_sizes.contiguous();
-
-    at::Tensor arbitrary_func = at::empty({1, 1, total_seqlen, N_FUNC_BLOCK_CAUSAL}, offsets_conti.options());
-    if (total_seqlen == 0)
-        return arbitrary_func;
-
-    EXEC_NPU_CMD(aclnnBuildBlockCausalMaskArbitraryFunc, offsets_conti, block_sizes_conti, total_seqlen,
-                 arbitrary_func);
-    return arbitrary_func;
-}
 
 at::Tensor build_hstu_mask_arbitrary_func_impl_npu(const at::Tensor& offsets, const at::Tensor& ctx_lens,
                                                    const at::Tensor& tgt_lens, int64_t target_group_size,
@@ -154,7 +116,6 @@ at::Tensor build_sla_mask_arbitrary_func_impl_npu(const at::Tensor& offsets, int
 
 TORCH_LIBRARY_FRAGMENT(ops_rec, m)
 {
-    m.def("build_block_causal_mask_arbitrary_func(Tensor offsets, Tensor block_sizes, int total_seqlen) -> Tensor");
     m.def("build_hstu_mask_arbitrary_func(Tensor offsets, Tensor ctx_lens, Tensor tgt_lens, "
           "int target_group_size, int total_seqlen) -> Tensor");
     m.def("build_sla_mask_arbitrary_func(Tensor offsets, int total_seqlen, int sla_k1, int sla_k2, "
@@ -164,19 +125,11 @@ TORCH_LIBRARY_FRAGMENT(ops_rec, m)
 // NPU 设备实现
 TORCH_LIBRARY_IMPL(ops_rec, PrivateUse1, m)
 {
-    m.impl("build_block_causal_mask_arbitrary_func", &build_block_causal_mask_arbitrary_func_impl_npu);
     m.impl("build_hstu_mask_arbitrary_func", &build_hstu_mask_arbitrary_func_impl_npu);
     m.impl("build_sla_mask_arbitrary_func", &build_sla_mask_arbitrary_func_impl_npu);
 }
 
 namespace {
-
-at::Tensor build_block_causal_mask_arbitrary_func_meta(const at::Tensor& offsets, const at::Tensor& block_sizes,
-                                                       int64_t total_seqlen)
-{
-    TORCH_CHECK(total_seqlen >= 0, "total_seqlen must be non-negative");
-    return at::empty_symint({1, 1, total_seqlen, N_FUNC_BLOCK_CAUSAL}, offsets.options());
-}
 
 at::Tensor build_hstu_mask_arbitrary_func_meta(const at::Tensor& offsets, const at::Tensor& ctx_lens,
                                                const at::Tensor& tgt_lens, int64_t target_group_size,
@@ -197,7 +150,6 @@ at::Tensor build_sla_mask_arbitrary_func_meta(const at::Tensor& offsets, int64_t
 
 TORCH_LIBRARY_IMPL(ops_rec, Meta, m)
 {
-    m.impl("build_block_causal_mask_arbitrary_func", &build_block_causal_mask_arbitrary_func_meta);
     m.impl("build_hstu_mask_arbitrary_func", &build_hstu_mask_arbitrary_func_meta);
     m.impl("build_sla_mask_arbitrary_func", &build_sla_mask_arbitrary_func_meta);
 }

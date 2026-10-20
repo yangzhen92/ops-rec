@@ -60,6 +60,12 @@ ops-rec 是面向大规模推荐场景的高性能算子库，基于昇腾 CANN 
 | [build_sla_mask_arbitrary_func](../../ascendc/attention/arbitrary_func/docs/torch_build_sla_mask_arbitrary_func.md) | `ops_rec.ascendc.attention.build_sla_mask_arbitrary_func(offsets, total_seqlen, sla_k1, sla_k2, contextual_seq_len, num_targets=None)` | 构造 SLA（半局部注意力）任意函数掩码（af 编码） | Ascend 950PR&950DT系列产品 |
 | [fa_infer_with_arbitrary_func](../../ascendc/attention/fa_infer_with_arbitrary_func/fa_infer_with_arbitrary_func_forward/docs/torch_fa_infer_with_arbitrary_func.md) | `ops_rec.ascendc.attention.fa_infer_with_arbitrary_func(q, k, v, arbitrary_func, q2k_block_sparse)` | Flash Attention 推理：任意区间掩码 + 块稀疏跳过，高效注意力前向 | Ascend 950PR&950DT系列产品 |
 
+### embedding（嵌入算子）
+
+| 算子 | 接口签名 | 功能简介 | 硬件支持 |
+| ---- | -------- | -------- | -------- |
+| [index_select_for_rank1_backward](../../ascendc/embedding/gather_for_rank1/index_select_for_rank1_backward/docs/torch_index_select_for_rank1_backward.md) | `ops_rec.ascendc.embedding.index_select_for_rank1_backward(grad_y, x, index)` | rank-1 嵌入查表 `y = x[index]` 的反向传播，按 scatter_add 语义累加权重表梯度，返回 `(grad_x, None)` | Atlas A2系列产品, Atlas A3系列产品, Ascend 950PR&950DT系列产品 |
+
 ### mixing（混合算子）
 
 | 算子 | 接口签名 | 功能简介 | 硬件支持 |
@@ -92,6 +98,9 @@ ascendc/
 │   ├── block_sparse_func/                         # 块稀疏张量生成（FULL/MASK/EMPTY 分类）
 │   ├── arbitrary_func/                            # 任意函数掩码 af 编码（HSTU / SLA）
 │   └── fa_infer_with_arbitrary_func/              # Flash Attention 推理（任意区间掩码）
+├── embedding/                                     # embedding 算子组（嵌入算子）
+│   └── gather_for_rank1/                          # rank-1 嵌入查表（y = x[index]）
+│       └── index_select_for_rank1_backward/       # 反向（scatter_add 语义累加权重梯度）
 ├── mixing/                                        # mixing 算子组（混合算子）
 │   └── token_mixing/                              # Token 混合归一化
 └── sequence/                                      # sequence 算子组（序列算子）
@@ -100,7 +109,7 @@ ascendc/
 
 ## 算子实现说明
 
-- **AscendC 算子**：`ascendc/` 目录下每个**叶子算子**都包含 `op_host/`（tiling 与算子注册）、`op_kernel/`（AscendC kernel）、`docs/`（aclnn + torch 双接口文档）、`examples/`（aclnn + torch 示例）与 `test/`。`torch_extension/`（torch 适配层，注册 `torch.ops.ops_rec.*`）默认位于叶子算子根目录；对于 `in_linear_silu`、`hstu_v1`、`fa_infer_with_arbitrary_func` 这类聚合算子，`torch_extension/` 上提到聚合根目录，由其下的 forward/backward 等子算子共用。
+- **AscendC 算子**：`ascendc/` 目录下每个**叶子算子**都包含 `op_host/`（tiling 与算子注册）、`op_kernel/`（AscendC kernel）、`docs/`（aclnn + torch 双接口文档）、`examples/`（aclnn + torch 示例）与 `test/`。`torch_extension/`（torch 适配层，注册 `torch.ops.ops_rec.*`）默认位于叶子算子根目录；对于 `in_linear_silu`、`hstu_v1`、`fa_infer_with_arbitrary_func`、`gather_for_rank1` 这类聚合算子，`torch_extension/` 上提到聚合根目录，由其下的 forward/backward 等子算子共用。
 - **SOC 白名单**：各 SOC 编译哪些算子由 `cmake/soc_ops_config.cmake` 的 `OPS_REC_OPS_ATLAS_950 / _A3 / _A2` 三个变量控制。构建时未列入白名单的算子在对应芯片上不可用。
 - **统一 Python 调用接口**：`import ops_rec` 自动按本机 SOC 加载 `ops_rec_atlas_<variant>.so`（torch 适配层），AscendC 算子按 `ops_rec.ascendc.<group>.<op_name>(...)` 形式调用；同时提供 C 语言的 aclnn 接口供非 Python 场景使用，详见各算子目录下的 `aclnn` 接口文档。
 - **Triton / 实验性算子**：`triton/` 与 `experimental/` 源码目录当前为空，将在本索引后续版本补充对应章节。

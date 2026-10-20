@@ -14,6 +14,7 @@ set(OPS_REC_OPS_ATLAS_950
     in_linear_silu
     token_mixing
     fa_infer_with_arbitrary_func
+    gather_for_rank1
 )
 
 # ================================ A3 ops ===================================
@@ -24,6 +25,7 @@ set(OPS_REC_OPS_ATLAS_A3
     reverse_sequence
     in_linear_silu
     token_mixing
+    gather_for_rank1
 )
 
 # ================================ A2 ops ===================================
@@ -34,6 +36,7 @@ set(OPS_REC_OPS_ATLAS_A2
     reverse_sequence
     in_linear_silu
     token_mixing
+    gather_for_rank1
 )
 
 

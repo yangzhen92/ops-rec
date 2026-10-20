@@ -47,8 +47,8 @@ public:
         uint32_t maxS2SplitNum{0U};                       // 单个归约任务最大分核数量
         uint32_t fdTaskNum{0U};                           // 归约任务数量
         std::vector<uint32_t> firstFdDataWorkspaceIdx{};  // 每个核第一份归约任务的存放地址
-        std::vector<uint32_t> taskBegin{};                 // Stream-K 全局 tile 起点
-        std::vector<uint32_t> taskCount{};                 // Stream-K tile 数量
+        std::vector<uint32_t> taskBegin{};                // Stream-K 全局 tile 起点
+        std::vector<uint32_t> taskCount{};                // Stream-K tile 数量
         // FD
         uint32_t usedVecNum{0U};  // 归约过程使用的vector数量
         // 1、归约任务的索引信息
@@ -101,9 +101,11 @@ public:
             std::fill(mLen.begin(), mLen.end(), 0U);
         }
     };
+
 public:
     inline std::vector<SectionStreamKImplResult> Compute(const DeviceInfo& deviceInfo, const IBaseInfo& baseInfo);
     inline uint32_t SetParam(const SectionStreamKParam& param);
+
 private:
     enum BlockType : uint32_t {
         NORMAL_BLOCK = 0,
@@ -205,6 +207,7 @@ private:
         uint32_t sectionIdx{0U};
     };
     using CostTable = Table<int64_t, BLOCK_MAX_TYPE, BLOCK_MAX_TYPE>;
+
 private:
     inline static int64_t CalcCost(uint32_t basicM, uint32_t basicS2);
     inline CostTable CalcCostTable(uint32_t s1NormalSize, uint32_t s2NormalSize, uint32_t s1GTailSize,
@@ -232,6 +235,7 @@ private:
     inline void AssignByBatch(const ComputeContext& computeContext, AssignContext& assignContext);
     inline void AssignByRow(const ComputeContext& computeContext, AssignContext& assignContext);
     inline void AssignByBlock(AssignContext& assignContext);
+
 private:
     SectionStreamKParam m_param{};
 };

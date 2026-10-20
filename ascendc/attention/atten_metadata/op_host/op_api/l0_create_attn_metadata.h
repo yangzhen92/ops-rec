@@ -20,15 +20,15 @@ See the License for the specific language governing permissions and
 
 namespace l0op {
 const aclTensor* CreateAttnMetadata(const aclTensor* cuSeqlensQOptional, const aclTensor* cuSeqlensKvOptional,
-                                    const aclTensor* sequsedQOptional, const aclTensor* sequsedKvOptional,
-                                    const aclTensor* maskBlockCntOptional, const aclTensor* fullBlockCntOptional,
-                                    int64_t batchSize, int64_t maxSeqlenQ, int64_t maxSeqlenKv, int64_t numHeadsQ,
-                                    int64_t numHeadsKv, int64_t headDim, int64_t maskMode, int64_t winLeft,
-                                    int64_t winRight, const char* layoutQ, const char* layoutKv, const char* layoutOut,
-                                    const char* socVersion, int64_t aicCoreNum, int64_t aivCoreNum,
-                                    int64_t packedRowAxis, int64_t packedMaskHeads, int64_t l2Size, int64_t qBlockSize,
-                                    int64_t kvBlockSize, bool deterministic, const aclTensor* metaData,
-                                    aclOpExecutor* executor);
+                                  const aclTensor* sequsedQOptional, const aclTensor* sequsedKvOptional,
+                                  const aclTensor* maskBlockCntOptional, const aclTensor* fullBlockCntOptional,
+                                  int64_t batchSize, int64_t maxSeqlenQ, int64_t maxSeqlenKv, int64_t numHeadsQ,
+                                  int64_t numHeadsKv, int64_t headDim, int64_t maskMode, int64_t winLeft,
+                                  int64_t winRight, const char* layoutQ, const char* layoutKv, const char* layoutOut,
+                                  const char* socVersion, int64_t aicCoreNum, int64_t aivCoreNum,
+                                  int64_t packedRowAxis, int64_t packedMaskHeads, int64_t l2Size,
+                                  int64_t qBlockSize, int64_t kvBlockSize, bool deterministic,
+                                  const aclTensor* metaData, aclOpExecutor* executor);
 }  // namespace l0op
 
 #endif

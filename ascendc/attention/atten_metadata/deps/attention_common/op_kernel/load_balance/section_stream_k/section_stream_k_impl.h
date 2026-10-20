@@ -56,8 +56,8 @@ public:
         uint32_t maxS2SplitNum{0U};                       // 单个归约任务最大分核数量
         uint32_t fdTaskNum{0U};                           // 归约任务数量
         std::vector<uint32_t> firstFdDataWorkspaceIdx{};  // 每个核第一份归约任务的存放地址
-        std::vector<uint32_t> taskBegin{};                // Stream-K 全局 tile 起点
-        std::vector<uint32_t> taskCount{};                // Stream-K tile 数量
+        std::vector<uint32_t> taskBegin{};                 // Stream-K 全局 tile 起点
+        std::vector<uint32_t> taskCount{};                 // Stream-K tile 数量
 
         // FD
         uint32_t usedVecNum{0U};  // 归约过程使用的vector数量

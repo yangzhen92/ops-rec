@@ -90,9 +90,9 @@ inline bool CreateAttnMetadataCheck::IsTensorExist(const aclTensor* tensor)
 }
 
 inline aclnnStatus CreateAttnMetadataCheck::CheckBaseAttr(int64_t batchSize, int64_t maxSeqlenQ, int64_t maxSeqlenKv,
-                                                          int64_t numHeadsQ, int64_t numHeadsKv, int64_t headDim,
-                                                          const char* layoutQ, const char* layoutKv,
-                                                          const char* layoutOut)
+                                                        int64_t numHeadsQ, int64_t numHeadsKv, int64_t headDim,
+                                                        const char* layoutQ, const char* layoutKv,
+                                                        const char* layoutOut)
 {
     CHECK_COND((batchSize == -1 || batchSize > 0), ACLNN_ERR_RUNTIME_ERROR,
                "batchSize must be -1 or greater than 0, but got %ld", batchSize);
@@ -103,14 +103,13 @@ inline aclnnStatus CreateAttnMetadataCheck::CheckBaseAttr(int64_t batchSize, int
 
     CHECK_COND(numHeadsQ > 0, ACLNN_ERR_RUNTIME_ERROR, "numHeadsQ must be greater than 0, but got %ld", numHeadsQ);
     CHECK_COND(numHeadsKv > 0, ACLNN_ERR_RUNTIME_ERROR, "numHeadsKv must be greater than 0, but got %ld", numHeadsKv);
-    CHECK_COND(numHeadsQ == numHeadsKv, ACLNN_ERR_RUNTIME_ERROR,
-               "HSTU metadata requires MHA: numHeadsQ must equal numHeadsKv");
 
     constexpr int64_t HEAD_DIM_ALIGN = 16;
     constexpr int64_t HEAD_DIM_256 = 256;
-    CHECK_COND(headDim > 0 && headDim % HEAD_DIM_ALIGN == 0 && headDim <= HEAD_DIM_256, ACLNN_ERR_RUNTIME_ERROR,
-               "headDim must be a positive multiple of %ld and <= %ld, but got %ld", HEAD_DIM_ALIGN, HEAD_DIM_256,
-               headDim);
+    CHECK_COND(headDim > 0 && headDim % HEAD_DIM_ALIGN == 0 && headDim <= HEAD_DIM_256,
+               ACLNN_ERR_RUNTIME_ERROR,
+               "headDim must be a positive multiple of %ld and <= %ld, but got %ld",
+               HEAD_DIM_ALIGN, HEAD_DIM_256, headDim);
 
     static const std::unordered_set<std::string> layoutQSet = {"BSND", "TND", "BNSD"};
     CHECK_COND(layoutQSet.count(layoutQ) > 0, ACLNN_ERR_RUNTIME_ERROR,
@@ -143,11 +142,10 @@ inline aclnnStatus CreateAttnMetadataCheck::CheckMask(int64_t maskMode, int64_t 
 }
 
 inline aclnnStatus CreateAttnMetadataCheck::CheckExistency(int64_t maxSeqlenQ, int64_t maxSeqlenKv, const char* layoutQ,
-                                                           const char* layoutKv, const aclTensor* cuSeqlensQOptional,
-                                                           const aclTensor* cuSeqlensKvOptional,
-                                                           const aclTensor* sequsedQOptional,
-                                                           const aclTensor* sequsedKvOptional,
-                                                           const aclTensor* metadata)
+                                                         const char* layoutKv, const aclTensor* cuSeqlensQOptional,
+                                                         const aclTensor* cuSeqlensKvOptional,
+                                                         const aclTensor* sequsedQOptional,
+                                                         const aclTensor* sequsedKvOptional, const aclTensor* metadata)
 {
     CHECK_COND(metadata != nullptr, ACLNN_ERR_RUNTIME_ERROR, "metadata should be provided, but got null");
 
@@ -181,10 +179,10 @@ inline aclnnStatus CreateAttnMetadataCheck::CheckExistency(int64_t maxSeqlenQ, i
 }
 
 inline aclnnStatus CreateAttnMetadataCheck::CheckConsistency(int64_t batchSize, int64_t numHeadsQ, int64_t numHeadsKv,
-                                                             const aclTensor* cuSeqlensQOptional,
-                                                             const aclTensor* cuSeqlensKvOptional,
-                                                             const aclTensor* sequsedQOptional,
-                                                             const aclTensor* sequsedKvOptional)
+                                                           const aclTensor* cuSeqlensQOptional,
+                                                           const aclTensor* cuSeqlensKvOptional,
+                                                           const aclTensor* sequsedQOptional,
+                                                           const aclTensor* sequsedKvOptional)
 {
     if (batchSize <= 0) {
         return ACLNN_SUCCESS;

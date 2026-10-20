@@ -42,7 +42,6 @@ private:
     bool GenDenseMetadata();
     bool GenPackedMetadata();
     bool ParamsInit();
-    bool ValidateSequenceInputs();
     void InitDeviceInfo();
     void InitBaseInfo();
     void InitLoadBalanceParams();

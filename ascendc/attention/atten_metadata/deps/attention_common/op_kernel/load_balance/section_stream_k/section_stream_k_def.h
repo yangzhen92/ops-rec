@@ -48,8 +48,8 @@ struct SectionStreamKFaResult {
     std::vector<uint32_t> gS1End{};                   // 每个核处理数据的GS1结束点
     std::vector<uint32_t> s2End{};                    // 每个核处理数据的S2结束点
     std::vector<uint32_t> firstFdDataWorkspaceIdx{};  // 每个AIC产生的首个FD中间结果在workspace中的序号
-    std::vector<uint32_t> taskBegin{};                // Stream-K 全局 tile 起点
-    std::vector<uint32_t> taskCount{};                // Stream-K tile 数量
+    std::vector<uint32_t> taskBegin{};                 // Stream-K 全局 tile 起点
+    std::vector<uint32_t> taskCount{};                 // Stream-K tile 数量
 
     explicit SectionStreamKFaResult(uint32_t aicNum)
         : bN2End(aicNum),

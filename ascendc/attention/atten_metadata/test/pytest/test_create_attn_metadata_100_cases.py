@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 import torch
 
+import ops_rec
 
 ROOT = Path(__file__).resolve().parents[5]
 sys.path.insert(0, str(ROOT / "benchmarks/hstu_v2_agent_task2"))
@@ -21,11 +22,12 @@ AIC_CORE_INDEX = 14
 def _build_inputs(case):
     offsets = torch.tensor(case["offsets"], dtype=torch.int32, device="npu")
     zeros = torch.zeros(case["batch"], dtype=torch.int32, device="npu")
-    arbitrary = torch.ops.ops_rec.build_hstu_mask_arbitrary_func(offsets, zeros, zeros, 1, case["offsets"][-1])
+    arbitrary = torch.ops.ops_rec.build_hstu_mask_arbitrary_func(
+        offsets, zeros, zeros, 1, case["offsets"][-1])
     q_block = 128
     packed = torch.ops.ops_rec.create_fwd_packed_block_sparse(
-        arbitrary, offsets, offsets, case["max_seq_len"], case["max_seq_len"], q_block, 128
-    )
+        arbitrary, offsets, offsets, case["max_seq_len"], case["max_seq_len"],
+        q_block, 128)
     return offsets, packed
 
 
@@ -39,27 +41,9 @@ def test_create_attn_metadata_100_cases(case):
         mask_cnt, full_cnt = packed[0], packed[3]
 
     metadata = torch.ops.ops_rec.create_attn_metadata(
-        offsets,
-        offsets,
-        None,
-        None,
-        case["batch"],
-        case["max_seq_len"],
-        case["max_seq_len"],
-        case["heads"],
-        case["heads"],
-        case["head_dim"],
-        0,
-        -1,
-        -1,
-        "TND",
-        "TND",
-        "TND",
-        mask_cnt,
-        full_cnt,
-        0,
-        1,
-    ).cpu()
+        offsets, offsets, None, None, case["batch"], case["max_seq_len"],
+        case["max_seq_len"], case["heads"], case["heads"], case["head_dim"],
+        0, -1, -1, "TND", "TND", "TND", mask_cnt, full_cnt, 0, 1).cpu()
 
     assert metadata.dtype == torch.int32
     aic_cores = int(metadata[AIC_CORE_INDEX])
@@ -72,3 +56,4 @@ def test_create_attn_metadata_100_cases(case):
         assert int(metadata[0]) >= 1
     assert int(metadata[2]) > 0
     assert int(metadata[3]) > 0
+

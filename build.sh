@@ -7,6 +7,17 @@
 
 set -e
 
+# 依赖 bash 4.0+（local -A / mapfile）。
+# 显式断言，避免版本不兼容被误报成"算子编译失败"。
+if [ -z "${BASH_VERSION:-}" ]; then
+    echo "[ERROR] build.sh requires bash (run with: bash build.sh)" >&2
+    exit 2
+fi
+if [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
+    echo "[ERROR] build.sh requires bash >= 4.0 (found ${BASH_VERSION})" >&2
+    exit 2
+fi
+
 # ---------------------------------------------------------------------------
 # 默认值
 # ---------------------------------------------------------------------------
@@ -244,32 +255,37 @@ die() {
     exit 1
 }
 
-# 滚动任务池：同时最多跑 maxjobs 个后台任务，任一结束立即补充池中下一个任务
-# （不再整批等待，避免被最慢算子卡住整条流水线）。参数为 (soc\top) 对。
-# 任一任务失败立即终止，并回收其余残留后台任务，避免遗留孤儿 make / 半成品 staging。
+# 滚动任务池：最多同时跑 maxjobs 个后台任务，槽位空出即补下一个任务。参数为 (soc\top) 对。
+# 用"按启动顺序逐个 wait"回收；
+# 每个 PID 都检查退出码，失败立即终止并回收其余任务，避免遗留孤儿 make / 半成品 staging。
 run_rolling_pool() {
     local maxjobs="$1"
     shift
     [ "${maxjobs}" -lt 1 ] && maxjobs=1
-    local task soc op
+    local task soc op pid
+    local -a pids=()
     for task in "$@"; do
-        while [ "$(jobs -rp | wc -l)" -ge "${maxjobs}" ]; do
-            if ! wait -n; then
-                # shellcheck disable=SC2046
-                kill $(jobs -rp) 2>/dev/null || true
-                die "parallel op build failed (rolling pool)"
+        while [ "${#pids[@]}" -ge "${maxjobs}" ]; do
+            pid="${pids[0]}"
+            if ! wait "${pid}"; then
+                kill "${pids[@]}" 2>/dev/null || true
+                die "parallel op build failed (pid ${pid})"
             fi
+            pids=("${pids[@]:1}")
         done
         soc="${task%%$'\t'*}"
         op="${task#*$'\t'}"
         build_one_kernel "${soc}" "${op}" &
+        pids+=("$!")
     done
-    # 排空：剩余任务也逐个检查退出码
-    while [ "$(jobs -rp | wc -l)" -gt 0 ]; do
-        if ! wait -n; then
-            # shellcheck disable=SC2046
-            kill $(jobs -rp) 2>/dev/null || true
-            die "parallel op build failed (rolling pool drain)"
+    # 排空：逐个回收并检查退出码
+    local i rest
+    for i in "${!pids[@]}"; do
+        pid="${pids[$i]}"
+        if ! wait "${pid}"; then
+            rest=("${pids[@]:$((i + 1))}")
+            [ "${#rest[@]}" -gt 0 ] && kill "${rest[@]}" 2>/dev/null || true
+            die "parallel op build failed (pid ${pid})"
         fi
     done
 }
@@ -408,10 +424,10 @@ main() {
     total_cpus="$(nproc 2>/dev/null || echo 4)"
     # 可用内存(KB)：优先 MemAvailable(kernel>=3.14)，否则 MemFree+Buffers+Cached 近似；
     # 都取不到则告警，并按"内存未知"跳过内存封顶（只用 CPU 推导的预算）
-    mem_kb="$(awk '/^MemAvailable:/{print $2; exit}' /proc/meminfo 2>/dev/null)"
+    mem_kb="$(awk '/^MemAvailable:/{print $2; exit}' /proc/meminfo 2>/dev/null || true)"
     if [ -z "${mem_kb}" ]; then
         mem_kb="$(awk '/^MemFree:/{f=$2} /^Buffers:/{b=$2} /^Cached:/{c=$2} END{if(f!="")print f+b+c}' \
-                     /proc/meminfo 2>/dev/null)"
+                     /proc/meminfo 2>/dev/null || true)"
         [ -n "${mem_kb}" ] && echo "[WARN] /proc/meminfo lacks MemAvailable; using MemFree+Buffers+Cached=${mem_kb}kB for job sizing" >&2
     fi
     mem_jobs=0                                    # 0 = 内存未知，不参与封顶

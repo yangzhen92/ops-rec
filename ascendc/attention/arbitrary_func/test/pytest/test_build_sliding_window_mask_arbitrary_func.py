@@ -95,7 +95,6 @@ def test_build_sliding_window_mask_arbitrary_func(case_id):
     assert np.array_equal(actual.cpu().numpy(), expected)
 
 
-
 # ---------------- 显式边界、graph、健壮性覆盖（新增） ----------------
 _EXTRA_KEYS = ["window_sizes"]
 

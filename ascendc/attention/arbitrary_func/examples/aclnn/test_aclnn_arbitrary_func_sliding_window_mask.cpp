@@ -129,7 +129,8 @@ int main()
     ret = aclrtMemcpy(outHost.data(), outSize, outDev, outSize, ACL_MEMCPY_DEVICE_TO_HOST);
     CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("aclrtMemcpy output failed. ERROR: %d\n", ret); return ret);
 
-    LOG_PRINT("build_sliding_window_mask_arbitrary_func output shape [1,1,%lld,2]\n", static_cast<long long>(totalSeqLen));
+    LOG_PRINT("build_sliding_window_mask_arbitrary_func output shape [1,1,%lld,2]\n",
+              static_cast<long long>(totalSeqLen));
     // pos1（seq0, win2）：expect [0, 2]
     LOG_PRINT("row pos1 : %d %d\n", outHost[2], outHost[3]);
     // pos2（seq0 末行, win2）：expect [1, 3]

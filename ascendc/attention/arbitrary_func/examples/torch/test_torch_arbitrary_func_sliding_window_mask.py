@@ -52,9 +52,9 @@ def test_build_sliding_window_mask_arbitrary_func_two_seq():
     window_sizes = np.array([2, 1], dtype=np.int32)
     total_seqlen = 5
 
-    y = ops_rec.ascendc.attention.build_sliding_window_mask_arbitrary_func(torch.from_numpy(offsets).npu(),
-                                                                           torch.from_numpy(window_sizes).npu(),
-                                                                           total_seqlen)
+    y = ops_rec.ascendc.attention.build_sliding_window_mask_arbitrary_func(
+        torch.from_numpy(offsets).npu(), torch.from_numpy(window_sizes).npu(), total_seqlen
+    )
 
     y_np = y.cpu().numpy()
     cpu = build_sliding_window_mask_arbitrary_func_mask_cpu(offsets, window_sizes, total_seqlen)
@@ -76,9 +76,9 @@ def test_build_sliding_window_mask_arbitrary_func_multi_seq():
     window_sizes = np.array([1, 3, 2], dtype=np.int32)
     total_seqlen = 6
 
-    y = ops_rec.ascendc.attention.build_sliding_window_mask_arbitrary_func(torch.from_numpy(offsets).npu(),
-                                                                           torch.from_numpy(window_sizes).npu(),
-                                                                           total_seqlen)
+    y = ops_rec.ascendc.attention.build_sliding_window_mask_arbitrary_func(
+        torch.from_numpy(offsets).npu(), torch.from_numpy(window_sizes).npu(), total_seqlen
+    )
 
     y_np = y.cpu().numpy()
     cpu = build_sliding_window_mask_arbitrary_func_mask_cpu(offsets, window_sizes, total_seqlen)

@@ -21,8 +21,8 @@ limitations under the License.
 
 namespace optiling {
 
-constexpr int DATA_ALIGN_TARGET = 32;               // UB 搬运的 32B 对齐目标
-constexpr int RESERVER_UB_SIZE = (20 * 1024);       // UB 预留空间
+constexpr int DATA_ALIGN_TARGET = 32;          // UB 搬运的 32B 对齐目标
+constexpr int RESERVER_UB_SIZE = (20 * 1024);  // UB 预留空间
 // input index
 constexpr int GRAD_IDX = 0;
 constexpr int X_IDX = 1;
@@ -47,16 +47,14 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context)
         return ge::GRAPH_FAILED);
     OPS_CHECK(
         gradShape.GetDimNum() != 1,
-        OPS_LOG_E("Tiling Debug",
-                  "IndexSelectForRank1Backward is only used for input-1 with dim 0 but grad.dim is %ld",
+        OPS_LOG_E("Tiling Debug", "IndexSelectForRank1Backward is only used for input-1 with dim 0 but grad.dim is %ld",
                   gradShape.GetDimNum()),
         return ge::GRAPH_FAILED);
-    OPS_CHECK(
-        indexShape.GetDimNum() != 1,
-        OPS_LOG_E("Tiling Debug",
-                  "IndexSelectForRank1Backward is only used for input-1 with dim 0 but index.dim is %ld",
-                  indexShape.GetDimNum()),
-        return ge::GRAPH_FAILED);
+    OPS_CHECK(indexShape.GetDimNum() != 1,
+              OPS_LOG_E("Tiling Debug",
+                        "IndexSelectForRank1Backward is only used for input-1 with dim 0 but index.dim is %ld",
+                        indexShape.GetDimNum()),
+              return ge::GRAPH_FAILED);
 
     auto ascendPlatform = platform_ascendc::PlatformAscendC(context->GetPlatformInfo());
     size_t coreNum = ascendPlatform.GetCoreNumAiv();

@@ -18,12 +18,8 @@ limitations under the License.
 
 using namespace AscendC;
 
-extern "C" __global__ __aicore__ void index_select_for_rank1_backward(GM_ADDR gradY,
-                                                                      GM_ADDR x,
-                                                                      GM_ADDR index,
-                                                                      GM_ADDR gradX,
-                                                                      GM_ADDR workspace,
-                                                                      GM_ADDR tiling)
+extern "C" __global__ __aicore__ void index_select_for_rank1_backward(GM_ADDR gradY, GM_ADDR x, GM_ADDR index,
+                                                                      GM_ADDR gradX, GM_ADDR workspace, GM_ADDR tiling)
 {
     GET_TILING_DATA(tilingData, tiling);
     IndexSelectForRank1BackwardKernel<DTYPE_INDEX> op(tiling);

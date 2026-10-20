@@ -87,8 +87,8 @@ int main()
     auto ret = Init(deviceId, &stream);
     CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("Init acl failed. ERROR: %d\n", ret); return ret);
 
-    constexpr int64_t X_DIM0 = 16;    // 权重表元素个数（grad_x 长度）
-    constexpr int64_t NUM_IDX = 10;   // index/grad_y 长度
+    constexpr int64_t X_DIM0 = 16;   // 权重表元素个数（grad_x 长度）
+    constexpr int64_t NUM_IDX = 10;  // index/grad_y 长度
     std::vector<int64_t> xShape = {X_DIM0};
     std::vector<int64_t> indexShape = {NUM_IDX};
 
@@ -125,8 +125,8 @@ int main()
     uint64_t workspaceSize = 0;
     aclOpExecutor* executor = nullptr;
     ret = aclnnIndexSelectForRank1BackwardGetWorkspaceSize(gradY, x, index, gradX, &workspaceSize, &executor);
-    CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("aclnnIndexSelectForRank1BackwardGetWorkspaceSize failed. ERROR: %d\n",
-                                            ret);
+    CHECK_RET(ret == ACL_SUCCESS,
+              LOG_PRINT("aclnnIndexSelectForRank1BackwardGetWorkspaceSize failed. ERROR: %d\n", ret);
               return ret);
 
     void* workspaceAddr = nullptr;

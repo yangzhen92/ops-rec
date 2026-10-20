@@ -1,7 +1,6 @@
 import os
 import pytest
 import torch
-import torch_npu  # noqa: F401
 
 import ops_rec
 
@@ -19,9 +18,28 @@ def create_packed(direction, *args):
     return op(*args)
 
 
-@pytest.mark.parametrize("direction,q_block", [("q2k", 128), ("k2q", 256)])
+VALID_BLOCKS = (
+    ("q2k", 32, 32),
+    ("q2k", 32, 64),
+    ("q2k", 32, 128),
+    ("q2k", 64, 64),
+    ("q2k", 64, 128),
+    ("q2k", 128, 128),
+    ("k2q", 32, 32),
+    ("k2q", 64, 32),
+    ("k2q", 64, 64),
+    ("k2q", 128, 32),
+    ("k2q", 128, 64),
+    ("k2q", 128, 128),
+    ("k2q", 256, 32),
+    ("k2q", 256, 64),
+    ("k2q", 256, 128),
+)
+
+
+@pytest.mark.parametrize("direction,q_block,kv_block", VALID_BLOCKS)
 @pytest.mark.parametrize("length", [256, 1024, 4096])
-def test_descriptor_matches_cpu_reference(direction, q_block, length):
+def test_descriptor_matches_cpu_reference(direction, q_block, kv_block, length):
     torch.npu.set_device(int(os.getenv("ASCEND_DEVICE_ID", "0")))
     offsets = torch.tensor([0, length], dtype=torch.int32, device="npu")
     func = ops_rec.ascendc.attention.build_hstu_mask_arbitrary_func(
@@ -31,7 +49,7 @@ def test_descriptor_matches_cpu_reference(direction, q_block, length):
         16,
         length,
     )
-    packed = create_packed(direction, func, offsets, offsets, length, length, q_block, 128)
+    packed = create_packed(direction, func, offsets, offsets, length, length, q_block, kv_block)
     torch.npu.synchronize()
 
     func_cpu = func.cpu()
@@ -39,12 +57,13 @@ def test_descriptor_matches_cpu_reference(direction, q_block, length):
     bounds = packed[1].cpu().reshape(-1, 2)
     packed_full_cnt = packed[3].cpu()
     num_q = (length + q_block - 1) // q_block
-    num_k = (length + 127) // 128
+    num_k = (length + kv_block - 1) // kv_block
     inner_blocks = num_q if direction == "k2q" else num_k
     descriptor = direct_state(packed[6]).reshape(-1, inner_blocks)
     expected_mask_cnt = torch.zeros_like(packed_mask_cnt).reshape(-1)
     expected_full_cnt = torch.zeros_like(packed_full_cnt).reshape(-1)
-    outer_blocks = (length + (128 if direction == "k2q" else q_block) - 1) // (128 if direction == "k2q" else q_block)
+    outer_tile = kv_block if direction == "k2q" else q_block
+    outer_blocks = (length + outer_tile - 1) // outer_tile
     inner_blocks = descriptor.shape[1]
     for row in range(descriptor.shape[0]):
         expected = torch.zeros_like(descriptor[row])
@@ -53,8 +72,8 @@ def test_descriptor_matches_cpu_reference(direction, q_block, length):
             q_block_id, kv_block_id = (inner, outer_block) if direction == "k2q" else (outer_block, inner)
             q_begin = q_block_id * q_block
             q_end = min(q_begin + q_block, length)
-            kv_begin = kv_block_id * 128
-            kv_end = min(kv_begin + 128, length)
+            kv_begin = kv_block_id * kv_block
+            kv_end = min(kv_begin + kv_block, length)
             all_visible = True
             any_visible = False
             for q_pos in range(q_begin, q_end):
@@ -66,7 +85,7 @@ def test_descriptor_matches_cpu_reference(direction, q_block, length):
                     if left < right:
                         visible[left - kv_begin : right - kv_begin] = True
                 any_visible |= bool(visible.any())
-                all_visible &= bool(visible.all()) and kv_end - kv_begin == 128
+                all_visible &= bool(visible.all()) and kv_end - kv_begin == kv_block
             state = 1 if all_visible else (3 if any_visible else 0)
             expected[inner] = state
             expected_mask_cnt[row] += state == 3

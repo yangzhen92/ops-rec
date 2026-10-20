@@ -1,10 +1,15 @@
 """Task2: deterministic 100-case packed block-sparse CPU comparison."""
 
+import sys
+from pathlib import Path
+
 import pytest
 import torch
 
 
-from cases import operator_cases
+ROOT = Path(__file__).resolve().parents[5]
+sys.path.insert(0, str(ROOT / "benchmarks/hstu_v2_agent_task2"))
+from cases import operator_cases  # noqa: E402
 
 
 def _expected_descriptor(arbitrary_cpu, case, direction, q_block, kv_block):

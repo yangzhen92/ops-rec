@@ -103,7 +103,8 @@ int main()
 
     uint64_t workspaceSize = 0;
     aclOpExecutor* executor = nullptr;
-    ret = aclnnBuildUpperTriangularMaskArbitraryFuncGetWorkspaceSize(offsets, totalSeqLen, out, &workspaceSize, &executor);
+    ret = aclnnBuildUpperTriangularMaskArbitraryFuncGetWorkspaceSize(offsets, totalSeqLen, out, &workspaceSize,
+                                                                     &executor);
     CHECK_RET(ret == ACL_SUCCESS,
               LOG_PRINT("aclnnBuildUpperTriangularMaskArbitraryFuncGetWorkspaceSize failed. ERROR: %d\n", ret);
               return ret);
@@ -124,7 +125,8 @@ int main()
     ret = aclrtMemcpy(outHost.data(), outSize, outDev, outSize, ACL_MEMCPY_DEVICE_TO_HOST);
     CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("aclrtMemcpy output failed. ERROR: %d\n", ret); return ret);
 
-    LOG_PRINT("build_upper_triangular_mask_arbitrary_func output shape [1,1,%lld,2]\n", static_cast<long long>(totalSeqLen));
+    LOG_PRINT("build_upper_triangular_mask_arbitrary_func output shape [1,1,%lld,2]\n",
+              static_cast<long long>(totalSeqLen));
     // pos0（seq0 首行）：expect [0, 3]
     LOG_PRINT("row pos0 : %d %d\n", outHost[0], outHost[1]);
     // pos2（seq0 末行）：expect [2, 3]

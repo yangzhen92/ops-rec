@@ -46,7 +46,9 @@ def test_build_upper_triangular_mask_arbitrary_func_two_seq():
     offsets = np.array([0, 3, 5], dtype=np.int32)
     total_seqlen = 5
 
-    y = ops_rec.ascendc.attention.build_upper_triangular_mask_arbitrary_func(torch.from_numpy(offsets).npu(), total_seqlen)
+    y = ops_rec.ascendc.attention.build_upper_triangular_mask_arbitrary_func(
+        torch.from_numpy(offsets).npu(), total_seqlen
+    )
 
     y_np = y.cpu().numpy()
     cpu = build_upper_triangular_mask_arbitrary_func_mask_cpu(offsets, total_seqlen)
@@ -65,7 +67,9 @@ def test_build_upper_triangular_mask_arbitrary_func_multi_seq():
     offsets = np.array([0, 2, 4, 6], dtype=np.int32)
     total_seqlen = 6
 
-    y = ops_rec.ascendc.attention.build_upper_triangular_mask_arbitrary_func(torch.from_numpy(offsets).npu(), total_seqlen)
+    y = ops_rec.ascendc.attention.build_upper_triangular_mask_arbitrary_func(
+        torch.from_numpy(offsets).npu(), total_seqlen
+    )
 
     y_np = y.cpu().numpy()
     cpu = build_upper_triangular_mask_arbitrary_func_mask_cpu(offsets, total_seqlen)

@@ -46,6 +46,7 @@ ops-rec 是面向大规模推荐场景的高性能算子库，基于昇腾 CANN 
 
 | 算子 | 接口签名 | 功能简介 | 硬件支持 |
 | ---- | -------- | -------- | -------- |
+| [create_attn_metadata](../../ascendc/attention/atten_metadata/docs/torch_create_attn_metadata.md) | `ops_rec.ascendc.attention.create_attn_metadata(cu_seqlens_q, cu_seqlens_kv, seqused_q, seqused_kv, batch_size, max_seqlen_q, max_seqlen_kv, num_heads_q, num_heads_kv, head_dim, mask_mode, win_left, win_right, layout_q, layout_kv, layout_out, ...)` | 在 AI CPU 上生成注意力前向或反向的调度元数据，支持 packed 块计数输入 | Ascend 950PR&950DT系列产品 |
 | [hstu_dense](../../ascendc/attention/hstu_v1/hstu_forward_v1/docs/torch_hstu_forward.md) | `ops_rec.ascendc.attention.hstu_dense(q, k, v, mask=None, attn_bias=None, mask_type=0, max_seq_len=0, silu_scale=0.0)` | HSTU 融合注意力前向（dense 格式），支持 GQA 与 dim 不等 | Atlas A2系列产品, Atlas A3系列产品, Ascend 950PR&950DT系列产品 |
 | [hstu_jagged](../../ascendc/attention/hstu_v1/hstu_forward_v1/docs/torch_hstu_forward.md) | `ops_rec.ascendc.attention.hstu_jagged(q, k, v, mask=None, attn_bias=None, mask_type=0, max_seq_len=0, max_seq_len_k=0, silu_scale=0.0, seq_offset=None, seq_offset_k=None, ...)` | HSTU 前向（jagged 格式），支持 equal / delta 双 overload 自动分派 | Atlas A2系列产品, Atlas A3系列产品, Ascend 950PR&950DT系列产品 |
 | [hstu_paged](../../ascendc/attention/hstu_v1/hstu_forward_v1/docs/torch_hstu_forward.md) | `ops_rec.ascendc.attention.hstu_paged(q, k, v, kv_cache=None, ...)` | HSTU 前向（paged 格式，kv_cache 分页），支持增量推理 | Atlas A2系列产品, Atlas A3系列产品, Ascend 950PR&950DT系列产品 |
@@ -90,6 +91,7 @@ ascendc/
 │   ├── hstu_v2/                                   # HSTU V2 反向（统一 jagged 格式，仅 Ascend 950PR&950DT系列产品）
 │   ├── disentangle_attention/                     # 解耦注意力 (DeBERTa)
 │   ├── block_sparse_func/                         # 块稀疏张量生成（FULL/MASK/EMPTY 分类）
+│   ├── atten_metadata/                            # AI CPU 注意力调度元数据生成
 │   ├── arbitrary_func/                            # 任意函数掩码 af 编码（HSTU / SLA）
 │   └── fa_infer_with_arbitrary_func/              # Flash Attention 推理（任意区间掩码）
 ├── mixing/                                        # mixing 算子组（混合算子）

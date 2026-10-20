@@ -131,9 +131,14 @@ class Kernel:
         else:
             rab_grad = gv * real_silu_scale * F.sigmoid(qkb) * (1 + qkb * (1 - F.sigmoid(qkb)))
         rab_grad = rab_grad * self.alpha
+        score_grad = rab_grad.to(data_type)
+        k_grad_dens = torch.matmul(score_grad.permute(0, 1, 3, 2), q_dens.permute(0, 2, 1, 3)).permute(0, 2, 1, 3)
+        q_grad_dens = torch.matmul(score_grad, k_dens.permute(0, 2, 1, 3)).permute(0, 2, 1, 3)
+
+        # Shared RAB broadcasts over heads; reduce its gradient in FP32.
+        if rab is not None and rab.shape[1] == 1:
+            rab_grad = rab_grad.sum(dim=1, keepdim=True)
         rab_grad = rab_grad.to(data_type)
-        k_grad_dens = torch.matmul(rab_grad.permute(0, 1, 3, 2), q_dens.permute(0, 2, 1, 3)).permute(0, 2, 1, 3)
-        q_grad_dens = torch.matmul(rab_grad, k_dens.permute(0, 2, 1, 3)).permute(0, 2, 1, 3)
 
         rab_grad = rab_grad.cpu()
         q_grad_dens = q_grad_dens.cpu()

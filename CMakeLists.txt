@@ -59,14 +59,18 @@ set(OPS_REC_VENDORS ${OPS_REC_OPS_${_variant_upper}})
 message(STATUS "ops-rec: vendors for ${OPS_REC_SOC_VARIANT} = ${OPS_REC_VENDORS}")
 
 # OPS_REC_TARGET_OP — 由 cmake -D 或环境变量传入
-# 设置且非空时，仅编译该指定算子（用于 build.sh 逐算子独立 configure）
+# 设置且非空时，仅编译指定的算子（支持逗号分隔列表，如 "ln_mul,in_linear_silu"；
+# 用于 build.sh 逐算子独立 configure，也支持一次 configure 只编指定的多个算子）
 # 留空 = 编该 SOC 全部。
-set(OPS_REC_TARGET_OP "" CACHE STRING "ops-rec target op vendor (empty = all)")
+set(OPS_REC_TARGET_OP "" CACHE STRING "ops-rec target op vendors, comma-separated (empty = all)")
 if(NOT OPS_REC_TARGET_OP AND DEFINED ENV{OPS_REC_TARGET_OP})
-    set(OPS_REC_TARGET_OP "$ENV{OPS_REC_TARGET_OP}" CACHE STRING "ops-rec target op vendor" FORCE)
+    set(OPS_REC_TARGET_OP "$ENV{OPS_REC_TARGET_OP}" CACHE STRING "ops-rec target op vendors, comma-separated (empty = all)" FORCE)
 endif()
+set(OPS_REC_TARGET_OP_LIST "")
 if(OPS_REC_TARGET_OP)
-    message(STATUS "ops-rec: building only op vendor '${OPS_REC_TARGET_OP}'")
+    string(REPLACE "," ";" OPS_REC_TARGET_OP_LIST "${OPS_REC_TARGET_OP}")
+    list(REMOVE_ITEM OPS_REC_TARGET_OP_LIST "")
+    message(STATUS "ops-rec: building only op vendors '${OPS_REC_TARGET_OP}'")
 endif()
 
 # OPS_REC_SKIP_OPS — 由 cmake -D 或环境变量传入。
@@ -105,14 +109,38 @@ else()
 endif()
 
 foreach(_bv ${OPS_REC_BUILD_VENDORS})
-    # 若指定了 OPS_REC_TARGET_OP，只编译该 vendor（逐 vendor 独立 configure）
-    if(OPS_REC_TARGET_OP AND NOT _bv STREQUAL OPS_REC_TARGET_OP)
-        continue()
-    endif()
     ops_rec_vendor_dir("${_bv}" _bv_dir)
     if(NOT _bv_dir)
         message(WARNING "ops-rec: cannot locate source dir for vendor '${_bv}'; skipping")
         continue()
+    endif()
+    # 若指定了 OPS_REC_TARGET_OP（逗号分隔列表），只编译列表中的 vendor。
+    # 条目支持叶子 vendor 名（如 in_linear_silu_forward），也支持聚合算子名
+    # （如 in_linear_silu）：叶子源码目录位于聚合目录之下时同样命中。
+    if(OPS_REC_TARGET_OP_LIST)
+        set(_bv_match FALSE)
+        list(FIND OPS_REC_TARGET_OP_LIST "${_bv}" _bv_target_idx)
+        if(NOT _bv_target_idx EQUAL -1)
+            set(_bv_match TRUE)
+        else()
+            foreach(_t ${OPS_REC_TARGET_OP_LIST})
+                ops_rec_find_op_dir("${_t}" _t_dir)
+                if(_t_dir AND IS_DIRECTORY "${_t_dir}")
+                    file(RELATIVE_PATH _t_rel "${_t_dir}" "${_bv_dir}")
+                    if(NOT _t_rel MATCHES "^\\.\\.")
+                        set(_bv_match TRUE)
+                        break()
+                    endif()
+                endif()
+            endforeach()
+        endif()
+        unset(_bv_target_idx)
+        unset(_t_dir)
+        unset(_t_rel)
+        if(NOT _bv_match)
+            continue()
+        endif()
+        unset(_bv_match)
     endif()
     file(RELATIVE_PATH _bv_rel "${CMAKE_CURRENT_SOURCE_DIR}" "${_bv_dir}")
     add_subdirectory(${_bv_rel})

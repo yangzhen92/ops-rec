@@ -26,7 +26,7 @@
 """
 
 import os
-import sysconfig
+import sysconfig  # noqa: F401 - preserve source import side effects
 
 import pytest
 import torch
@@ -52,7 +52,7 @@ FA_BN2_END_INDEX = 3
 FA_M_END_INDEX = 4
 FA_S2_END_INDEX = 5
 
-import ops_rec
+import ops_rec  # noqa: F401, E402 - preserve source import side effects
 
 
 def expected_size(batch, num_kv_heads, aic_core_num, aiv_core_num):
@@ -194,18 +194,41 @@ def run_create_attn_metadata(
     )
 
 
-@pytest.mark.parametrize("row_axis,q_len,kv_len,block_m,block_n", [
-    (0, 128, 32768, 128, 128),
-    (1, 32768, 128, 128, 128),
-])
+@pytest.mark.parametrize(
+    "row_axis,q_len,kv_len,block_m,block_n",
+    [
+        (0, 128, 32768, 128, 128),
+        (1, 32768, 128, 128, 128),
+    ],
+)
 def test_create_attn_metadata_stream_k_global_balance(row_axis, q_len, kv_len, block_m, block_n):
     """Nondeterministic metadata covers the global 2-D tile stream exactly once."""
     device = f"npu:{os.getenv('ASCEND_DEVICE_ID', '0')}"
     torch.npu.set_device(device)
     metadata = torch.ops.ops_rec.create_attn_metadata(
-        None, None, None, None, 2, q_len, kv_len, 4, 4, 128,
-        0, -1, -1, "BSND", "BSND", "BSND", None, None, row_axis, 1,
-        block_m, block_n, False,
+        None,
+        None,
+        None,
+        None,
+        2,
+        q_len,
+        kv_len,
+        4,
+        4,
+        128,
+        0,
+        -1,
+        -1,
+        "BSND",
+        "BSND",
+        "BSND",
+        None,
+        None,
+        row_axis,
+        1,
+        block_m,
+        block_n,
+        False,
     ).cpu()
     assert int(metadata[HEAD_DIRECT_MAGIC_INDEX]) == HSTU_STREAM_K_MAGIC
     sections = int(metadata[HEAD_SECTION_NUM_INDEX])
@@ -348,13 +371,32 @@ def test_create_attn_metadata_packed_direct_range():
         full_cnt[batch, 0, :rows] = 1
 
     metadata = torch.ops.ops_rec.create_attn_metadata(
-        cu_seqlens, cu_seqlens, None, None, batch_size, max_seq, max_seq, num_heads, num_heads, 64,
-        0, -1, -1, "TND", "TND", "TND", mask_cnt, full_cnt, 1, 1
+        cu_seqlens,
+        cu_seqlens,
+        None,
+        None,
+        batch_size,
+        max_seq,
+        max_seq,
+        num_heads,
+        num_heads,
+        64,
+        0,
+        -1,
+        -1,
+        "TND",
+        "TND",
+        "TND",
+        mask_cnt,
+        full_cnt,
+        1,
+        1,
     ).cpu()
     assert int(metadata[15]) == HSTU_DIRECT_MAGIC
     assert int(metadata[HEAD_SECTION_NUM_INDEX]) == 1
-    assert metadata.numel() == expected_size(batch_size, 1, int(metadata[HEAD_AIC_CORE_NUM_INDEX]),
-                                             int(metadata[HEAD_AIV_CORE_NUM_INDEX]))
+    assert metadata.numel() == expected_size(
+        batch_size, 1, int(metadata[HEAD_AIC_CORE_NUM_INDEX]), int(metadata[HEAD_AIV_CORE_NUM_INDEX])
+    )
     assert_all_row_blocks_covered(metadata, seq_lens, num_heads)
 
 
@@ -370,8 +412,26 @@ def test_create_attn_metadata_packed_heavy_row_uses_nearest_boundary():
     mask_cnt[0, 0, 5] = 96
 
     metadata = torch.ops.ops_rec.create_attn_metadata(
-        cu_seqlens, cu_seqlens, None, None, batch_size, max_seq, max_seq, num_heads, num_heads, 64,
-        0, -1, -1, "TND", "TND", "TND", mask_cnt, full_cnt, 1, 1
+        cu_seqlens,
+        cu_seqlens,
+        None,
+        None,
+        batch_size,
+        max_seq,
+        max_seq,
+        num_heads,
+        num_heads,
+        64,
+        0,
+        -1,
+        -1,
+        "TND",
+        "TND",
+        "TND",
+        mask_cnt,
+        full_cnt,
+        1,
+        1,
     ).cpu()
     assert_all_row_blocks_covered(metadata, [max_seq], num_heads)
 
@@ -383,7 +443,7 @@ def test_create_attn_metadata_packed_heavy_row_uses_nearest_boundary():
         begins.append(int(metadata[record]))
         counts.append(int(metadata[record + 1]))
     weights = mask_cnt.cpu().flatten().tolist()
-    loads = [sum(weights[begin:begin + count]) for begin, count in zip(begins, counts)]
+    loads = [sum(weights[begin : begin + count]) for begin, count in zip(begins, counts)]
     # The old overshoot-only split assigns rows [0..5] to core 0 (load 101).
     # Nearest-boundary splitting stops before the heavy row (load 5).
     assert begins[0] == 0
@@ -407,8 +467,26 @@ def test_create_attn_metadata_packed_multi_batch_keeps_multiple_cores():
     full_cnt = torch.ones_like(mask_cnt)
 
     metadata = torch.ops.ops_rec.create_attn_metadata(
-        cu_seqlens, cu_seqlens, None, None, batch_size, max_seq, max_seq, num_heads, num_heads, 64,
-        0, -1, -1, "TND", "TND", "TND", mask_cnt, full_cnt, 1, 1
+        cu_seqlens,
+        cu_seqlens,
+        None,
+        None,
+        batch_size,
+        max_seq,
+        max_seq,
+        num_heads,
+        num_heads,
+        64,
+        0,
+        -1,
+        -1,
+        "TND",
+        "TND",
+        "TND",
+        mask_cnt,
+        full_cnt,
+        1,
+        1,
     ).cpu()
     assert_all_row_blocks_covered(metadata, seq_lens, num_heads)
     core_num = int(metadata[HEAD_AIC_CORE_NUM_INDEX])
@@ -417,6 +495,6 @@ def test_create_attn_metadata_packed_multi_batch_keeps_multiple_cores():
 
 
 if __name__ == "__main__":
-    import sys
+    import sys  # noqa: F401 - preserve source import side effects
 
     sys.exit(pytest.main(["-sv", __file__]))

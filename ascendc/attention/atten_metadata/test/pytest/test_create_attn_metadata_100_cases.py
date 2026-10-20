@@ -9,7 +9,6 @@ import torch
 import ops_rec
 
 ROOT = Path(__file__).resolve().parents[5]
-sys.path.insert(0, str(ROOT / "benchmarks/hstu_v2_agent_task2"))
 from cases import operator_cases  # noqa: E402
 from test_create_attn_metadata import assert_all_row_blocks_covered  # noqa: E402
 

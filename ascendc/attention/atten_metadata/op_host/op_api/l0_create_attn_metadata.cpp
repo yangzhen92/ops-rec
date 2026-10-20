@@ -29,33 +29,34 @@ OP_TYPE_REGISTER(CreateAttnMetadataForward);
 OP_TYPE_REGISTER(CreateAttnMetadataPacked);
 
 const aclTensor* CreateAttnMetadata(const aclTensor* cuSeqlensQOptional, const aclTensor* cuSeqlensKvOptional,
-                                  const aclTensor* sequsedQOptional, const aclTensor* sequsedKvOptional,
-                                  const aclTensor* maskBlockCntOptional, const aclTensor* fullBlockCntOptional,
-                                  int64_t batchSize, int64_t maxSeqlenQ, int64_t maxSeqlenKv, int64_t numHeadsQ,
-                                  int64_t numHeadsKv, int64_t headDim, int64_t maskMode, int64_t winLeft,
-                                  int64_t winRight, const char* layoutQ, const char* layoutKv, const char* layoutOut,
-                                  const char* socVersion, int64_t aicCoreNum, int64_t aivCoreNum,
-                                  int64_t packedRowAxis, int64_t packedMaskHeads, int64_t l2Size,
-                                  int64_t qBlockSize, int64_t kvBlockSize, bool deterministic,
-                                  const aclTensor* metaData, aclOpExecutor* executor)
+                                    const aclTensor* sequsedQOptional, const aclTensor* sequsedKvOptional,
+                                    const aclTensor* maskBlockCntOptional, const aclTensor* fullBlockCntOptional,
+                                    int64_t batchSize, int64_t maxSeqlenQ, int64_t maxSeqlenKv, int64_t numHeadsQ,
+                                    int64_t numHeadsKv, int64_t headDim, int64_t maskMode, int64_t winLeft,
+                                    int64_t winRight, const char* layoutQ, const char* layoutKv, const char* layoutOut,
+                                    const char* socVersion, int64_t aicCoreNum, int64_t aivCoreNum,
+                                    int64_t packedRowAxis, int64_t packedMaskHeads, int64_t l2Size, int64_t qBlockSize,
+                                    int64_t kvBlockSize, bool deterministic, const aclTensor* metaData,
+                                    aclOpExecutor* executor)
 {
     L0_DFX(CreateAttnMetadata, cuSeqlensQOptional, cuSeqlensKvOptional, sequsedQOptional, sequsedKvOptional,
-           maskBlockCntOptional, fullBlockCntOptional, batchSize,
-           maxSeqlenQ, maxSeqlenKv, numHeadsQ, numHeadsKv, headDim, maskMode, winLeft, winRight, layoutQ, layoutKv,
-           layoutOut, socVersion, aicCoreNum, aivCoreNum, packedRowAxis, packedMaskHeads, l2Size,
-           qBlockSize, kvBlockSize, deterministic, metaData);
+           maskBlockCntOptional, fullBlockCntOptional, batchSize, maxSeqlenQ, maxSeqlenKv, numHeadsQ, numHeadsKv,
+           headDim, maskMode, winLeft, winRight, layoutQ, layoutKv, layoutOut, socVersion, aicCoreNum, aivCoreNum,
+           packedRowAxis, packedMaskHeads, l2Size, qBlockSize, kvBlockSize, deterministic, metaData);
 
     aclnnStatus ret = ACL_SUCCESS;
     if (maskBlockCntOptional != nullptr) {
         static internal::AicpuTaskSpace space("CreateAttnMetadataPacked");
         ret = ADD_TO_LAUNCHER_LIST_AICPU(
             CreateAttnMetadataPacked,
-            OP_ATTR_NAMES({"batch_size", "max_seqlen_q", "max_seqlen_kv", "num_heads_q", "num_heads_kv",
-                           "head_dim", "mask_mode", "win_left", "win_right", "layout_q", "layout_kv",
-                           "layout_out", "soc_version", "aic_core_num", "aiv_core_num", "packed_row_axis",
-                           "packed_mask_heads", "l2_size", "q_block_size", "kv_block_size", "deterministic"}),
-            OP_INPUT(cuSeqlensQOptional, cuSeqlensKvOptional, sequsedQOptional, sequsedKvOptional,
-                     maskBlockCntOptional, fullBlockCntOptional), OP_OUTPUT(metaData),
+            OP_ATTR_NAMES({"batch_size",      "max_seqlen_q",      "max_seqlen_kv", "num_heads_q",  "num_heads_kv",
+                           "head_dim",        "mask_mode",         "win_left",      "win_right",    "layout_q",
+                           "layout_kv",       "layout_out",        "soc_version",   "aic_core_num", "aiv_core_num",
+                           "packed_row_axis", "packed_mask_heads", "l2_size",       "q_block_size", "kv_block_size",
+                           "deterministic"}),
+            OP_INPUT(cuSeqlensQOptional, cuSeqlensKvOptional, sequsedQOptional, sequsedKvOptional, maskBlockCntOptional,
+                     fullBlockCntOptional),
+            OP_OUTPUT(metaData),
             OP_ATTR(batchSize, maxSeqlenQ, maxSeqlenKv, numHeadsQ, numHeadsKv, headDim, maskMode, winLeft, winRight,
                     layoutQ, layoutKv, layoutOut, socVersion, aicCoreNum, aivCoreNum, packedRowAxis, packedMaskHeads,
                     l2Size, qBlockSize, kvBlockSize, deterministic));
@@ -63,10 +64,10 @@ const aclTensor* CreateAttnMetadata(const aclTensor* cuSeqlensQOptional, const a
         static internal::AicpuTaskSpace space("CreateAttnMetadataForward");
         ret = ADD_TO_LAUNCHER_LIST_AICPU(
             CreateAttnMetadataForward,
-            OP_ATTR_NAMES({"batch_size", "max_seqlen_q", "max_seqlen_kv", "num_heads_q", "num_heads_kv",
-                           "head_dim", "mask_mode", "win_left", "win_right", "layout_q", "layout_kv",
-                           "layout_out", "soc_version", "aic_core_num", "aiv_core_num", "l2_size",
-                           "q_block_size", "kv_block_size", "deterministic"}),
+            OP_ATTR_NAMES({"batch_size", "max_seqlen_q", "max_seqlen_kv", "num_heads_q", "num_heads_kv", "head_dim",
+                           "mask_mode", "win_left", "win_right", "layout_q", "layout_kv", "layout_out", "soc_version",
+                           "aic_core_num", "aiv_core_num", "l2_size", "q_block_size", "kv_block_size",
+                           "deterministic"}),
             OP_INPUT(cuSeqlensQOptional, cuSeqlensKvOptional, sequsedQOptional, sequsedKvOptional), OP_OUTPUT(metaData),
             OP_ATTR(batchSize, maxSeqlenQ, maxSeqlenKv, numHeadsQ, numHeadsKv, headDim, maskMode, winLeft, winRight,
                     layoutQ, layoutKv, layoutOut, socVersion, aicCoreNum, aivCoreNum, l2Size, qBlockSize, kvBlockSize,
@@ -75,10 +76,10 @@ const aclTensor* CreateAttnMetadata(const aclTensor* cuSeqlensQOptional, const a
         static internal::AicpuTaskSpace space("CreateAttnMetadata");
         ret = ADD_TO_LAUNCHER_LIST_AICPU(
             CreateAttnMetadata,
-            OP_ATTR_NAMES({"batch_size", "max_seqlen_q", "max_seqlen_kv", "num_heads_q", "num_heads_kv",
-                           "head_dim", "mask_mode", "win_left", "win_right", "layout_q", "layout_kv",
-                           "layout_out", "soc_version", "aic_core_num", "aiv_core_num", "l2_size",
-                           "q_block_size", "kv_block_size", "deterministic"}),
+            OP_ATTR_NAMES({"batch_size", "max_seqlen_q", "max_seqlen_kv", "num_heads_q", "num_heads_kv", "head_dim",
+                           "mask_mode", "win_left", "win_right", "layout_q", "layout_kv", "layout_out", "soc_version",
+                           "aic_core_num", "aiv_core_num", "l2_size", "q_block_size", "kv_block_size",
+                           "deterministic"}),
             // Backward owns K rows and iterates Q.  Present that geometry as
             // SectionStreamK's outer query and inner KV axes so metadata row
             // ranges match MetadataOuterBlockScheduler(seqOffsetK, seqOffsetQ).

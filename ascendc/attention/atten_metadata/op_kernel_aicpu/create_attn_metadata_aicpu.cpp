@@ -48,8 +48,7 @@ uint32_t CreateAttnMetadataCpuKernel::Compute(CpuKernelContext& ctx)
     }
 
     if (maskMode_ == 0) {
-        KERNEL_CHECK_FALSE(GenDenseMetadata(), FA_KERNEL_STATUS_PARAM_INVALID,
-                           "Generate dense HSTU metadata failed!");
+        KERNEL_CHECK_FALSE(GenDenseMetadata(), FA_KERNEL_STATUS_PARAM_INVALID, "Generate dense HSTU metadata failed!");
         return FA_KERNEL_STATUS_OK;
     }
 
@@ -81,11 +80,11 @@ bool CreateAttnMetadataCpuKernel::Prepare(CpuKernelContext& ctx)
 
     KERNEL_CHECK_FALSE((metadata_ != nullptr && metadata_->GetData() != nullptr), false, "metadata is empty");
 
-    bool requiredAttrs =
-        GetAttrValue(ctx, "num_heads_q", numHeadsQ_) && GetAttrValue(ctx, "num_heads_kv", numHeadsKv_) &&
-        GetAttrValue(ctx, "head_dim", headDim_) && GetAttrValue(ctx, "soc_version", socVersion_) &&
-        GetAttrValue(ctx, "aic_core_num", aicCoreNum_) && GetAttrValue(ctx, "aiv_core_num", aivCoreNum_) &&
-        GetAttrValue(ctx, "l2_size", l2Size_);
+    bool requiredAttrs = GetAttrValue(ctx, "num_heads_q", numHeadsQ_) &&
+                         GetAttrValue(ctx, "num_heads_kv", numHeadsKv_) && GetAttrValue(ctx, "head_dim", headDim_) &&
+                         GetAttrValue(ctx, "soc_version", socVersion_) &&
+                         GetAttrValue(ctx, "aic_core_num", aicCoreNum_) &&
+                         GetAttrValue(ctx, "aiv_core_num", aivCoreNum_) && GetAttrValue(ctx, "l2_size", l2Size_);
     KERNEL_CHECK_FALSE(requiredAttrs, false, "Missing Required attrs missing!");
 
     // HSTU 仅支持 MHA (G=1)，不支持 GQA 分核下沉。
@@ -145,7 +144,7 @@ void CreateAttnMetadataCpuKernel::InitLoadBalanceParams()
     param.mBaseSize = mBaseSize_;
     param.s2BaseSize = s2BaseSize_;
     param.l2Byte = static_cast<uint32_t>(ops_rec::attn_plan::schedule::L2BudgetBytes(l2Size_));
-    param.fdOn = false;                  // HSTU 不支持 FD / stream-K，FA 记录必落整行边界
+    param.fdOn = false;  // HSTU 不支持 FD / stream-K，FA 记录必落整行边界
     param.deterministic = deterministic_;
 }
 void CreateAttnMetadataCpuKernel::InitBaseInfo()
@@ -227,12 +226,11 @@ bool CreateAttnMetadataCpuKernel::BalanceSchedule(load_balance::SectionStreamKRe
 
 bool CreateAttnMetadataCpuKernel::GenMetadata(load_balance::SectionStreamKResult& splitRes)
 {
-    detail::FaMetadata faMetadata(metadata_->GetData(), splitRes.sectionNum,
-                                  static_cast<uint32_t>(aicCoreNum_), static_cast<uint32_t>(aivCoreNum_));
-    const bool hasFdWork = std::any_of(splitRes.sectionFdResult.begin(), splitRes.sectionFdResult.end(),
-                                       [](const load_balance::SectionStreamKFdResult& result) {
-                                           return result.usedVecNum > 0U;
-                                       });
+    detail::FaMetadata faMetadata(metadata_->GetData(), splitRes.sectionNum, static_cast<uint32_t>(aicCoreNum_),
+                                  static_cast<uint32_t>(aivCoreNum_));
+    const bool hasFdWork =
+        std::any_of(splitRes.sectionFdResult.begin(), splitRes.sectionFdResult.end(),
+                    [](const load_balance::SectionStreamKFdResult& result) { return result.usedVecNum > 0U; });
     // HSTU sets fdOn=false. Avoid clearing the unused AIV metadata region; it
     // can be larger than the AIC region and is never read when HEAD_IS_FD=0.
     faMetadata.Clear(hasFdWork);
@@ -341,8 +339,7 @@ bool CreateAttnMetadataCpuKernel::GenPackedMetadata()
 
     for (uint32_t core = 0; core < scheduleCoreNum; ++core) {
         ops_rec::attn_plan::schedule::WeightedCoreRangeBuilder builder(
-            totalRows, totalWeight, core, scheduleCoreNum,
-            ops_rec::attn_plan::schedule::BoundaryPolicy::NEAREST);
+            totalRows, totalWeight, core, scheduleCoreNum, ops_rec::attn_plan::schedule::BoundaryPolicy::NEAREST);
         for (uint32_t batch = 0; batch < baseInfo.batchSize; ++batch) {
             const auto& actualSeq = packedRowAxis_ == 0 ? baseInfo.actualQuerySeqSize : baseInfo.actualKvSeqSize;
             uint32_t seqBegin = 0U;
@@ -356,8 +353,7 @@ bool CreateAttnMetadataCpuKernel::GenPackedMetadata()
                 const uint32_t mh = maskHeads == 1U ? 0U : head;
                 for (uint32_t row = 0; row < rows; ++row) {
                     const uint32_t pos = (batch * maskHeads + mh) * outerStride + row;
-                    const uint64_t rowWeight = static_cast<uint32_t>(
-                        std::max(0, mask[pos]) + std::max(0, full[pos]));
+                    const uint64_t rowWeight = static_cast<uint32_t>(std::max(0, mask[pos]) + std::max(0, full[pos]));
                     builder.Push(rowWeight);
                 }
             }

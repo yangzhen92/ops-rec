@@ -102,7 +102,7 @@ ascendc/
 │   └── gather_for_rank1/                          # rank-1 嵌入查表（y = x[index]）
 │       └── index_select_for_rank1_backward/       # 反向（scatter_add 语义累加权重梯度）
 ├── mixing/                                        # mixing 算子组（混合算子）
-│   └── token_mixing/                          # Token 混合归一化
+│   └── token_mixing/                              # Token 混合归一化
 └── sequence/                                      # sequence 算子组（序列算子）
     └── reverse_sequence/                          # 序列逆序
 ```

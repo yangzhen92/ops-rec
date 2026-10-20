@@ -167,9 +167,11 @@ int main()
     int64_t aicCoreNum = 0;
     int64_t aivCoreNum = 0;
     ret = aclrtGetDeviceInfo(deviceId, ACL_DEV_ATTR_CUBE_CORE_NUM, &aicCoreNum);
-    if (!CHECK_RET(ret == ACL_SUCCESS)) return ret;
+    if (!CHECK_RET(ret == ACL_SUCCESS))
+        return ret;
     ret = aclrtGetDeviceInfo(deviceId, ACL_DEV_ATTR_VECTOR_CORE_NUM, &aivCoreNum);
-    if (!CHECK_RET(ret == ACL_SUCCESS)) return ret;
+    if (!CHECK_RET(ret == ACL_SUCCESS))
+        return ret;
     int64_t metadataSize = ((aicCoreNum + aivCoreNum) * batchSize * numKeyValueHeads + 1) * 16;
     int64_t alignedSize = ((metadataSize + 4095) / 4096) * 4096;
 
@@ -214,10 +216,10 @@ int main()
 
     char socVersion[] = "ascend950";
     printf("start aclnnCreateAttnMetadata\n");
-    ret = aclnnCreateAttnMetadataGetWorkspaceSize(nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, batchSize, qS, kvS, numHeads,
-                                                numKeyValueHeads, headDim, sparseMode, preTokens, nextTokens, "BSND",
-                                                "BSND", "BSND", 0, 1, 0, 0, true, metadataTensor,
-                                                &workspaceSize, &executor);
+    ret = aclnnCreateAttnMetadataGetWorkspaceSize(nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, batchSize, qS,
+                                                  kvS, numHeads, numKeyValueHeads, headDim, sparseMode, preTokens,
+                                                  nextTokens, "BSND", "BSND", "BSND", 0, 1, 0, 0, true, metadataTensor,
+                                                  &workspaceSize, &executor);
     if (ret != ACL_SUCCESS) {
         printf("aclnnCreateAttnMetadataGetWorkspaceSize %d\n", ret);
         return -1;

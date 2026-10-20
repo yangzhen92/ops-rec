@@ -66,17 +66,14 @@ c10::optional<at::Tensor> ContiguousOpt(const c10::optional<at::Tensor>& t)
 }
 }  // namespace
 
-at::Tensor create_attn_metadata_impl_npu(const c10::optional<at::Tensor>& cu_seqlens_q,
-                                       const c10::optional<at::Tensor>& cu_seqlens_kv,
-                                       const c10::optional<at::Tensor>& seqused_q,
-                                       const c10::optional<at::Tensor>& seqused_kv, int64_t batch_size,
-                                       int64_t max_seqlen_q, int64_t max_seqlen_kv, int64_t num_heads_q,
-                                       int64_t num_heads_kv, int64_t head_dim, int64_t mask_mode, int64_t win_left,
-                                       int64_t win_right, std::string layout_q, std::string layout_kv,
-                                       std::string layout_out, const c10::optional<at::Tensor>& mask_block_cnt,
-                                       const c10::optional<at::Tensor>& full_block_cnt, int64_t packed_row_axis,
-                                       int64_t packed_mask_heads, int64_t q_block_size, int64_t kv_block_size,
-                                       bool deterministic)
+at::Tensor create_attn_metadata_impl_npu(
+    const c10::optional<at::Tensor>& cu_seqlens_q, const c10::optional<at::Tensor>& cu_seqlens_kv,
+    const c10::optional<at::Tensor>& seqused_q, const c10::optional<at::Tensor>& seqused_kv, int64_t batch_size,
+    int64_t max_seqlen_q, int64_t max_seqlen_kv, int64_t num_heads_q, int64_t num_heads_kv, int64_t head_dim,
+    int64_t mask_mode, int64_t win_left, int64_t win_right, std::string layout_q, std::string layout_kv,
+    std::string layout_out, const c10::optional<at::Tensor>& mask_block_cnt,
+    const c10::optional<at::Tensor>& full_block_cnt, int64_t packed_row_axis, int64_t packed_mask_heads,
+    int64_t q_block_size, int64_t kv_block_size, bool deterministic)
 {
     TORCH_CHECK(num_heads_q > 0 && num_heads_kv > 0, "num_heads_q/num_heads_kv must be > 0");
     TORCH_CHECK(num_heads_q % num_heads_kv == 0, "num_heads_q must be divisible by num_heads_kv");
@@ -85,8 +82,7 @@ at::Tensor create_attn_metadata_impl_npu(const c10::optional<at::Tensor>& cu_seq
                 "create_attn_metadata: batch_size must be > 0, or provide seqused_q / cu_seqlens_q to derive it.");
     const bool has_mask_count = mask_block_cnt.has_value() && mask_block_cnt->defined();
     const bool has_full_count = full_block_cnt.has_value() && full_block_cnt->defined();
-    TORCH_CHECK(has_mask_count == has_full_count,
-                "mask_block_cnt and full_block_cnt must be provided together");
+    TORCH_CHECK(has_mask_count == has_full_count, "mask_block_cnt and full_block_cnt must be provided together");
     if (has_mask_count) {
         TORCH_CHECK(mask_block_cnt->device().type() == c10::DeviceType::PrivateUse1 &&
                         full_block_cnt->device().type() == c10::DeviceType::PrivateUse1,
@@ -108,8 +104,7 @@ at::Tensor create_attn_metadata_impl_npu(const c10::optional<at::Tensor>& cu_seq
     TORCH_CHECK(aic_core_num > 0 && aiv_core_num > 0, "failed to query runtime AIC/AIV core counts");
     const int64_t direct_elems = METADATA_STRIDE + aic_core_num * METADATA_STRIDE;
     const int64_t max_sections = std::max<int64_t>(1, batch * num_heads_kv);
-    const int64_t dense_elems =
-        METADATA_STRIDE + max_sections * (aic_core_num + aiv_core_num) * METADATA_STRIDE;
+    const int64_t dense_elems = METADATA_STRIDE + max_sections * (aic_core_num + aiv_core_num) * METADATA_STRIDE;
     const int64_t required_elems = packed_mode && deterministic ? direct_elems : dense_elems;
     int64_t aligned = ((required_elems + METADATA_ALIGN - 1) / METADATA_ALIGN) * METADATA_ALIGN;
 
@@ -129,10 +124,10 @@ at::Tensor create_attn_metadata_impl_npu(const c10::optional<at::Tensor>& cu_seq
     const char* layout_out_c = layout_out.c_str();
     int64_t l2_size = GetRuntimeL2Size();
 
-    EXEC_NPU_CMD(aclnnCreateAttnMetadata, cu_q, cu_kv, used_q, used_kv, mask_cnt, full_cnt, batch, max_seqlen_q, max_seqlen_kv, num_heads_q,
-                 num_heads_kv, head_dim, mask_mode, win_left, win_right, layout_q_c, layout_kv_c, layout_out_c,
-                 packed_row_axis, packed_mask_heads, l2_size, q_block_size, kv_block_size, deterministic,
-                 metadata);
+    EXEC_NPU_CMD(aclnnCreateAttnMetadata, cu_q, cu_kv, used_q, used_kv, mask_cnt, full_cnt, batch, max_seqlen_q,
+                 max_seqlen_kv, num_heads_q, num_heads_kv, head_dim, mask_mode, win_left, win_right, layout_q_c,
+                 layout_kv_c, layout_out_c, packed_row_axis, packed_mask_heads, l2_size, q_block_size, kv_block_size,
+                 deterministic, metadata);
     return metadata;
 }
 

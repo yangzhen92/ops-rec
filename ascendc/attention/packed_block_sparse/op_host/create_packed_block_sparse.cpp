@@ -61,8 +61,10 @@ bool ReadGeometry(gert::TilingContext* context, Geometry& g, optiling::PackedBlo
     const int32_t nFunc = funcShape.GetDim(funcDimNum - 1);
     OPS_LOG_E_IF(g.b <= 0, context, return false, "seq_offsets must contain at least two elements");
     OPS_LOG_E_IF(g.qLen <= 0 || g.kvLen <= 0, context, return false, "sequence length must be positive");
-    OPS_LOG_E_IF((*kvBlock != 64 && *kvBlock != 128) || (*qBlock != *kvBlock && *qBlock != 2 * *kvBlock), context,
-                 return false, "packed HSTU geometry requires q/kv=64/64,128/128,128/64 or 256/128");
+    const bool validQBlock = *qBlock == 32 || *qBlock == 64 || *qBlock == 128 || *qBlock == 256 || *qBlock == 512;
+    const bool validKvBlock = *kvBlock == 32 || *kvBlock == 64 || *kvBlock == 128 || *kvBlock == 256 || *kvBlock == 512;
+    OPS_LOG_E_IF(!validQBlock || !validKvBlock, context, return false,
+                 "packed HSTU geometry requires q and kv in {32,64,128,256,512}");
     OPS_LOG_E_IF(nFunc <= 0 || (nFunc & 1) != 0, context, return false, "nFunc must be positive and even");
     tiling.set_strideH(*strideH);
     tiling.set_strideQ(*strideQ);
@@ -87,8 +89,9 @@ ge::graphStatus Tiling(gert::TilingContext* context)
     if (!ReadGeometry(context, g, tiling))
         return ge::GRAPH_FAILED;
     const int32_t kvBlock = tiling.get_kvBlockSize();
-    const bool directionMismatch = (K2Q && g.qBlock != 2 * kvBlock) || (!K2Q && g.qBlock != kvBlock);
-    OPS_LOG_E_IF(directionMismatch, context, return ge::GRAPH_FAILED, "direction and q_block_size mismatch");
+    const bool directionMismatch = (K2Q && g.qBlock < kvBlock) || (!K2Q && g.qBlock > kvBlock);
+    OPS_LOG_E_IF(directionMismatch, context, return ge::GRAPH_FAILED,
+                 "q_block_size must not exceed kv_block_size in forward and must not be smaller in backward");
     const uint32_t outer = static_cast<uint32_t>(g.b * g.h * (K2Q ? g.numKv : g.numQ));
     auto platform = platform_ascendc::PlatformAscendC(context->GetPlatformInfo());
     context->SetBlockDim(std::min(outer, platform.GetCoreNumAiv()));

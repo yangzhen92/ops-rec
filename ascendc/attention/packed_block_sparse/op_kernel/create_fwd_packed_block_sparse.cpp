@@ -113,7 +113,7 @@ __simt_vf__ __aicore__ LAUNCH_BOUND(THREADS) inline void CreatePackedVf(
                 for (int32_t token = 0; token < TOKENS_PER_LANE; ++token) {
                     const int32_t rowInBlock = lane + token * WARP_SIZE;
                     const int32_t q = qStart + rowInBlock;
-                    uint32_t bits[4] = {0U, 0U, 0U, 0U};
+                    uint32_t bits[BITMAP_WORDS] = {};
                     if (q < qLen && tokenStates[token] == 2U) {
 #pragma unroll
                         for (int32_t word = 0; word < BITMAP_WORDS; ++word) {
@@ -121,7 +121,8 @@ __simt_vf__ __aicore__ LAUNCH_BOUND(THREADS) inline void CreatePackedVf(
                         }
                     } else if (q < qLen && tokenStates[token] == 1U) {
                         const __gm__ int32_t* row = funcHead + (funcQStartGlobal + q) * strideQ;
-                        TokenBitmap<N_FUNC>(regs[token], row, nFunc, strideF, kvLeftGlobal, kvRightGlobal, bits);
+                        TokenBitmap<N_FUNC, BITMAP_WORDS>(regs[token], row, nFunc, strideF, kvLeftGlobal, kvRightGlobal,
+                                                          bits);
                     }
                     const int64_t bitmapPos = (slot * Q_BLOCK + rowInBlock) * BITMAP_WORDS;
 #pragma unroll
@@ -201,9 +202,23 @@ extern "C" __global__ __aicore__ void create_fwd_packed_block_sparse(GM_ADDR fun
     auto* bounds = reinterpret_cast<__gm__ int32_t*>(rowBounds);
     auto* desc = reinterpret_cast<__gm__ int32_t*>(descriptor);
     auto* bm = reinterpret_cast<__gm__ int32_t*>(bitmap);
-    if (t.qBlockSize == 64 && t.kvBlockSize == 64) {
+    if (t.qBlockSize == 32 && t.kvBlockSize == 32) {
+        DISPATCH_PACKED(32, 32, false);
+    } else if (t.qBlockSize == 32 && t.kvBlockSize == 64) {
+        DISPATCH_PACKED(32, 64, false);
+    } else if (t.qBlockSize == 32 && t.kvBlockSize == 128) {
+        DISPATCH_PACKED(32, 128, false);
+    } else if (t.qBlockSize == 32 && t.kvBlockSize == 256) {
+        DISPATCH_PACKED(32, 256, false);
+    } else if (t.qBlockSize == 32 && t.kvBlockSize == 512) {
+        DISPATCH_PACKED(32, 512, false);
+    } else if (t.qBlockSize == 64 && t.kvBlockSize == 64) {
         DISPATCH_PACKED(64, 64, false);
-    } else {
+    } else if (t.qBlockSize == 64 && t.kvBlockSize == 128) {
+        DISPATCH_PACKED(64, 128, false);
+    } else if (t.qBlockSize == 64 && t.kvBlockSize == 256) {
+        DISPATCH_PACKED(64, 256, false);
+    } else if (t.qBlockSize == 128 && t.kvBlockSize == 128) {
         DISPATCH_PACKED(128, 128, false);
     }
 }

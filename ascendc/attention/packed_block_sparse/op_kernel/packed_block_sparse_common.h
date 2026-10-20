@@ -97,11 +97,15 @@ __forceinline__ __simt_callee__ uint32_t TokenState(const int32_t* regs, const _
     return full ? 2U : (any ? 1U : 0U);
 }
 
-template <int32_t N_FUNC>
+template <int32_t N_FUNC, int32_t BITMAP_WORDS>
 __forceinline__ __simt_callee__ void TokenBitmap(const int32_t* regs, const __gm__ int32_t* src, int32_t nFunc,
-                                                 int32_t strideF, int32_t kvLeft, int32_t kvRight, uint32_t (&bits)[4])
+                                                 int32_t strideF, int32_t kvLeft, int32_t kvRight,
+                                                 uint32_t (&bits)[BITMAP_WORDS])
 {
-    bits[0] = bits[1] = bits[2] = bits[3] = 0U;
+#pragma unroll
+    for (int32_t word = 0; word < BITMAP_WORDS; ++word) {
+        bits[word] = 0U;
+    }
     const int32_t count = N_FUNC > 0 ? N_FUNC : nFunc;
 #pragma unroll
     for (int32_t f = 0; f + 1 < count; f += 2) {
@@ -111,7 +115,7 @@ __forceinline__ __simt_callee__ void TokenBitmap(const int32_t* regs, const __gm
         const int32_t clippedEnd = min(end, kvRight) - kvLeft;
         if (clippedBegin < clippedEnd) {
 #pragma unroll
-            for (int32_t word = 0; word < 4; ++word) {
+            for (int32_t word = 0; word < BITMAP_WORDS; ++word) {
                 bits[word] |= RangeBits(clippedBegin, clippedEnd, word * 32);
             }
         }

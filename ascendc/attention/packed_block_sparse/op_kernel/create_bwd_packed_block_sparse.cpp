@@ -101,10 +101,11 @@ __simt_vf__ __aicore__ LAUNCH_BOUND(THREADS) inline void CreatePackedVf(
                 for (int32_t token = 0; token < TOKENS_PER_LANE; ++token) {
                     const int32_t rowInBlock = lane + token * WARP_SIZE;
                     const int32_t q = qStart + rowInBlock;
-                    uint32_t bits[4] = {0U, 0U, 0U, 0U};
+                    uint32_t bits[BITMAP_WORDS] = {};
                     if (q < qLen && kvLeft < kvLen) {
                         const __gm__ int32_t* row = funcHead + (funcQStartGlobal + q) * strideQ;
-                        TokenBitmap<N_FUNC>(regs[token], row, nFunc, strideF, kvLeftGlobal, kvRightGlobal, bits);
+                        TokenBitmap<N_FUNC, BITMAP_WORDS>(regs[token], row, nFunc, strideF, kvLeftGlobal, kvRightGlobal,
+                                                          bits);
                     }
                     const int64_t bitmapPos = (slot * Q_BLOCK + rowInBlock) * BITMAP_WORDS;
 #pragma unroll
@@ -184,9 +185,29 @@ extern "C" __global__ __aicore__ void create_bwd_packed_block_sparse(GM_ADDR fun
     auto* bounds = reinterpret_cast<__gm__ int32_t*>(rowBounds);
     auto* desc = reinterpret_cast<__gm__ int32_t*>(descriptor);
     auto* bm = reinterpret_cast<__gm__ int32_t*>(bitmap);
-    if (t.qBlockSize == 128 && t.kvBlockSize == 64) {
+    if (t.qBlockSize == 32 && t.kvBlockSize == 32) {
+        DISPATCH_PACKED(32, 32, true);
+    } else if (t.qBlockSize == 64 && t.kvBlockSize == 32) {
+        DISPATCH_PACKED(64, 32, true);
+    } else if (t.qBlockSize == 64 && t.kvBlockSize == 64) {
+        DISPATCH_PACKED(64, 64, true);
+    } else if (t.qBlockSize == 128 && t.kvBlockSize == 32) {
+        DISPATCH_PACKED(128, 32, true);
+    } else if (t.qBlockSize == 128 && t.kvBlockSize == 64) {
         DISPATCH_PACKED(128, 64, true);
-    } else {
+    } else if (t.qBlockSize == 128 && t.kvBlockSize == 128) {
+        DISPATCH_PACKED(128, 128, true);
+    } else if (t.qBlockSize == 256 && t.kvBlockSize == 32) {
+        DISPATCH_PACKED(256, 32, true);
+    } else if (t.qBlockSize == 256 && t.kvBlockSize == 64) {
+        DISPATCH_PACKED(256, 64, true);
+    } else if (t.qBlockSize == 256 && t.kvBlockSize == 128) {
         DISPATCH_PACKED(256, 128, true);
+    } else if (t.qBlockSize == 512 && t.kvBlockSize == 32) {
+        DISPATCH_PACKED(512, 32, true);
+    } else if (t.qBlockSize == 512 && t.kvBlockSize == 64) {
+        DISPATCH_PACKED(512, 64, true);
+    } else if (t.qBlockSize == 512 && t.kvBlockSize == 128) {
+        DISPATCH_PACKED(512, 128, true);
     }
 }

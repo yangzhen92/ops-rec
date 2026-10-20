@@ -41,7 +41,8 @@ void Validate(const Tensor& func, const Tensor& qOffsets, const Tensor& kvOffset
                     "each sequence length must fit the corresponding max_seqlen");
     }
     TORCH_CHECK(func.size(funcDim) > 0 && (func.size(funcDim) & 1) == 0, "last dimension must be positive even");
-    TORCH_CHECK(qBlock == 64 || qBlock == 128 || qBlock == 256, "q_block_size must be 64, 128 or 256");
+    TORCH_CHECK(qBlock == 32 || qBlock == 64 || qBlock == 128 || qBlock == 256 || qBlock == 512,
+                "q_block_size must be 32, 64, 128, 256 or 512");
 }
 
 template <bool K2Q>
@@ -49,8 +50,10 @@ tensor_list CreatePacked(const Tensor& func, const Tensor& qOffsets, const Tenso
                          int64_t maxSeqLenKv, int64_t qBlock, int64_t kvBlock)
 {
     Validate(func, qOffsets, kvOffsets, maxSeqLenQ, maxSeqLenKv, qBlock);
-    TORCH_CHECK(kvBlock == 64 || kvBlock == 128, "kv_block_size must be 64 or 128");
-    TORCH_CHECK((K2Q && qBlock == 2 * kvBlock) || (!K2Q && qBlock == kvBlock), "direction and block geometry mismatch");
+    TORCH_CHECK(kvBlock == 32 || kvBlock == 64 || kvBlock == 128 || kvBlock == 256 || kvBlock == 512,
+                "kv_block_size must be 32, 64, 128, 256 or 512");
+    TORCH_CHECK((K2Q && qBlock >= kvBlock) || (!K2Q && qBlock <= kvBlock),
+                "q_block_size must not exceed kv_block_size in forward and must not be smaller in backward");
     const int64_t b = qOffsets.numel() - 1;
     const int64_t h = func.dim() == 2 ? 1 : func.size(1);
     const int64_t nq = DIVUP(maxSeqLenQ, qBlock), nk = DIVUP(maxSeqLenKv, kvBlock);
@@ -103,17 +106,6 @@ tensor_list CreatePackedMeta(const Tensor& func, const Tensor& qOffsets, const T
 }
 }  // namespace
 
-// 供 attn_plan 直接调用的具名入口（全局作用域 => 外部链接）。
-// attn_plan/host/attn_plan.cpp 在文件顶部以如下签名声明并调用这两个符号，
-// 用于为 HSTU V2 的 arbitrary（packed sparse）路径生成 sparse_info：
-//
-//   ops_rec::attn_plan::TensorList create_fwd_packed_block_sparse_impl_npu(
-//       const Tensor& func, const Tensor& qOffsets, const Tensor& kvOffsets,
-//       int64_t maxSeqLenQ, int64_t maxSeqLenKv, int64_t qBlock, int64_t kvBlock);
-//
-// 二者必须是外部可见的定义（不能放进上面的匿名 namespace），否则
-// ops_rec_atlas_950.so 加载时会因符号未解析而失败。语义与 torch op
-// create_{fwd,bwd}_packed_block_sparse 完全一致，仅是一层薄包装。
 tensor_list create_fwd_packed_block_sparse_impl_npu(const Tensor& func, const Tensor& qOffsets, const Tensor& kvOffsets,
                                                     int64_t maxSeqLenQ, int64_t maxSeqLenKv, int64_t qBlock,
                                                     int64_t kvBlock)

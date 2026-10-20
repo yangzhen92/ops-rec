@@ -34,8 +34,7 @@ namespace npu_index_select_for_rank1_backward {
 
 constexpr int64_t RANK1_DIM = 1;
 
-std::tuple<at::Tensor, at::Tensor> index_select_for_rank1_backward_impl(const at::Tensor& grad_y,
-                                                                        const at::Tensor& x,
+std::tuple<at::Tensor, at::Tensor> index_select_for_rank1_backward_impl(const at::Tensor& grad_y, const at::Tensor& x,
                                                                         const at::Tensor& index)
 {
     check_tensor_non_empty(grad_y, "grad_y");
@@ -51,8 +50,8 @@ std::tuple<at::Tensor, at::Tensor> index_select_for_rank1_backward_impl(const at
     check_tensor_dim(grad_y, RANK1_DIM, "grad_y");
     check_tensor_dim(x, RANK1_DIM, "x");
     check_tensor_dim(index, RANK1_DIM, "index");
-    TORCH_CHECK(grad_y.numel() == index.numel(), "grad_y numel (", grad_y.numel(),
-                ") must be equal to index numel (", index.numel(), ").");
+    TORCH_CHECK(grad_y.numel() == index.numel(), "grad_y numel (", grad_y.numel(), ") must be equal to index numel (",
+                index.numel(), ").");
 
     auto grad_y_conti = grad_y.contiguous();
     auto x_conti = x.contiguous();
@@ -81,20 +80,19 @@ TORCH_LIBRARY_FRAGMENT(ops_rec, m)
 TORCH_LIBRARY_IMPL(ops_rec, PrivateUse1, m)
 {
     m.impl("index_select_for_rank1_backward",
-            TORCH_FN(npu_index_select_for_rank1_backward::index_select_for_rank1_backward_impl));
+           TORCH_FN(npu_index_select_for_rank1_backward::index_select_for_rank1_backward_impl));
 }
 
 namespace {
 
-std::tuple<at::Tensor, at::Tensor> index_select_for_rank1_backward_meta(const at::Tensor& grad_y,
-                                                                        const at::Tensor& x,
+std::tuple<at::Tensor, at::Tensor> index_select_for_rank1_backward_meta(const at::Tensor& grad_y, const at::Tensor& x,
                                                                         const at::Tensor& index)
 {
     check_tensor_dim(grad_y, npu_index_select_for_rank1_backward::RANK1_DIM, "grad_y");
     check_tensor_dim(x, npu_index_select_for_rank1_backward::RANK1_DIM, "x");
     check_tensor_dim(index, npu_index_select_for_rank1_backward::RANK1_DIM, "index");
-    TORCH_CHECK(grad_y.numel() == index.numel(), "grad_y numel (", grad_y.numel(),
-                ") must be equal to index numel (", index.numel(), ").");
+    TORCH_CHECK(grad_y.numel() == index.numel(), "grad_y numel (", grad_y.numel(), ") must be equal to index numel (",
+                index.numel(), ").");
     return std::make_tuple(at::empty_like(x, x.options()), at::Tensor());
 }
 

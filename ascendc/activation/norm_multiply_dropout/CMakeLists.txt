@@ -1,0 +1,3 @@
+# norm_multiply_dropout 前反向聚合
+add_subdirectory(norm_multiply_dropout_forward)
+add_subdirectory(norm_multiply_dropout_backward)

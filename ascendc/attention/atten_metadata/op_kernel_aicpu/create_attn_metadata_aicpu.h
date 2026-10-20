@@ -42,6 +42,8 @@ private:
     bool GenDenseMetadata();
     bool GenPackedMetadata();
     bool ParamsInit();
+    bool ValidateSequenceInputs();
+    uint32_t GetOuterSeqLength(uint32_t batch) const;
     void InitDeviceInfo();
     void InitBaseInfo();
     void InitLoadBalanceParams();

@@ -29,6 +29,7 @@ import os
 
 import pytest
 import torch
+import ops_rec  # noqa: F401 - registers operators and packaged OPP paths
 
 torch.npu.config.allow_internal_format = False
 
@@ -53,8 +54,8 @@ FA_S2_END_INDEX = 5
 
 
 def expected_size(batch, num_kv_heads, aic_core_num, aiv_core_num):
-    del num_kv_heads, aiv_core_num
-    elems = METADATA_STRIDE + aic_core_num * batch * 2
+    del batch, num_kv_heads, aiv_core_num
+    elems = METADATA_STRIDE + aic_core_num * METADATA_STRIDE
     return ((elems + METADATA_ALIGN - 1) // METADATA_ALIGN) * METADATA_ALIGN
 
 

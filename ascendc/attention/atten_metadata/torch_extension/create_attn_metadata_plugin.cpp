@@ -76,7 +76,10 @@ at::Tensor create_attn_metadata_impl_npu(
     int64_t q_block_size, int64_t kv_block_size, bool deterministic)
 {
     TORCH_CHECK(num_heads_q > 0 && num_heads_kv > 0, "num_heads_q/num_heads_kv must be > 0");
-    TORCH_CHECK(num_heads_q % num_heads_kv == 0, "num_heads_q must be divisible by num_heads_kv");
+    TORCH_CHECK(num_heads_q == num_heads_kv, "HSTU metadata requires MHA: num_heads_q must equal num_heads_kv");
+    TORCH_CHECK(packed_row_axis == 0 || packed_row_axis == 1, "packed_row_axis must be 0 (Q) or 1 (K)");
+    TORCH_CHECK(mask_mode == 4 || (win_left == -1 && win_right == -1),
+                "mask_mode 0/3 requires win_left == -1 and win_right == -1");
     int64_t batch = DeriveBatchSize(batch_size, seqused_q, cu_seqlens_q);
     TORCH_CHECK(batch > 0,
                 "create_attn_metadata: batch_size must be > 0, or provide seqused_q / cu_seqlens_q to derive it.");

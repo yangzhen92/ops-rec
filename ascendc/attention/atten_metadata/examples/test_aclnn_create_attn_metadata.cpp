@@ -218,8 +218,8 @@ int main()
     printf("start aclnnCreateAttnMetadata\n");
     ret = aclnnCreateAttnMetadataGetWorkspaceSize(nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, batchSize, qS,
                                                   kvS, numHeads, numKeyValueHeads, headDim, sparseMode, preTokens,
-                                                  nextTokens, "BSND", "BSND", "BSND", 0, 1, 0, 0, true, metadataTensor,
-                                                  &workspaceSize, &executor);
+                                                  nextTokens, "BSND", "BSND", "BSND", 0, 1, 0, 0, 0, true,
+                                                  metadataTensor, &workspaceSize, &executor);
     if (ret != ACL_SUCCESS) {
         printf("aclnnCreateAttnMetadataGetWorkspaceSize %d\n", ret);
         return -1;

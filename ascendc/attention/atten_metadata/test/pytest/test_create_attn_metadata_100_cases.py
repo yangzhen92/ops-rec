@@ -1,16 +1,12 @@
 """Task2: deterministic 100-case HSTU metadata validation matrix."""
 
-import sys
-from pathlib import Path
-
+import os
 import pytest
 import torch
+import ops_rec  # noqa: F401 - registers operators and packaged OPP paths
 
-
-ROOT = Path(__file__).resolve().parents[5]
-sys.path.insert(0, str(ROOT / "benchmarks/hstu_v2_agent_task2"))
-from cases import operator_cases  # noqa: E402
-from test_create_attn_metadata import assert_all_row_blocks_covered  # noqa: E402
+from metadata_cases import operator_cases
+from test_create_attn_metadata import assert_all_row_blocks_covered
 
 METADATA_STRIDE = 16
 DIRECT_MAGIC_INDEX = 15
@@ -31,7 +27,7 @@ def _build_inputs(case):
 
 @pytest.mark.parametrize("case", operator_cases(), ids=lambda c: f"case{c['case_id']:03d}")
 def test_create_attn_metadata_100_cases(case):
-    torch.npu.set_device(0)
+    torch.npu.set_device(int(os.getenv("ASCEND_DEVICE_ID", "0")))
     offsets = torch.tensor(case["offsets"], dtype=torch.int32, device="npu")
     mask_cnt = full_cnt = None
     if case["has_arbitrary"]:
@@ -59,6 +55,8 @@ def test_create_attn_metadata_100_cases(case):
         full_cnt,
         0,
         1,
+        128 if case["has_arbitrary"] else 0,
+        128 if case["has_arbitrary"] else 0,
     ).cpu()
 
     assert metadata.dtype == torch.int32

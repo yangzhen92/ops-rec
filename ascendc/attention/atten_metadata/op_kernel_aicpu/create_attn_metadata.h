@@ -22,7 +22,7 @@ See the License for the specific language governing permissions and
 #define hstu_attn_METADATA_H
 
 #include <cstdint>
-#include <cstddef>
+#include <cassert>
 #include "../../attn_plan/common/attn_metadata_layout.h"
 #include "../../attn_plan/common/attn_schedule_policy.h"
 
@@ -68,7 +68,6 @@ constexpr uint32_t FD_M_NUM_INDEX = metadata::FD_M_NUM;
 
 namespace detail {
 struct FaMetadata {
-    bool valid = true;
     uint32_t sectionNum;
     uint32_t aicCoreNum;
     uint32_t aivCoreNum;
@@ -81,8 +80,9 @@ struct FaMetadata {
           aivCoreNum(aivCoreNum),
           headMetadata(static_cast<FA_METADATA_T*>(metadataPtr)),
           faMetadata(headMetadata + HEAD_METADATA_STRIDE),
-          fdMetadata(faMetadata + static_cast<size_t>(sectionNum) * aicCoreNum * FA_METADATA_STRIDE)
+          fdMetadata(faMetadata + sectionNum * aicCoreNum * FA_METADATA_STRIDE)
     {
+        headMetadata[0] = sectionNum;
     }
 
     void Clear(bool clearFdMetadata = true)
@@ -90,75 +90,58 @@ struct FaMetadata {
         for (size_t i = 0; i < HEAD_METADATA_STRIDE; ++i) {
             headMetadata[i] = 0U;
         }
-        for (size_t i = 0; i < static_cast<size_t>(sectionNum) * aicCoreNum * FA_METADATA_STRIDE; ++i) {
+        for (size_t i = 0; i < sectionNum * aicCoreNum * FA_METADATA_STRIDE; ++i) {
             faMetadata[i] = 0U;
         }
         if (clearFdMetadata) {
-            for (size_t i = 0; i < static_cast<size_t>(sectionNum) * aivCoreNum * FD_METADATA_STRIDE; ++i) {
+            for (size_t i = 0; i < sectionNum * aivCoreNum * FD_METADATA_STRIDE; ++i) {
                 fdMetadata[i] = 0U;
             }
         }
     }
 
-    bool SetHeadMetadata(uint32_t metaIdx, uint32_t val)
+    void SetHeadMetadata(uint32_t metaIdx, uint32_t val)
     {
-        if (metaIdx >= HEAD_METADATA_STRIDE) {
-            valid = false;
-            return false;
-        }
+        assert(metaIdx < HEAD_METADATA_STRIDE);
         headMetadata[metaIdx] = val;
-        return true;
     }
 
     uint32_t GetHeadMetadata(uint32_t metaIdx)
     {
-        if (metaIdx >= HEAD_METADATA_STRIDE) {
-            valid = false;
-            return 0;
-        }
+        assert(metaIdx < HEAD_METADATA_STRIDE);
         return headMetadata[metaIdx];
     }
 
-    bool SetFaMetadata(uint32_t sectionIdx, uint32_t aicIdx, uint32_t metaIdx, uint32_t val)
+    void SetFaMetadata(uint32_t sectionIdx, uint32_t aicIdx, uint32_t metaIdx, uint32_t val)
     {
-        if (sectionIdx >= sectionNum || aicIdx >= aicCoreNum || metaIdx >= FA_METADATA_STRIDE) {
-            valid = false;
-            return false;
-        }
-        faMetadata[static_cast<size_t>(sectionIdx) * aicCoreNum * FA_METADATA_STRIDE + aicIdx * FA_METADATA_STRIDE +
-                   metaIdx] = val;
-        return true;
+        assert(sectionIdx < sectionNum);
+        assert(aicIdx < aicCoreNum);
+        assert(metaIdx < FA_METADATA_STRIDE);
+        faMetadata[sectionIdx * aicCoreNum * FA_METADATA_STRIDE + aicIdx * FA_METADATA_STRIDE + metaIdx] = val;
     }
 
     uint32_t GetFaMetadata(uint32_t sectionIdx, uint32_t aicIdx, uint32_t metaIdx)
     {
-        if (sectionIdx >= sectionNum || aicIdx >= aicCoreNum || metaIdx >= FA_METADATA_STRIDE) {
-            valid = false;
-            return 0;
-        }
-        return faMetadata[static_cast<size_t>(aicCoreNum) * FA_METADATA_STRIDE * sectionIdx +
-                          FA_METADATA_STRIDE * aicIdx + metaIdx];
+        assert(sectionIdx < sectionNum);
+        assert(aicIdx < aicCoreNum);
+        assert(metaIdx < FA_METADATA_STRIDE);
+        return faMetadata[aicCoreNum * FA_METADATA_STRIDE * sectionIdx + FA_METADATA_STRIDE * aicIdx + metaIdx];
     }
 
-    bool SetFdMetadata(uint32_t sectionIdx, uint32_t aivIdx, uint32_t metaIdx, uint32_t val)
+    void SetFdMetadata(uint32_t sectionIdx, uint32_t aivIdx, uint32_t metaIdx, uint32_t val)
     {
-        if (sectionIdx >= sectionNum || aivIdx >= aivCoreNum || metaIdx >= FD_METADATA_STRIDE) {
-            valid = false;
-            return false;
-        }
-        fdMetadata[static_cast<size_t>(aivCoreNum) * FD_METADATA_STRIDE * sectionIdx + FD_METADATA_STRIDE * aivIdx +
-                   metaIdx] = val;
-        return true;
+        assert(sectionIdx < sectionNum);
+        assert(aivIdx < aivCoreNum);
+        assert(metaIdx < FD_METADATA_STRIDE);
+        fdMetadata[aivCoreNum * FD_METADATA_STRIDE * sectionIdx + FD_METADATA_STRIDE * aivIdx + metaIdx] = val;
     }
 
     uint32_t GetFdMetadata(uint32_t sectionIdx, uint32_t aivIdx, uint32_t metaIdx)
     {
-        if (sectionIdx >= sectionNum || aivIdx >= aivCoreNum || metaIdx >= FD_METADATA_STRIDE) {
-            valid = false;
-            return 0;
-        }
-        return fdMetadata[static_cast<size_t>(aivCoreNum) * FD_METADATA_STRIDE * sectionIdx +
-                          FD_METADATA_STRIDE * aivIdx + metaIdx];
+        assert(sectionIdx < sectionNum);
+        assert(aivIdx < aivCoreNum);
+        assert(metaIdx < FD_METADATA_STRIDE);
+        return fdMetadata[aivCoreNum * FD_METADATA_STRIDE * sectionIdx + FD_METADATA_STRIDE * aivIdx + metaIdx];
     }
 };
 }  // namespace detail

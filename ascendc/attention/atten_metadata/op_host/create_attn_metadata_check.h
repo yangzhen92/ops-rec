@@ -105,8 +105,6 @@ inline aclnnStatus CreateAttnMetadataCheck::CheckBaseAttr(int64_t batchSize, int
     CHECK_COND(numHeadsKv > 0, ACLNN_ERR_RUNTIME_ERROR, "numHeadsKv must be greater than 0, but got %ld", numHeadsKv);
     CHECK_COND(numHeadsQ == numHeadsKv, ACLNN_ERR_RUNTIME_ERROR,
                "HSTU metadata requires MHA: numHeadsQ must equal numHeadsKv");
-    CHECK_COND(layoutQ != nullptr && layoutKv != nullptr && layoutOut != nullptr, ACLNN_ERR_RUNTIME_ERROR,
-               "layouts must not be null");
 
     constexpr int64_t HEAD_DIM_ALIGN = 16;
     constexpr int64_t HEAD_DIM_256 = 256;
@@ -140,8 +138,6 @@ inline aclnnStatus CreateAttnMetadataCheck::CheckMask(int64_t maskMode, int64_t 
                "maskMode only supports %ld, %ld, %ld, but got %ld", NO_MASK, CAUSAL_MASK, WINDOW_MASK, maskMode);
     CHECK_COND(winLeft >= -1, ACLNN_ERR_RUNTIME_ERROR, "winLeft must be -1 or at least 0, but got %ld", winLeft);
     CHECK_COND(winRight >= -1, ACLNN_ERR_RUNTIME_ERROR, "winRight must be -1 or at least 0, but got %ld", winRight);
-    CHECK_COND(maskMode == WINDOW_MASK || (winLeft == -1 && winRight == -1), ACLNN_ERR_RUNTIME_ERROR,
-               "maskMode 0/3 requires winLeft == -1 and winRight == -1");
 
     return ACLNN_SUCCESS;
 }
@@ -191,11 +187,7 @@ inline aclnnStatus CreateAttnMetadataCheck::CheckConsistency(int64_t batchSize, 
                                                              const aclTensor* sequsedKvOptional)
 {
     if (batchSize <= 0) {
-        const aclTensor* lengths = IsTensorExist(sequsedQOptional) ? sequsedQOptional : cuSeqlensQOptional;
-        const bool cumulative = lengths == cuSeqlensQOptional;
-        CHECK_COND(IsTensorExist(lengths), ACLNN_ERR_RUNTIME_ERROR, "batchSize=-1 requires Q-side sequence lengths");
-        batchSize = lengths->GetViewShape().GetDim(0) - (cumulative ? 1 : 0);
-        CHECK_COND(batchSize > 0, ACLNN_ERR_RUNTIME_ERROR, "derived batchSize must be positive");
+        return ACLNN_SUCCESS;
     }
 
     bool isCu = true;
@@ -208,7 +200,9 @@ inline aclnnStatus CreateAttnMetadataCheck::CheckConsistency(int64_t batchSize, 
     CHECK_COND(CheckSeqLens(!isCu, batchSize, sequsedKvOptional) == ACLNN_SUCCESS, ACLNN_ERR_RUNTIME_ERROR,
                "sequsedKvOptional is not valid!");
 
-    CHECK_COND(numHeadsQ == numHeadsKv, ACLNN_ERR_RUNTIME_ERROR, "HSTU metadata requires MHA");
+    CHECK_COND((numHeadsQ % numHeadsKv == 0), ACLNN_ERR_RUNTIME_ERROR,
+               "numHeadsQ must be divisible by numHeadsKv, but got numHeadsQ=%ld, numHeadsKv=%ld", numHeadsQ,
+               numHeadsKv);
 
     return ACLNN_SUCCESS;
 }
@@ -221,8 +215,6 @@ inline aclnnStatus CreateAttnMetadataCheck::CheckSeqLens(bool isCu, int64_t batc
 
     CHECK_COND(seqLens->GetViewShape().GetDimNum() == 1, ACLNN_ERR_RUNTIME_ERROR,
                "seqLens must be 1D tensor, but got %ld dims", seqLens->GetViewShape().GetDimNum());
-    CHECK_COND(seqLens->GetDataType() == op::DataType::DT_INT32, ACLNN_ERR_RUNTIME_ERROR,
-               "sequence lengths must be int32");
 
     if (isCu) {
         CHECK_COND(seqLens->GetViewShape().GetDim(0) == batchSize + 1, ACLNN_ERR_RUNTIME_ERROR,

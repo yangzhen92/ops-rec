@@ -85,7 +85,7 @@ const aclTensor* CreateAttnMetadata(const aclTensor* cuSeqlensQOptional, const a
             // ranges match MetadataOuterBlockScheduler(seqOffsetK, seqOffsetQ).
             OP_INPUT(cuSeqlensKvOptional, cuSeqlensQOptional, sequsedKvOptional, sequsedQOptional), OP_OUTPUT(metaData),
             OP_ATTR(batchSize, maxSeqlenKv, maxSeqlenQ, numHeadsKv, numHeadsQ, headDim, maskMode, winLeft, winRight,
-                    layoutKv, layoutQ, layoutOut, socVersion, aicCoreNum, aivCoreNum, l2Size, qBlockSize, kvBlockSize,
+                    layoutQ, layoutKv, layoutOut, socVersion, aicCoreNum, aivCoreNum, l2Size, qBlockSize, kvBlockSize,
                     deterministic));
     }
     OP_CHECK(ret == ACL_SUCCESS,

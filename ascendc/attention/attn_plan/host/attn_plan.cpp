@@ -125,9 +125,8 @@ DirectionPlan MakeDirectionPlan(const Tensor& q, const Tensor& k, const Tensor& 
         const int64_t metadataMaskMode = arbitrary ? 0 : (local ? 4 : (maskType == 0 ? 3 : 0));
         metadata = create_attn_metadata_impl_npu(
             seqOffsetQ, seqOffsetK, c10::nullopt, c10::nullopt, batch, maxSeqLenQ, maxSeqLenK, headsQ, headsKv, headDim,
-            metadataMaskMode, metadataMaskMode == 4 ? windowSizeLeft : -1, metadataMaskMode == 4 ? windowSizeRight : -1,
-            "TND", "TND", "TND", maskCount, fullCount, static_cast<int64_t>(direction), packedHeads, tile.m, tile.n,
-            deterministic);
+            metadataMaskMode, windowSizeLeft, windowSizeRight, "TND", "TND", "TND", maskCount, fullCount,
+            static_cast<int64_t>(direction), packedHeads, tile.m, tile.n, deterministic);
     }
     return {{tile.m, tile.n, tile.k}, std::move(sparseInfo), std::move(metadata), useAicpuSchedule};
 }

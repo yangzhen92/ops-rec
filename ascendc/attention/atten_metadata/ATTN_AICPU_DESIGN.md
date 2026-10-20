@@ -82,8 +82,6 @@ aclnnStatus aclnnCreateAttnMetadata(
 
 输出 metaData 由调用方预分配。当前实现将 workspaceSize 写为 0；调用方仍应按返回值处理。
 输入、输出及 workspace 保活到 stream 工作完成，consumer 建立正确的 stream 依赖。
-ACLNN 在调用 L0 前从原始 Q 侧长度推导 batch_size=-1；无法推导时立即报错。
-AI CPU 再次校验所有长度 tensor 的 batch、类型、非负性及累计边界，不允许负 batch 转为无符号循环次数。
 Torch 查询当前线程资源，而当前 ACLNN 使用 PlatformInfo 核数；两侧尚未统一受限资源，
 使用时应确保核数一致，尤其不能按受限核数分配更小的输出。
 
@@ -146,28 +144,3 @@ utils/feature_matrix.py 的 METADATA_ARBITRARY 分支按方向调用 plan 生成
 - TND offset 为 INT32；mask_mode=0、win=-1 正确，任意 mask 工作量由 packed 计数提供。
 - 默认 deterministic=True，覆盖 packed/direct，未覆盖非确定性 Stream-K。
 - 上述为源码契约结论；精度和运行时兼容性需在 Ascend/CANN/torch_npu 环境执行 pytest。
-
-## 7. PR #180 检视修复与回归
-
-已处理 [PR #180 检视意见](https://gitcode.com/Ascend/ops-rec/pull/180/diffs)：
-
-- mask 0/3 拒绝非 -1 窗口；plan 将规则掩码的窗口规范化为 -1，band 保留原窗口。
-- 普通 backward 在 L0 同时交换 Q/KV 输入、长度和 layout，layout_out 保持不变。
-- Torch、ACLNN 和 AI CPU 统一要求 MHA；batch=-1 必须有可推导的 Q 侧长度。
-- 普通/Stream-K 在写入前校验完整输出容量；metadata 字段访问失败返回状态，不触发 assert/abort。
-- packed 在遍历前校验两个计数 tensor 的 dtype、形状、存储大小和行容量，并检查非负计数及行权重溢出。
-- packed 的非 TND seqused 按独立长度读取；仅累计格式相减，避免长度递减时无符号下溢。
-
-`test/pytest/test_metadata_review_regressions.py` 覆盖混合 layout、非对称 tile、独立 seqused 及 Host 参数拒绝。
-100-case 数据位于同目录 `metadata_cases.py`，无需依赖仓库外 benchmark；packed 计数和 metadata 显式使用同一 tile。
-
-在安装匹配源码的 atlas_950 wheel、CANN 和 torch_npu 后，从仓库根目录运行：
-
-```bash
-python -m pytest ascendc/attention/atten_metadata/test/pytest -q
-cd ascendc/attention/hstu_v2/test/pytest
-python -m pytest test_forward_precision.py test_backward_precision.py -q
-python -m pytest test_msanitizer.py -k metadata_arbitrary -q
-```
-
-最后一条为普通执行；内存及同步插桩检查需另由 mssanitizer 启动。

@@ -61,11 +61,6 @@ aclnnStatus aclnnCreateAttnMetadataGetWorkspaceSize(
                                                     layoutOut, metaData);
     CHECK_RET(ret == ACLNN_SUCCESS, ret);
 
-    if (batchSize == -1) {
-        batchSize = sequsedQOptional != nullptr ? sequsedQOptional->GetViewShape().GetDim(0)
-                                                : cuSeqlensQOptional->GetViewShape().GetDim(0) - 1;
-    }
-
     const op::PlatformInfo& npuInfo = op::GetCurrentPlatformInfo();
     uint32_t aicCoreNum = npuInfo.GetCubeCoreNum();
     uint32_t aivCoreNum = npuInfo.GetVectorCoreNum();

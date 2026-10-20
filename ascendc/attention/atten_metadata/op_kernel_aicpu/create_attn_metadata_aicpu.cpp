@@ -75,9 +75,6 @@ bool CreateAttnMetadataCpuKernel::Prepare(CpuKernelContext& ctx)
     if (packedMode_) {
         maskBlockCnt_ = ctx.Input(static_cast<uint32_t>(ParamId::maskBlockCnt));
         fullBlockCnt_ = ctx.Input(static_cast<uint32_t>(ParamId::fullBlockCnt));
-        KERNEL_CHECK_FALSE(maskBlockCnt_ != nullptr && maskBlockCnt_->GetData() != nullptr &&
-                               fullBlockCnt_ != nullptr && fullBlockCnt_->GetData() != nullptr,
-                           false, "packed counts must be provided together");
     }
     // output
     metadata_ = ctx.Output(static_cast<uint32_t>(ParamId::metaData));
@@ -108,8 +105,6 @@ bool CreateAttnMetadataCpuKernel::Prepare(CpuKernelContext& ctx)
     if (packedMode_) {
         GetAttrValueOpt(ctx, "packed_row_axis", packedRowAxis_);
         GetAttrValueOpt(ctx, "packed_mask_heads", packedMaskHeads_);
-    } else {
-        packedRowAxis_ = forwardMode_ ? 0 : 1;
     }
     GetAttrValueOpt(ctx, "q_block_size", qBlockSize_);
     GetAttrValueOpt(ctx, "kv_block_size", kvBlockSize_);
@@ -119,21 +114,8 @@ bool CreateAttnMetadataCpuKernel::Prepare(CpuKernelContext& ctx)
 
 bool CreateAttnMetadataCpuKernel::ParamsInit()
 {
-    KERNEL_CHECK_FALSE(aicCoreNum_ > 0 && aivCoreNum_ > 0 && numHeadsQ_ > 0 && numHeadsQ_ == numHeadsKv_, false,
-                       "core counts must be positive and HSTU metadata requires MHA");
-    KERNEL_CHECK_FALSE(packedRowAxis_ == 0 || packedRowAxis_ == 1, false, "invalid packed_row_axis");
-    KERNEL_CHECK_FALSE((qBlockSize_ == 0 && kvBlockSize_ == 0) || (qBlockSize_ > 0 && kvBlockSize_ > 0), false,
-                       "q_block_size and kv_block_size must both be zero or positive");
-    KERNEL_CHECK_FALSE((maskMode_ == 0 || maskMode_ == 3 || maskMode_ == 4) && winLeft_ >= -1 && winRight_ >= -1 &&
-                           (maskMode_ == 4 || (winLeft_ == -1 && winRight_ == -1)),
-                       false, "invalid mask/window combination");
-    const auto outputShape = metadata_->GetTensorShape();
-    KERNEL_CHECK_FALSE(
-        metadata_->GetDataType() == DT_INT32 && outputShape != nullptr && outputShape->GetDimSizes().size() == 1 &&
-            outputShape->GetDimSize(0) > 0 &&
-            static_cast<uint64_t>(outputShape->GetDimSize(0)) <= metadata_->GetDataSize() / sizeof(uint32_t),
-        false, "metadata must be a nonempty one-dimensional int32 buffer");
-    KERNEL_CHECK_FALSE(ValidateSequenceInputs(), false, "invalid sequence lengths");
+    KERNEL_CHECK_FALSE(aicCoreNum_ > 0 && aivCoreNum_ > 0, false, "core counts must be positive");
+    KERNEL_CHECK_FALSE(ValidateSequenceInputs(), false, "invalid sequence length input");
     InitDeviceInfo();
     InitBaseInfo();
     InitLoadBalanceParams();
@@ -142,58 +124,49 @@ bool CreateAttnMetadataCpuKernel::ParamsInit()
 
 bool CreateAttnMetadataCpuKernel::ValidateSequenceInputs()
 {
+    // Validate using a local batch value; leave parameter inference and loading unchanged.
+    int64_t expectedBatch = batchSize_;
     Tensor* tensors[] = {sequsedQ_, cuSeqlensQ_, sequsedKv_, cuSeqlensKv_};
     for (size_t i = 0; i < 4; ++i) {
         Tensor* tensor = tensors[i];
-        if (tensor == nullptr) {
+        if (tensor == nullptr || tensor->GetData() == nullptr) {
             continue;
         }
         const bool cumulative = i % 2 == 1;
         const auto shape = tensor->GetTensorShape();
-        if (tensor->GetData() == nullptr &&
-            (shape == nullptr || shape->GetDimSizes().empty() || shape->GetDimSize(0) == 0)) {
-            continue;  // Optional inputs may be represented by empty framework tensors.
-        }
-        KERNEL_CHECK_FALSE(tensor->GetData() != nullptr && tensor->GetDataType() == DT_INT32 && shape != nullptr &&
-                               shape->GetDimSizes().size() == 1 && shape->GetDimSize(0) > (cumulative ? 1 : 0),
-                           false, "sequence lengths must be nonempty one-dimensional int32 tensors");
+        KERNEL_CHECK_FALSE(
+            shape != nullptr && shape->GetDimSizes().size() == 1 && shape->GetDimSize(0) > (cumulative ? 1 : 0), false,
+            "sequence lengths must be nonempty one-dimensional tensors");
         const int64_t count = shape->GetDimSize(0);
-        KERNEL_CHECK_FALSE(static_cast<uint64_t>(count) <= tensor->GetDataSize() / sizeof(int32_t), false,
+        uint32_t elementBytes = 0;
+        switch (tensor->GetDataType()) {
+            case DT_INT16:
+            case DT_UINT16:
+                elementBytes = sizeof(uint16_t);
+                break;
+            case DT_INT32:
+            case DT_UINT32:
+                elementBytes = sizeof(uint32_t);
+                break;
+            case DT_INT64:
+            case DT_UINT64:
+                elementBytes = sizeof(uint64_t);
+                break;
+            default:
+                return false;
+        }
+        KERNEL_CHECK_FALSE(static_cast<uint64_t>(count) <= tensor->GetDataSize() / elementBytes, false,
                            "sequence length buffer is too small");
         const int64_t batch = count - (cumulative ? 1 : 0);
-        if (batchSize_ == -1 && i < 2) {
-            KERNEL_CHECK_FALSE(batch <= std::numeric_limits<int32_t>::max(), false, "batch size is too large");
-            batchSize_ = static_cast<int32_t>(batch);
+        if (expectedBatch == -1 && i < 2) {
+            expectedBatch = batch;
         }
-        KERNEL_CHECK_FALSE(batchSize_ > 0 && batch == batchSize_, false, "sequence length batch mismatch");
-        const auto* values = static_cast<const int32_t*>(tensor->GetData());
-        KERNEL_CHECK_FALSE(!cumulative || values[0] == 0, false, "cu_seqlens must start at zero");
-        int64_t total = 0;
-        for (int64_t j = 0; j < count; ++j) {
-            KERNEL_CHECK_FALSE(values[j] >= 0 && (!cumulative || j == 0 || values[j] >= values[j - 1]), false,
-                               "sequence lengths must be nonnegative and cu_seqlens nondecreasing");
-            total = cumulative ? values[j] : total + values[j];
-            KERNEL_CHECK_FALSE(total <= std::numeric_limits<int32_t>::max(), false, "sequence length sum overflow");
-        }
+        KERNEL_CHECK_FALSE(
+            expectedBatch > 0 && expectedBatch <= std::numeric_limits<int32_t>::max() && batch == expectedBatch, false,
+            "sequence length batch mismatch");
     }
-    KERNEL_CHECK_FALSE(batchSize_ > 0, false, "batch_size must be positive or derivable from Q-side lengths");
-    KERNEL_CHECK_FALSE(((sequsedQ_ != nullptr && sequsedQ_->GetData() != nullptr) ||
-                        (cuSeqlensQ_ != nullptr && cuSeqlensQ_->GetData() != nullptr) || maxSeqlenQ_ > 0) &&
-                           ((sequsedKv_ != nullptr && sequsedKv_->GetData() != nullptr) ||
-                            (cuSeqlensKv_ != nullptr && cuSeqlensKv_->GetData() != nullptr) || maxSeqlenKv_ > 0),
-                       false, "each side requires sequence lengths or a positive max_seqlen");
+    KERNEL_CHECK_FALSE(expectedBatch > 0, false, "batch_size must be positive or derivable from Q-side lengths");
     return true;
-}
-
-uint32_t CreateAttnMetadataCpuKernel::GetOuterSeqLength(uint32_t batch) const
-{
-    const bool query = packedRowAxis_ == 0;
-    const auto& actual = query ? baseInfo.actualQuerySeqSize : baseInfo.actualKvSeqSize;
-    if (actual.empty()) {
-        return query ? baseInfo.querySeqSize : baseInfo.kvSeqSize;
-    }
-    const bool cumulative = query ? baseInfo.isCumulativeQuerySeq : baseInfo.isCumulativeKvSeq;
-    return actual[batch] - (cumulative && batch > 0 ? actual[batch - 1] : 0U);
 }
 
 void CreateAttnMetadataCpuKernel::InitDeviceInfo()
@@ -221,7 +194,7 @@ void CreateAttnMetadataCpuKernel::InitLoadBalanceParams()
     param.mBaseSize = mBaseSize_;
     param.s2BaseSize = s2BaseSize_;
     param.l2Byte = static_cast<uint32_t>(ops_rec::attn_plan::schedule::L2BudgetBytes(l2Size_));
-    param.fdOn = false;  // HSTU does not use the FD reduction records.
+    param.fdOn = false;  // HSTU 不支持 FD / stream-K，FA 记录必落整行边界
     param.deterministic = deterministic_;
 }
 void CreateAttnMetadataCpuKernel::InitBaseInfo()
@@ -303,21 +276,15 @@ bool CreateAttnMetadataCpuKernel::BalanceSchedule(load_balance::SectionStreamKRe
 
 bool CreateAttnMetadataCpuKernel::GenMetadata(load_balance::SectionStreamKResult& splitRes)
 {
+    const auto shape = metadata_->GetTensorShape();
+    KERNEL_CHECK_FALSE(metadata_->GetDataType() == DT_INT32 && shape != nullptr && shape->GetDimSizes().size() == 1 &&
+                           shape->GetDimSize(0) >= HEAD_METADATA_STRIDE,
+                       false, "metadata output shape or dtype is invalid");
+    const uint64_t outputWords = static_cast<uint64_t>(shape->GetDimSize(0));
     const uint64_t wordsPerSection = (static_cast<uint64_t>(aicCoreNum_) + aivCoreNum_) * FA_METADATA_STRIDE;
-    const uint64_t outputWords = static_cast<uint64_t>(metadata_->GetTensorShape()->GetDimSize(0));
-    KERNEL_CHECK_FALSE(outputWords >= HEAD_METADATA_STRIDE && splitRes.sectionNum > 0 &&
+    KERNEL_CHECK_FALSE(outputWords <= metadata_->GetDataSize() / sizeof(uint32_t) && splitRes.sectionNum > 0 &&
                            splitRes.sectionNum <= (outputWords - HEAD_METADATA_STRIDE) / wordsPerSection,
-                       false, "metadata output is too small for FA/FD sections");
-    KERNEL_CHECK_FALSE(splitRes.sectionFaResult.size() == splitRes.sectionNum &&
-                           splitRes.sectionFdResult.size() == splitRes.sectionNum,
-                       false, "invalid section result count");
-    for (uint32_t section = 0; section < splitRes.sectionNum; ++section) {
-        const auto& fa = splitRes.sectionFaResult[section];
-        const auto& fd = splitRes.sectionFdResult[section];
-        KERNEL_CHECK_FALSE(
-            fa.usedCoreNum <= static_cast<uint32_t>(aicCoreNum_) && fd.usedVecNum <= static_cast<uint32_t>(aivCoreNum_),
-            false, "section core count exceeds metadata capacity");
-    }
+                       false, "metadata output is too small");
     detail::FaMetadata faMetadata(metadata_->GetData(), splitRes.sectionNum, static_cast<uint32_t>(aicCoreNum_),
                                   static_cast<uint32_t>(aivCoreNum_));
     const bool hasFdWork =
@@ -377,60 +344,75 @@ bool CreateAttnMetadataCpuKernel::GenMetadata(load_balance::SectionStreamKResult
             faMetadata.SetFdMetadata(secIdx, aivIdx, FD_M_NUM_INDEX, fdRes.mLen[aivIdx]);
         }
     }
-    return faMetadata.valid;
+    return true;
 }
 
 bool CreateAttnMetadataCpuKernel::GenPackedMetadata()
 {
     auto* output = static_cast<uint32_t*>(metadata_->GetData());
     const auto outputShape = metadata_->GetTensorShape();
-    KERNEL_CHECK_FALSE(outputShape != nullptr && !outputShape->GetDimSizes().empty(), false,
-                       "metadata output shape is invalid");
+    KERNEL_CHECK_FALSE(
+        metadata_->GetDataType() == DT_INT32 && outputShape != nullptr && outputShape->GetDimSizes().size() == 1 &&
+            outputShape->GetDimSize(0) >= HEAD_METADATA_STRIDE &&
+            static_cast<uint64_t>(outputShape->GetDimSize(0)) <= metadata_->GetDataSize() / sizeof(uint32_t),
+        false, "metadata output shape is invalid");
     const size_t outputWords = static_cast<size_t>(outputShape->GetDimSize(0));
     const uint32_t maskHeads = static_cast<uint32_t>(packedMaskHeads_);
-    KERNEL_CHECK_FALSE(maskHeads == 1U || maskHeads == static_cast<uint32_t>(numHeadsQ_), false,
-                       "packed_mask_heads must be 1 or num_heads_q");
-    KERNEL_CHECK_FALSE(maskBlockCnt_->GetDataType() == DT_INT32 && fullBlockCnt_->GetDataType() == DT_INT32 &&
-                           maskBlockCnt_->GetDataSize() == fullBlockCnt_->GetDataSize(),
-                       false, "packed counts must be equally sized int32 buffers");
+    const auto maskShape = maskBlockCnt_->GetTensorShape();
+    const auto fullShape = fullBlockCnt_->GetTensorShape();
+    KERNEL_CHECK_FALSE((maskHeads == 1U || maskHeads == static_cast<uint32_t>(numHeadsQ_)) &&
+                           maskBlockCnt_->GetDataType() == DT_INT32 && fullBlockCnt_->GetDataType() == DT_INT32 &&
+                           maskBlockCnt_->GetDataSize() == fullBlockCnt_->GetDataSize() && maskShape != nullptr &&
+                           fullShape != nullptr && maskShape->GetDimSizes().size() == 3 &&
+                           maskShape->GetDimSizes() == fullShape->GetDimSizes() &&
+                           maskShape->GetDimSize(0) == baseInfo.batchSize && maskShape->GetDimSize(1) == maskHeads &&
+                           maskShape->GetDimSize(2) > 0,
+                       false, "packed counts must have identical int32 [batch, mask_heads, outer] geometry");
+    KERNEL_CHECK_FALSE(
+        maskBlockCnt_->GetDataSize() / sizeof(int32_t) <= std::numeric_limits<uint32_t>::max() &&
+            static_cast<uint64_t>(baseInfo.batchSize) * maskHeads <= std::numeric_limits<uint32_t>::max(),
+        false, "packed count geometry exceeds the index range");
+    const uint32_t countElements = static_cast<uint32_t>(maskBlockCnt_->GetDataSize() / sizeof(int32_t));
+    KERNEL_CHECK_FALSE(maskHeads > 0U && countElements % (baseInfo.batchSize * maskHeads) == 0U, false,
+                       "packed count geometry is invalid");
+    const uint32_t outerStride = countElements / (baseInfo.batchSize * maskHeads);
+    KERNEL_CHECK_FALSE(maskShape->GetDimSize(2) == outerStride, false, "packed count shape and buffer size mismatch");
     const auto* mask = static_cast<const int32_t*>(maskBlockCnt_->GetData());
     const auto* full = static_cast<const int32_t*>(fullBlockCnt_->GetData());
     const auto countShape = maskBlockCnt_->GetTensorShape();
-    const auto fullShape = fullBlockCnt_->GetTensorShape();
-    KERNEL_CHECK_FALSE(countShape != nullptr && fullShape != nullptr && countShape->GetDimSizes().size() == 3 &&
-                           countShape->GetDimSizes() == fullShape->GetDimSizes() &&
-                           countShape->GetDimSize(0) == batchSize_ && countShape->GetDimSize(1) == maskHeads &&
-                           countShape->GetDimSize(2) > 0 &&
-                           countShape->GetDimSize(2) <= std::numeric_limits<uint32_t>::max(),
-                       false, "packed counts must have identical [batch, packed_mask_heads, outer] shapes");
-    const uint32_t outerStride = static_cast<uint32_t>(countShape->GetDimSize(2));
-    const uint64_t countElements = maskBlockCnt_->GetDataSize() / sizeof(int32_t);
-    KERNEL_CHECK_FALSE(static_cast<uint64_t>(batchSize_) * maskHeads <= countElements / outerStride, false,
-                       "packed count buffer is too small");
+    KERNEL_CHECK_FALSE(countShape != nullptr, false, "packed count shape is null");
     uint64_t totalWeight = 0;
     uint32_t totalRows = 0;
     for (uint32_t b = 0; b < baseInfo.batchSize; ++b) {
-        const uint32_t seqLen = GetOuterSeqLength(b);
-        const uint32_t rows = static_cast<uint32_t>((static_cast<uint64_t>(seqLen) + mBaseSize_ - 1U) / mBaseSize_);
-        KERNEL_CHECK_FALSE(rows <= outerStride, false, "packed count outer capacity is smaller than the row count");
-        KERNEL_CHECK_FALSE(static_cast<uint64_t>(totalRows) + static_cast<uint64_t>(rows) * numHeadsKv_ <=
-                               std::numeric_limits<uint32_t>::max(),
-                           false, "packed row count overflow");
+        const auto& actualSeq = packedRowAxis_ == 0 ? baseInfo.actualQuerySeqSize : baseInfo.actualKvSeqSize;
+        uint32_t seqBegin = 0U;
+        uint32_t seqEnd = packedRowAxis_ == 0 ? baseInfo.querySeqSize : baseInfo.kvSeqSize;
+        if (!actualSeq.empty()) {
+            seqBegin = b == 0 ? 0U : actualSeq[b - 1];
+            seqEnd = actualSeq[b];
+        }
+        const uint32_t seqLen = seqEnd - seqBegin;
+        const uint32_t rows = (seqLen + mBaseSize_ - 1U) / mBaseSize_;
+        KERNEL_CHECK_FALSE(
+            rows <= outerStride && static_cast<uint64_t>(totalRows) + static_cast<uint64_t>(rows) * numHeadsKv_ <=
+                                       std::numeric_limits<uint32_t>::max(),
+            false, "packed outer row capacity is too small or row count overflows");
         for (uint32_t h = 0; h < static_cast<uint32_t>(numHeadsKv_); ++h) {
             const uint32_t mh = maskHeads == 1U ? 0U : h;
             for (uint32_t row = 0; row < rows; ++row) {
-                const uint64_t pos = (static_cast<uint64_t>(b) * maskHeads + mh) * outerStride + row;
-                const int64_t weight = static_cast<int64_t>(mask[pos]) + full[pos];
-                KERNEL_CHECK_FALSE(mask[pos] >= 0 && full[pos] >= 0 && weight <= std::numeric_limits<int32_t>::max(),
-                                   false, "packed counts must be nonnegative with an int32 row sum");
-                totalWeight += static_cast<uint64_t>(weight);
+                const uint32_t pos = (b * maskHeads + mh) * outerStride + row;
+                KERNEL_CHECK_FALSE(
+                    mask[pos] >= 0 && full[pos] >= 0 &&
+                        static_cast<int64_t>(mask[pos]) + full[pos] <= std::numeric_limits<int32_t>::max(),
+                    false, "packed counts must be nonnegative with an int32 row sum");
+                totalWeight += static_cast<uint32_t>(std::max(0, mask[pos]) + std::max(0, full[pos]));
                 ++totalRows;
             }
         }
     }
 
     const uint32_t scheduleCoreNum = static_cast<uint32_t>(aicCoreNum_);
-    const size_t requiredWords = HEAD_METADATA_STRIDE + static_cast<size_t>(scheduleCoreNum) * FA_METADATA_STRIDE;
+    const size_t requiredWords = HEAD_METADATA_STRIDE + scheduleCoreNum * FA_METADATA_STRIDE;
     KERNEL_CHECK_FALSE(requiredWords <= outputWords, false, "metadata output is too small");
     std::fill(output, output + requiredWords, 0U);
     output[HEAD_SECTION_NUM_INDEX] = 1U;
@@ -444,13 +426,19 @@ bool CreateAttnMetadataCpuKernel::GenPackedMetadata()
         ops_rec::attn_plan::schedule::WeightedCoreRangeBuilder builder(
             totalRows, totalWeight, core, scheduleCoreNum, ops_rec::attn_plan::schedule::BoundaryPolicy::NEAREST);
         for (uint32_t batch = 0; batch < baseInfo.batchSize; ++batch) {
-            const uint32_t rows =
-                static_cast<uint32_t>((static_cast<uint64_t>(GetOuterSeqLength(batch)) + mBaseSize_ - 1U) / mBaseSize_);
+            const auto& actualSeq = packedRowAxis_ == 0 ? baseInfo.actualQuerySeqSize : baseInfo.actualKvSeqSize;
+            uint32_t seqBegin = 0U;
+            uint32_t seqEnd = packedRowAxis_ == 0 ? baseInfo.querySeqSize : baseInfo.kvSeqSize;
+            if (!actualSeq.empty()) {
+                seqBegin = batch == 0 ? 0U : actualSeq[batch - 1];
+                seqEnd = actualSeq[batch];
+            }
+            const uint32_t rows = (seqEnd - seqBegin + mBaseSize_ - 1U) / mBaseSize_;
             for (uint32_t head = 0; head < static_cast<uint32_t>(numHeadsKv_); ++head) {
                 const uint32_t mh = maskHeads == 1U ? 0U : head;
                 for (uint32_t row = 0; row < rows; ++row) {
-                    const uint64_t pos = (static_cast<uint64_t>(batch) * maskHeads + mh) * outerStride + row;
-                    const uint64_t rowWeight = static_cast<uint64_t>(mask[pos]) + static_cast<uint64_t>(full[pos]);
+                    const uint32_t pos = (batch * maskHeads + mh) * outerStride + row;
+                    const uint64_t rowWeight = static_cast<uint32_t>(std::max(0, mask[pos]) + std::max(0, full[pos]));
                     builder.Push(rowWeight);
                 }
             }

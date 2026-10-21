@@ -76,8 +76,10 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> NormMultiplyDropoutForwardInter(c
     auto var = at::empty({xCont.size(0)}, options.dtype(at::kFloat));
 
     // dropout_ratio 小于阈值时 mask 可传任意 uint8 空量，直接透传算子处理
-    EXEC_NPU_CMD(aclnnNormMultiplyDropout, xCont, uCont, weightCont, biasCont, maskCont,
-                 static_cast<float>(eps), static_cast<float>(dropoutRatio), output, mean, var);
+    float epsVal = static_cast<float>(eps);
+    float ratioVal = static_cast<float>(dropoutRatio);
+    EXEC_NPU_CMD(aclnnNormMultiplyDropout, xCont, uCont, weightCont, biasCont, maskCont, epsVal, ratioVal,
+                 output, mean, var);
     return {output, mean, var};
 }
 

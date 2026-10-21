@@ -97,4 +97,4 @@ aclnnStatus：返回状态码，成功返回 `ACLNN_SUCCESS`。
 
 ## 调用示例
 
-具体参考 torch 适配层 [norm_multiply_dropout_plugin.cpp](../torch_extension/norm_multiply_dropout_plugin.cpp) 中 `EXEC_NPU_CMD` 的两段式调用实现。
+具体参考 torch 适配层 [norm_multiply_dropout_plugin.cpp](../../torch_extension/norm_multiply_dropout_plugin.cpp) 中 `EXEC_NPU_CMD` 的两段式调用实现。

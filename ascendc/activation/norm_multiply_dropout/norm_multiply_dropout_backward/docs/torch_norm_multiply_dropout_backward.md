@@ -62,4 +62,4 @@ torch.ops.ops_rec.norm_multiply_dropout_backward(
 
 ## 调用示例
 
-参考 [test_torch_norm_multiply_dropout_backward.py](../examples/torch/test_torch_norm_multiply_dropout_backward.py)。
+参考 [test_torch_norm_multiply_dropout_backward.py](../test/pytest/test_norm_multiply_dropout_backward.py)。

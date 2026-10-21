@@ -86,8 +86,10 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> NormMultiplyDropoutBa
     auto dWeight = at::empty({xCont.size(1)}, options.dtype(at::kFloat));
     auto dBias = at::empty({xCont.size(1)}, options.dtype(at::kFloat));
 
+    float epsVal = static_cast<float>(eps);
+    float ratioVal = static_cast<float>(dropoutRatio);
     EXEC_NPU_CMD(aclnnNormMultiplyDropoutBackward, dOutCont, xCont, uCont, weightCont, biasCont, meanCont, varCont,
-                 maskCont, static_cast<float>(eps), static_cast<float>(dropoutRatio), dU, dX, dWeight, dBias);
+                 maskCont, epsVal, ratioVal, dU, dX, dWeight, dBias);
     return {dU, dX, dWeight, dBias};
 }
 

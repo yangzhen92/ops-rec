@@ -86,10 +86,9 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> NormMultiplyDropoutBa
     auto dWeight = at::empty({xCont.size(1)}, options.dtype(at::kFloat));
     auto dBias = at::empty({xCont.size(1)}, options.dtype(at::kFloat));
 
-    float epsVal = static_cast<float>(eps);
-    float ratioVal = static_cast<float>(dropoutRatio);
+    // aclnn 生成的接口 Float 属性为 double，直接透传
     EXEC_NPU_CMD(aclnnNormMultiplyDropoutBackward, dOutCont, xCont, uCont, weightCont, biasCont, meanCont, varCont,
-                 maskCont, epsVal, ratioVal, dU, dX, dWeight, dBias);
+                 maskCont, eps, dropoutRatio, dU, dX, dWeight, dBias);
     return {dU, dX, dWeight, dBias};
 }
 
